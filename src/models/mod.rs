@@ -8,4 +8,3 @@ pub use cpu::CpuData;
 pub use disk::DiskData;
 pub use memory::MemoryData;
 pub use network::{NetworkData, NetworkInterface};
-pub use process::ProcessIoData;

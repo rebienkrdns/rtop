@@ -21,14 +21,20 @@ pub struct AppState {
     pub disks: Vec<DiskData>,
     pub interval_idx: usize,
     pub cfg: Config,
+
+    // Disk selection
+    pub selected_disk: Option<String>,
+    pub selector_entries: Vec<DiskSelectorEntry>,
+    pub disk_selector_cursor: usize,
+    pub show_disk_selector: bool,
+
+    // Network selection
     pub selected_nic: Option<String>,
     pub network_by_nic: HashMap<String, NetworkData>,
     pub available_nics: Vec<NetworkInterface>,
     pub show_nic_selector: bool,
     pub nic_cursor: usize,
-    pub show_disk_selector: bool,
-    pub disk_selector_cursor: usize,
-    pub selector_entries: Vec<DiskSelectorEntry>,
+
     metrics_rx: mpsc::Receiver<SystemSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -41,6 +47,8 @@ impl AppState {
         cfg: Config,
     ) -> Self {
         let hostname = System::host_name().unwrap_or_else(|| "unknown".to_string());
+        let selected_disk = cfg.selected_disk.clone();
+        let selected_nic = cfg.selected_nic.clone();
         Self {
             hostname,
             cpu: CpuData::default(),
@@ -48,14 +56,15 @@ impl AppState {
             disks: vec![],
             interval_idx: initial_idx,
             cfg,
-            selected_nic: None,
+            selected_disk,
+            selector_entries: vec![],
+            disk_selector_cursor: 0,
+            show_disk_selector: false,
+            selected_nic,
             network_by_nic: HashMap::new(),
             available_nics: vec![],
             show_nic_selector: false,
             nic_cursor: 0,
-            show_disk_selector: false,
-            disk_selector_cursor: 0,
-            selector_entries: vec![],
             metrics_rx: rx,
             interval_tx,
         }
@@ -69,14 +78,20 @@ impl AppState {
             self.disks = snapshot.disks;
             self.network_by_nic = snapshot.network_by_nic;
             self.available_nics = snapshot.available_nics;
+
+            // Auto-select NIC on first snapshot if not previously configured
             if self.selected_nic.is_none() {
                 self.selected_nic = snapshot.suggested_nic;
             }
-            if self.cfg.selected_disk.is_none() {
+            // Auto-select disk on first snapshot if not previously configured
+            if self.selected_disk.is_none() {
                 if let Some(first) = self.disks.first() {
-                    self.cfg.selected_disk = Some(
-                        first.device.strip_prefix("/dev/").unwrap_or(&first.device).to_string(),
-                    );
+                    let short = first
+                        .device
+                        .strip_prefix("/dev/")
+                        .unwrap_or(&first.device)
+                        .to_string();
+                    self.selected_disk = Some(short);
                 }
             }
         }
