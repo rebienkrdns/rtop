@@ -13,6 +13,7 @@ pub struct SystemSnapshot {
     pub network_by_nic: HashMap<String, NetworkData>,
     pub available_nics: Vec<NetworkInterface>,
     pub suggested_nic: Option<String>,
+    pub proc_permission_denied: bool,
 }
 
 pub struct SystemCollector {
@@ -73,16 +74,24 @@ impl SystemCollector {
     }
 
     pub fn disk_data(&mut self) -> Vec<DiskData> {
-        let disk_shorts: Vec<String> = self
+        let mut disk_shorts: Vec<String> = self
             .disks
             .list()
             .iter()
             .map(|d| device_short_name(&d.name().to_string_lossy()))
             .collect();
 
+        // Also query diskstats_names to support unmounted disks
+        for name in DiskIoCollector::diskstats_names() {
+            if !disk_shorts.contains(&name) {
+                disk_shorts.push(name);
+            }
+        }
+
         let rates = self.disk_io.io_rates_batch(&disk_shorts);
 
-        self.disks
+        #[allow(unused_mut)]
+        let mut result: Vec<DiskData> = self.disks
             .list()
             .iter()
             .map(|disk| {
@@ -106,10 +115,42 @@ impl SystemCollector {
                     write_bytes_per_sec: rate.write_bytes_per_sec,
                 }
             })
-            .collect()
+            .collect();
+
+        // Add dummy DiskData for unmounted disk stats
+        #[cfg(target_os = "linux")]
+        {
+            use std::collections::HashSet;
+            let mounted_shorts: HashSet<String> = self.disks
+                .list()
+                .iter()
+                .map(|d| device_short_name(&d.name().to_string_lossy()))
+                .collect();
+
+            for name in DiskIoCollector::diskstats_names() {
+                if !mounted_shorts.contains(&name) {
+                    let total = DiskIoCollector::raw_block_size(&name);
+                    let rate = rates.get(&name).cloned().unwrap_or_default();
+                    result.push(DiskData {
+                        device: format!("/dev/{}", name),
+                        mount_point: String::new(),
+                        total_bytes: total,
+                        used_bytes: 0,
+                        usage_pct: 0.0,
+                        read_bytes_per_sec: rate.read_bytes_per_sec,
+                        write_bytes_per_sec: rate.write_bytes_per_sec,
+                    });
+                }
+            }
+        }
+
+        result
     }
 
     pub fn snapshot(&mut self) -> SystemSnapshot {
+        let pids: Vec<u32> = self.sys.processes().keys().map(|pid| pid.as_u32()).collect();
+        let (_rates, permission_denied) = self.disk_io.process_io_rates(&pids);
+
         SystemSnapshot {
             cpu: self.cpu_data(),
             memory: self.memory_data(),
@@ -117,6 +158,7 @@ impl SystemCollector {
             network_by_nic: self.network.all_data(),
             available_nics: self.network.interfaces(),
             suggested_nic: self.network.autodetect(),
+            proc_permission_denied: permission_denied,
         }
     }
 }

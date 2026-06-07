@@ -28,6 +28,8 @@ pub struct DiskSelectorEntry {
 
 pub struct DiskIoCollector {
     prev: HashMap<String, DiskIoSnapshot>,
+    #[cfg(target_os = "linux")]
+    proc_prev: HashMap<u32, DiskIoSnapshot>,
 }
 
 impl Default for DiskIoCollector {
@@ -38,7 +40,11 @@ impl Default for DiskIoCollector {
 
 impl DiskIoCollector {
     pub fn new() -> Self {
-        Self { prev: HashMap::new() }
+        Self {
+            prev: HashMap::new(),
+            #[cfg(target_os = "linux")]
+            proc_prev: HashMap::new(),
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -99,7 +105,7 @@ impl DiskIoCollector {
     }
 
     #[cfg(target_os = "linux")]
-    fn raw_block_size(name: &str) -> u64 {
+    pub fn raw_block_size(name: &str) -> u64 {
         let path = format!("/sys/block/{}/size", name);
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Ok(sectors) = content.trim().parse::<u64>() {
@@ -110,7 +116,7 @@ impl DiskIoCollector {
     }
 
     #[cfg(target_os = "linux")]
-    fn diskstats_names() -> Vec<String> {
+    pub fn diskstats_names() -> Vec<String> {
         let content = match std::fs::read_to_string("/proc/diskstats") {
             Ok(c) => c,
             Err(_) => return vec![],
@@ -132,6 +138,11 @@ impl DiskIoCollector {
         names.sort();
         names.dedup();
         names
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn diskstats_names() -> Vec<String> {
+        vec![]
     }
 
     pub fn build_selector_entries(known: &[DiskData]) -> Vec<DiskSelectorEntry> {
@@ -164,6 +175,76 @@ impl DiskIoCollector {
 
         entries.sort_by(|a, b| a.device_short.cmp(&b.device_short));
         entries
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn process_io_rates(&mut self, pids: &[u32]) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
+        use std::fs;
+        let now = Instant::now();
+        let mut result = HashMap::new();
+        let mut permission_denied = false;
+
+        for &pid in pids {
+            let path = format!("/proc/{}/io", pid);
+            match fs::read_to_string(&path) {
+                Ok(content) => {
+                    let mut read_bytes = 0;
+                    let mut write_bytes = 0;
+                    for line in content.lines() {
+                        if line.starts_with("read_bytes:") {
+                            if let Some(val_str) = line.split_whitespace().nth(1) {
+                                read_bytes = val_str.parse().unwrap_or(0);
+                            }
+                        } else if line.starts_with("write_bytes:") {
+                            if let Some(val_str) = line.split_whitespace().nth(1) {
+                                write_bytes = val_str.parse().unwrap_or(0);
+                            }
+                        }
+                    }
+
+                    let rate = if let Some(prev) = self.proc_prev.get(&pid) {
+                        let elapsed = now.duration_since(prev.timestamp).as_secs_f64();
+                        if elapsed > 0.0 {
+                            let dr = read_bytes.saturating_sub(prev.sectors_read);
+                            let dw = write_bytes.saturating_sub(prev.sectors_written);
+                            crate::models::process::ProcessIoData {
+                                read_bytes_per_sec: dr as f64 / elapsed,
+                                write_bytes_per_sec: dw as f64 / elapsed,
+                            }
+                        } else {
+                            crate::models::process::ProcessIoData::default()
+                        }
+                    } else {
+                        crate::models::process::ProcessIoData::default()
+                    };
+
+                    self.proc_prev.insert(
+                        pid,
+                        DiskIoSnapshot {
+                            timestamp: now,
+                            sectors_read: read_bytes,
+                            sectors_written: write_bytes,
+                        },
+                    );
+                    result.insert(pid, rate);
+                }
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::PermissionDenied {
+                        permission_denied = true;
+                    }
+                }
+            }
+        }
+
+        // Clean up stale PIDs to avoid memory leaks
+        self.proc_prev.retain(|pid, _| pids.contains(pid));
+
+        (result, permission_denied)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn process_io_rates(&mut self, _pids: &[u32]) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
+        (HashMap::new(), false)
     }
 }
 

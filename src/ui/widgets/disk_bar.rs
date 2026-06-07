@@ -38,16 +38,25 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
     };
 
     // Línea 1: encabezado
-    let label = Line::from(vec![
-        Span::styled(disk.mount_point.as_str(), Style::default().fg(Color::Cyan)),
-        Span::raw(format!(
-            "  {:.1}%  {} / {}",
-            disk.usage_pct,
-            ByteSize(disk.used_bytes),
-            ByteSize(disk.total_bytes),
-        )),
-    ]);
-    f.render_widget(Paragraph::new(label), chunks[0]);
+    let header_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(0), Constraint::Length(8)])
+        .split(chunks[0]);
+
+    let name_str = if disk.mount_point.is_empty() {
+        format!("Disco  {}", disk.device)
+    } else {
+        format!("Disco  {} ({})", disk.device, disk.mount_point)
+    };
+    f.render_widget(Paragraph::new(name_str).style(Style::default().fg(Color::Cyan)), header_cols[0]);
+
+    let usage_str = format!("{:.0}%", disk.usage_pct);
+    f.render_widget(
+        Paragraph::new(usage_str)
+            .style(Style::default().fg(Theme::color_for_pct(disk.usage_pct)).add_modifier(Modifier::BOLD))
+            .alignment(ratatui::layout::Alignment::Right),
+        header_cols[1],
+    );
 
     // Línea 2: barra de uso
     let gauge = Gauge::default()
@@ -62,17 +71,26 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
 
     // Línea 3: tasas R/W + hint F2
     if has_io_row {
+        let io_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(0), Constraint::Length(14)])
+            .split(chunks[2]);
+
         let write_str = fmt_rate(disk.write_bytes_per_sec);
         let read_str = fmt_rate(disk.read_bytes_per_sec);
+
         let io_line = Line::from(vec![
-            Span::styled("↑ ", Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD)),
-            Span::styled(write_str, Style::default().fg(Color::Yellow)),
-            Span::raw("  "),
-            Span::styled("↓ ", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)),
-            Span::styled(read_str, Style::default().fg(Color::Cyan)),
-            Span::raw("  "),
-            Span::styled("[ F2 cambiar ]", Style::default().fg(Color::DarkGray)),
+            Span::styled("↑ Escritura ", Style::default().fg(Color::Rgb(255, 140, 0)).add_modifier(Modifier::BOLD)),
+            Span::styled(write_str, Style::default().fg(Color::Rgb(255, 140, 0))),
+            Span::raw("     "),
+            Span::styled("↓ Lectura ", Style::default().fg(Color::Rgb(30, 144, 255)).add_modifier(Modifier::BOLD)),
+            Span::styled(read_str, Style::default().fg(Color::Rgb(30, 144, 255))),
         ]);
-        f.render_widget(Paragraph::new(io_line), chunks[2]);
+        f.render_widget(Paragraph::new(io_line), io_cols[0]);
+
+        let hint = Paragraph::new("[ F2 cambiar ]")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(ratatui::layout::Alignment::Right);
+        f.render_widget(hint, io_cols[1]);
     }
 }

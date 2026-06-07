@@ -35,6 +35,8 @@ pub struct AppState {
     pub show_nic_selector: bool,
     pub nic_cursor: usize,
 
+    pub proc_permission_denied: bool,
+
     metrics_rx: mpsc::Receiver<SystemSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -65,6 +67,7 @@ impl AppState {
             available_nics: vec![],
             show_nic_selector: false,
             nic_cursor: 0,
+            proc_permission_denied: false,
             metrics_rx: rx,
             interval_tx,
         }
@@ -78,6 +81,7 @@ impl AppState {
             self.disks = snapshot.disks;
             self.network_by_nic = snapshot.network_by_nic;
             self.available_nics = snapshot.available_nics;
+            self.proc_permission_denied = snapshot.proc_permission_denied;
 
             // Auto-select NIC on first snapshot if not previously configured
             if self.selected_nic.is_none() {

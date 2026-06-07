@@ -96,9 +96,14 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     network_widget::render(f, right_inner, state);
 
     // Panel inferior: Procesos / Contenedores
+    let bottom_title = if state.proc_permission_denied {
+        " Procesos (requiere sudo) · Contenedores "
+    } else {
+        " Procesos · Contenedores "
+    };
     let bottom = Block::default()
         .title(Span::styled(
-            " Procesos · Contenedores ",
+            bottom_title,
             Style::default().fg(theme.accent),
         ))
         .borders(Borders::ALL)
@@ -166,33 +171,30 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 }
 
 fn draw_metrics(f: &mut Frame, area: Rect, state: &AppState) {
-    // 2 lines per metric (label + gauge), 1 spacer between sections
-    let disk_count = state.disks.len();
-    let mut constraints = vec![
-        Constraint::Length(2), // CPU
-        Constraint::Length(1), // spacer
-        Constraint::Length(2), // RAM
-        Constraint::Length(1), // spacer
-    ];
-    for _ in 0..disk_count {
-        constraints.push(Constraint::Length(3)); // disk (encabezado + barra + R/W)
-        constraints.push(Constraint::Length(1)); // spacer
-    }
-    constraints.push(Constraint::Min(0)); // remainder
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(constraints)
+        .constraints([
+            Constraint::Length(2), // CPU
+            Constraint::Length(1), // spacer
+            Constraint::Length(2), // RAM
+            Constraint::Length(1), // spacer
+            Constraint::Length(3), // Disk
+            Constraint::Min(0),    // remainder
+        ])
         .split(area);
 
     cpu_bar::render(f, chunks[0], &state.cpu);
     // chunks[1] is spacer
     memory_bar::render(f, chunks[2], &state.memory);
     // chunks[3] is spacer
-    for (i, disk) in state.disks.iter().enumerate() {
-        let idx = 4 + i * 2;
-        if idx < chunks.len() {
-            disk_bar::render(f, chunks[idx], disk);
-        }
+
+    let selected_disk = state.selected_disk.as_deref().unwrap_or("");
+    let disk_to_render = state.disks.iter().find(|d| {
+        let short = crate::collectors::disk::device_short_name(&d.device);
+        short == selected_disk
+    }).or_else(|| state.disks.first());
+
+    if let Some(disk) = disk_to_render {
+        disk_bar::render(f, chunks[4], disk);
     }
 }

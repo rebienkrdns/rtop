@@ -1,4 +1,5 @@
 #[derive(Clone, Default)]
+#[allow(dead_code)]
 pub struct DiskData {
     pub device: String,
     pub mount_point: String,
