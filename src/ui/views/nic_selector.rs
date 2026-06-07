@@ -33,60 +33,82 @@ pub fn render(f: &mut Frame, state: &AppState) {
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(inner);
 
-    let items: Vec<ListItem> = state
-        .available_nics
-        .iter()
-        .enumerate()
-        .map(|(i, nic)| {
-            let is_selected = Some(&nic.name) == state.selected_nic.as_ref();
-            let is_cursor = i == state.nic_cursor;
+    // Build list: index 0 = "Todas las interfaces", index 1..N = individual NICs
+    let all_is_cursor = state.nic_cursor == 0;
+    let all_is_selected = state.selected_nic.is_none();
+    let all_prefix = if all_is_cursor { "> " } else { "  " };
+    let all_style = if all_is_cursor || all_is_selected {
+        Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let all_status_style = Style::default().fg(if all_is_selected {
+        Color::Green
+    } else {
+        theme.muted
+    });
+    let all_item = ListItem::new(Line::from(vec![
+        Span::styled(all_prefix, all_style),
+        Span::styled(format!("{:<12}", "Todas"), all_style),
+        Span::styled(format!("{:<18}", "(sumatoria)"), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("★ {}", if all_is_selected { "seleccionada" } else { "suma de interfaces" }),
+            all_status_style,
+        ),
+    ]));
 
-            let bullet = if nic.is_up { "●" } else { "○" };
-            let status = if nic.is_loopback {
-                "loopback"
-            } else if is_selected {
-                "activa (seleccionada)"
-            } else if nic.is_up {
-                "activa"
-            } else {
-                "inactiva"
-            };
+    let mut items: Vec<ListItem> = vec![all_item];
 
-            let ip_str = nic.ip_address.as_deref().unwrap_or("—");
-            let prefix = if is_cursor { "> " } else { "  " };
+    for (i, nic) in state.available_nics.iter().enumerate() {
+        // cursor index for this NIC is i+1 (because 0 = All)
+        let is_selected = Some(&nic.name) == state.selected_nic.as_ref();
+        let is_cursor = (i + 1) == state.nic_cursor;
 
-            let name_style = if !nic.is_up {
-                Style::default().fg(Color::DarkGray)
-            } else if is_cursor {
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
+        let bullet = if nic.is_up { "●" } else { "○" };
+        let status = if nic.is_loopback {
+            "loopback"
+        } else if is_selected {
+            "activa (seleccionada)"
+        } else if nic.is_up {
+            "activa"
+        } else {
+            "inactiva"
+        };
 
-            let ip_style = if !nic.is_up {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default().fg(Color::Cyan)
-            };
+        let ip_str = nic.ip_address.as_deref().unwrap_or("—");
+        let prefix = if is_cursor { "> " } else { "  " };
 
-            let status_style = Style::default().fg(if nic.is_up {
-                Color::Green
-            } else {
-                Color::DarkGray
-            });
+        let name_style = if !nic.is_up {
+            Style::default().fg(Color::DarkGray)
+        } else if is_cursor {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
 
-            let line = Line::from(vec![
-                Span::styled(prefix, name_style),
-                Span::styled(format!("{:<12}", nic.name), name_style),
-                Span::styled(format!("{:<18}", ip_str), ip_style),
-                Span::styled(format!("{} {}", bullet, status), status_style),
-            ]);
+        let ip_style = if !nic.is_up {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
 
-            ListItem::new(line)
-        })
-        .collect();
+        let status_style = Style::default().fg(if nic.is_up {
+            Color::Green
+        } else {
+            Color::DarkGray
+        });
+
+        let line = Line::from(vec![
+            Span::styled(prefix, name_style),
+            Span::styled(format!("{:<12}", nic.name), name_style),
+            Span::styled(format!("{:<18}", ip_str), ip_style),
+            Span::styled(format!("{} {}", bullet, status), status_style),
+        ]);
+
+        items.push(ListItem::new(line));
+    }
 
     f.render_widget(List::new(items), layout[0]);
 

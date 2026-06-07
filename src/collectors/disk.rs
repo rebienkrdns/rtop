@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use sysinfo::Disk;
+
 use crate::models::DiskData;
 
+#[allow(dead_code)]
 const SECTOR_SIZE: u64 = 512;
 
+#[allow(dead_code)]
 struct DiskIoSnapshot {
     timestamp: Instant,
     sectors_read: u64,
@@ -27,6 +31,7 @@ pub struct DiskSelectorEntry {
 }
 
 pub struct DiskIoCollector {
+    #[allow(dead_code)]
     prev: HashMap<String, DiskIoSnapshot>,
     #[cfg(target_os = "linux")]
     proc_prev: HashMap<u32, DiskIoSnapshot>,
@@ -45,6 +50,21 @@ impl DiskIoCollector {
             #[cfg(target_os = "linux")]
             proc_prev: HashMap::new(),
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn io_rates_from_disks(&mut self, disks: &[Disk]) -> HashMap<String, DiskIoRate> {
+        let mut result = HashMap::new();
+        for disk in disks {
+            let name = device_short_name(&disk.name().to_string_lossy());
+            result.insert(name, DiskIoRate::default());
+        }
+        result
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn io_rates_from_disks(&mut self, _disks: &[Disk]) -> HashMap<String, DiskIoRate> {
+        HashMap::new()
     }
 
     #[cfg(target_os = "linux")]
@@ -71,6 +91,7 @@ impl DiskIoCollector {
         HashMap::new()
     }
 
+    #[allow(dead_code)]
     pub fn io_rates_batch(&mut self, device_shorts: &[String]) -> HashMap<String, DiskIoRate> {
         let stats = Self::read_diskstats_raw();
         let now = Instant::now();
@@ -116,6 +137,7 @@ impl DiskIoCollector {
     }
 
     #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
     pub fn diskstats_names() -> Vec<String> {
         let content = match std::fs::read_to_string("/proc/diskstats") {
             Ok(c) => c,
@@ -141,6 +163,7 @@ impl DiskIoCollector {
     }
 
     #[cfg(not(target_os = "linux"))]
+    #[allow(dead_code)]
     pub fn diskstats_names() -> Vec<String> {
         vec![]
     }
