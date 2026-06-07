@@ -130,8 +130,19 @@ impl ContainerCollector {
                 c.status.as_deref().unwrap_or_default(),
             );
 
-            let (cpu_pct, memory_bytes, memory_limit_bytes, net_recv, net_sent, disk_read, disk_write) =
-                derive_metrics(&id, &stats, self.prev.get(&id));
+            let (
+                cpu_pct,
+                memory_bytes,
+                memory_limit_bytes,
+                net_recv_per_sec,
+                net_recv_total,
+                net_sent_per_sec,
+                net_sent_total,
+                disk_read_per_sec,
+                disk_read_total,
+                disk_write_per_sec,
+                disk_write_total,
+            ) = derive_metrics(&id, &stats, self.prev.get(&id));
 
             self.prev.insert(
                 id.clone(),
@@ -139,10 +150,10 @@ impl ContainerCollector {
                     timestamp: Instant::now(),
                     cpu_total: stats.cpu_stats.cpu_usage.total_usage,
                     system_cpu: stats.cpu_stats.system_cpu_usage.unwrap_or(0),
-                    net_recv,
-                    net_sent,
-                    blk_read: disk_read,
-                    blk_write: disk_write,
+                    net_recv: net_recv_total as f64,
+                    net_sent: net_sent_total as f64,
+                    blk_read: disk_read_total as f64,
+                    blk_write: disk_write_total as f64,
                 },
             );
 
@@ -160,10 +171,14 @@ impl ContainerCollector {
                 } else {
                     0.0
                 },
-                net_recv_per_sec: net_recv,
-                net_sent_per_sec: net_sent,
-                disk_read_per_sec: disk_read,
-                disk_write_per_sec: disk_write,
+                net_recv_per_sec,
+                net_recv_total,
+                net_sent_per_sec,
+                net_sent_total,
+                disk_read_per_sec,
+                disk_read_total,
+                disk_write_per_sec,
+                disk_write_total,
                 ports: vec![],
                 volumes: vec![],
             });
@@ -195,7 +210,7 @@ fn derive_metrics(
     _id: &str,
     stats: &bollard::container::Stats,
     prev: Option<&ContainerSnapshot>,
-) -> (f64, u64, u64, f64, f64, f64, f64) {
+) -> (f64, u64, u64, f64, u64, f64, u64, f64, u64, f64, u64) {
     let cpu_total = stats.cpu_stats.cpu_usage.total_usage;
     let system_cpu = stats.cpu_stats.system_cpu_usage.unwrap_or(0);
     let online_cpus = stats.cpu_stats.online_cpus.unwrap_or(1) as f64;
@@ -236,21 +251,30 @@ fn derive_metrics(
         .map(sum_blkio("Write"))
         .unwrap_or(0) as f64;
 
-    let (read_bps, write_bps) = if let Some(prev) = prev {
+    let (net_recv_bps, net_sent_bps, read_bps, write_bps) = if let Some(prev) = prev {
         let elapsed = prev.timestamp.elapsed().as_secs_f64().max(0.001);
-        ((blk_read - prev.blk_read).max(0.0) / elapsed, (blk_write - prev.blk_write).max(0.0) / elapsed)
+        (
+            ((net_recv - prev.net_recv).max(0.0) / elapsed),
+            ((net_sent - prev.net_sent).max(0.0) / elapsed),
+            ((blk_read - prev.blk_read).max(0.0) / elapsed),
+            ((blk_write - prev.blk_write).max(0.0) / elapsed),
+        )
     } else {
-        (0.0, 0.0)
+        (0.0, 0.0, 0.0, 0.0)
     };
 
     (
         cpu_pct,
         memory_bytes,
         memory_limit_bytes,
-        net_recv,
-        net_sent,
+        net_recv_bps,
+        net_recv as u64,
+        net_sent_bps,
+        net_sent as u64,
         read_bps,
+        blk_read as u64,
         write_bps,
+        blk_write as u64,
     )
 }
 
@@ -261,5 +285,133 @@ fn sum_blkio(op: &'static str) -> impl FnOnce(&Vec<bollard::container::BlkioStat
             .filter(|e| e.op.eq_ignore_ascii_case(op))
             .map(|e| e.value)
             .sum()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_stats(
+        total_usage: u64,
+        system_cpu_usage: u64,
+        online_cpus: u64,
+        mem_usage: u64,
+        mem_limit: u64,
+        rx_bytes: u64,
+        tx_bytes: u64,
+        blk_read: u64,
+        blk_write: u64,
+    ) -> bollard::container::Stats {
+        let json = format!(r#"{{
+            "read": "",
+            "preread": "",
+            "num_procs": 0,
+            "pids_stats": {{ "current": null, "limit": null }},
+            "networks": {{
+                "eth0": {{
+                    "rx_bytes": {},
+                    "rx_packets": 0,
+                    "rx_errors": 0,
+                    "rx_dropped": 0,
+                    "tx_bytes": {},
+                    "tx_packets": 0,
+                    "tx_errors": 0,
+                    "tx_dropped": 0
+                }}
+            }},
+            "memory_stats": {{
+                "usage": {},
+                "limit": {}
+            }},
+            "blkio_stats": {{
+                "io_service_bytes_recursive": [
+                    {{ "major": 8, "minor": 0, "op": "Read", "value": {} }},
+                    {{ "major": 8, "minor": 0, "op": "Write", "value": {} }}
+                ]
+            }},
+            "cpu_stats": {{
+                "cpu_usage": {{
+                    "total_usage": {},
+                    "usage_in_kernelmode": 0,
+                    "usage_in_usermode": 0
+                }},
+                "system_cpu_usage": {},
+                "online_cpus": {},
+                "throttling_data": {{
+                    "periods": 0,
+                    "throttled_periods": 0,
+                    "throttled_time": 0
+                }}
+            }},
+            "precpu_stats": {{
+                "cpu_usage": {{
+                    "total_usage": 0,
+                    "usage_in_kernelmode": 0,
+                    "usage_in_usermode": 0
+                }},
+                "throttling_data": {{
+                    "periods": 0,
+                    "throttled_periods": 0,
+                    "throttled_time": 0
+                }}
+            }},
+            "storage_stats": {{}},
+            "name": "",
+            "id": ""
+        }}"#, rx_bytes, tx_bytes, mem_usage, mem_limit, blk_read, blk_write, total_usage, system_cpu_usage, online_cpus);
+
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[test]
+    fn test_derive_metrics_first_snapshot() {
+        let stats = make_stats(1000, 5000, 2, 50000, 100000, 100, 200, 300, 400);
+
+        let res = derive_metrics("test_id", &stats, None);
+        assert_eq!(res.0, 0.0); // cpu_pct is 0 without previous snapshot
+        assert_eq!(res.1, 50000); // memory_bytes
+        assert_eq!(res.2, 100000); // memory_limit_bytes
+        assert_eq!(res.3, 0.0); // net_recv_per_sec rate is 0
+        assert_eq!(res.4, 100); // net_recv_total
+        assert_eq!(res.5, 0.0); // net_sent_per_sec rate is 0
+        assert_eq!(res.6, 200); // net_sent_total
+        assert_eq!(res.7, 0.0); // disk_read_per_sec rate is 0
+        assert_eq!(res.8, 300); // disk_read_total
+        assert_eq!(res.9, 0.0); // disk_write_per_sec rate is 0
+        assert_eq!(res.10, 400); // disk_write_total
+    }
+
+    #[test]
+    fn test_derive_metrics_second_snapshot() {
+        // Initial setup
+        let prev = ContainerSnapshot {
+            timestamp: Instant::now() - Duration::from_secs(2),
+            cpu_total: 1000,
+            system_cpu: 5000,
+            net_recv: 100.0,
+            net_sent: 200.0,
+            blk_read: 300.0,
+            blk_write: 400.0,
+        };
+
+        let stats = make_stats(1200, 6000, 2, 50000, 100000, 300, 600, 500, 1200);
+
+        let res = derive_metrics("test_id", &stats, Some(&prev));
+        // cpu_pct: (200 / 1000) * 2 * 100 = 40%
+        assert!((res.0 - 40.0).abs() < 1.0);
+        assert_eq!(res.1, 50000); // memory_bytes
+        assert_eq!(res.2, 100000); // memory_limit_bytes
+        // rates should be approx (delta / 2.0s) = delta / 2.0
+        assert!((res.3 - 100.0).abs() < 5.0); // net_recv_per_sec
+        assert_eq!(res.4, 300); // net_recv_total
+        assert!((res.5 - 200.0).abs() < 5.0); // net_sent_per_sec
+        assert_eq!(res.6, 600); // net_sent_total
+        assert!((res.7 - 100.0).abs() < 5.0); // disk_read_per_sec
+        assert_eq!(res.8, 500); // disk_read_total
+        assert!((res.9 - 400.0).abs() < 5.0); // disk_write_per_sec
+        assert_eq!(res.10, 1200); // disk_write_total
     }
 }

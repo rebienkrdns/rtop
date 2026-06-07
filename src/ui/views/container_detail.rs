@@ -71,6 +71,19 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
                 Style::default().fg(Color::White),
             ),
         ]),
+        Line::from(vec![
+            Span::styled("Red Tot: ", Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("↓ {}  ·  ↑ {}", ByteSize(container.net_recv_total), ByteSize(container.net_sent_total)),
+                Style::default().fg(Color::White),
+            ),
+            Span::raw("   "),
+            Span::styled("Disk Tot: ", Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("R {}  ·  W {}", ByteSize(container.disk_read_total), ByteSize(container.disk_write_total)),
+                Style::default().fg(Color::White),
+            ),
+        ]),
     ];
     f.render_widget(Paragraph::new(info_lines), chunks[0]);
 
@@ -101,7 +114,7 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
     let net_gauge = Gauge::default()
         .block(Block::default()
             .title(Span::styled(
-                format!(" Red  ↓{}/s ↑{}/s ", ByteSize(net_recv as u64), ByteSize(net_sent as u64)),
+                format!(" Red  ↓{}/s (Total: {})  ↑{}/s (Total: {}) ", ByteSize(net_recv as u64), ByteSize(container.net_recv_total), ByteSize(net_sent as u64), ByteSize(container.net_sent_total)),
                 Style::default().fg(theme.muted),
             ))
             .borders(Borders::ALL).border_style(Style::default().fg(theme.muted)))
@@ -116,7 +129,7 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
     let disk_gauge = Gauge::default()
         .block(Block::default()
             .title(Span::styled(
-                format!(" Disco  R:{}/s W:{}/s ", ByteSize(disk_r as u64), ByteSize(disk_w as u64)),
+                format!(" Disco  R:{}/s (Total: {})  W:{}/s (Total: {}) ", ByteSize(disk_r as u64), ByteSize(container.disk_read_total), ByteSize(disk_w as u64), ByteSize(container.disk_write_total)),
                 Style::default().fg(theme.muted),
             ))
             .borders(Borders::ALL).border_style(Style::default().fg(theme.muted)))

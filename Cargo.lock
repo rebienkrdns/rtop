@@ -1007,6 +1007,7 @@ dependencies = [
  "futures-util",
  "ratatui",
  "serde",
+ "serde_json",
  "sysinfo",
  "thiserror",
  "tokio",

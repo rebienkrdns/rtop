@@ -35,9 +35,13 @@ pub struct ContainerData {
     pub memory_limit_bytes: u64,
     pub memory_pct: f64,
     pub net_recv_per_sec: f64,
+    pub net_recv_total: u64,
     pub net_sent_per_sec: f64,
+    pub net_sent_total: u64,
     pub disk_read_per_sec: f64,
+    pub disk_read_total: u64,
     pub disk_write_per_sec: f64,
+    pub disk_write_total: u64,
     pub ports: Vec<String>,
     pub volumes: Vec<String>,
 }
