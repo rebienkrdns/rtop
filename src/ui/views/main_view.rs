@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::app::AppState;
+use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
 use crate::ui::widgets::{cpu_bar, disk_bar, memory_bar};
 
@@ -38,8 +39,14 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     let left_area = middle_cols[0];
     let right_area = middle_cols[1];
 
-    // Header
-    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    // Header con control de intervalo
+    let now = Local::now().format("%H:%M:%S").to_string();
+    let idx = state.interval_idx;
+    let left_arrow = if idx > 0 { "◀ " } else { "  " };
+    let right_arrow = if idx < INTERVALS.len() - 1 { " ▶" } else { "  " };
+    let label = interval_label(idx);
+    let interval_ctrl = format!("[ {}{}{} ]", left_arrow, label, right_arrow);
+
     let header_text = Line::from(vec![
         Span::styled(
             " rtop ",
@@ -49,7 +56,14 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         ),
         Span::styled("│ ", Style::default().fg(theme.muted)),
         Span::styled(state.hostname.as_str(), Style::default().fg(theme.text)),
-        Span::styled("  ", Style::default()),
+        Span::styled("    Refresco: ", Style::default().fg(theme.muted)),
+        Span::styled(
+            interval_ctrl,
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("    ", Style::default()),
         Span::styled(now.as_str(), Style::default().fg(theme.muted)),
     ]);
     let header = Paragraph::new(header_text).block(
@@ -104,6 +118,13 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("Navegar  ", Style::default().fg(theme.muted)),
+        Span::styled(
+            "[ ] ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("Refresco  ", Style::default().fg(theme.muted)),
         Span::styled(
             "[Tab] ",
             Style::default()
