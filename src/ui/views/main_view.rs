@@ -1,4 +1,5 @@
 use chrono::Local;
+use bytesize::ByteSize;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -212,13 +213,50 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             process_table::render(f, inner, &state.processes, &state.process_table);
         }
         Tab::Containers => {
+            let title_str = if state.container_state.available {
+                let host_mem = state.memory.total_bytes;
+                let total_used: u64 = state.containers.iter().map(|c| c.memory_bytes).sum();
+                let has_unlimited = state.containers.iter().any(|c| c.memory_limit_bytes >= host_mem || c.memory_limit_bytes == 0);
+                let (total_limit, has_limit) = if has_unlimited {
+                    (host_mem, host_mem > 0)
+                } else {
+                    let sum_limits: u64 = state.containers.iter().map(|c| c.memory_limit_bytes).sum();
+                    (sum_limits, sum_limits > 0)
+                };
+                if has_limit {
+                    let pct = if total_limit > 0 {
+                        (total_used as f64 / total_limit as f64) * 100.0
+                    } else {
+                        0.0
+                    };
+                    format!(
+                        " Contenedores (Docker) · Mem. Global: {} / {} ({:.1}%) ",
+                        ByteSize(total_used),
+                        ByteSize(total_limit),
+                        pct
+                    )
+                } else {
+                    format!(" Contenedores (Docker) · Mem. Global: {} ", ByteSize(total_used))
+                }
+            } else {
+                " Contenedores (Docker no detectado) ".to_string()
+            };
+
             let block = Block::default()
+                .title(Span::styled(title_str, Style::default().fg(theme.accent)))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme.muted));
             let inner = block.inner(content_area);
             f.render_widget(block, content_area);
             if state.container_state.available {
-                container_table::render_with_cursor(f, inner, &state.containers, state.container_cursor);
+                container_table::render_with_cursor(
+                    f,
+                    inner,
+                    &state.containers,
+                    state.container_cursor,
+                    state.container_sort_col,
+                    state.container_sort_asc,
+                );
             } else {
                 let msg = state
                     .container_state

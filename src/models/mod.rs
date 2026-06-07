@@ -12,5 +12,5 @@ pub use memory::MemoryData;
 pub use network::{NetworkData, NetworkInterface};
 #[allow(unused_imports)]
 pub use process::{ProcessIoData, ProcessData, ProcessStatus, ProcessSortColumn};
-pub use container::{ContainerData, ContainerStatus};
+pub use container::{ContainerData, ContainerStatus, ContainerSortColumn};
 pub use psi::{PsiData, PsiValues};

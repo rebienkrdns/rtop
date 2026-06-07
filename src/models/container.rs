@@ -1,3 +1,15 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContainerSortColumn {
+    #[default]
+    Name,
+    Cpu,
+    Memory,
+    NetRecv,
+    NetSent,
+    DiskRead,
+    DiskWrite,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum ContainerStatus {
     Running,

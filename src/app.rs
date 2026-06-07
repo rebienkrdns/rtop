@@ -15,7 +15,7 @@ use crate::collectors::containers::{ContainerBackendState, ContainerCollector};
 use crate::collectors::disk::{DiskIoCollector, DiskSelectorEntry};
 use crate::collectors::system::SystemCollector;
 use crate::config::{self, Config, INTERVALS, Tab};
-use crate::models::{ContainerData, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessSortColumn, PsiData};
+use crate::models::{ContainerData, ContainerSortColumn, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessSortColumn, PsiData};
 use crate::ui;
 use crate::ui::views::container_detail::ConfirmAction;
 use crate::ui::views::container_logs::LogsViewState;
@@ -71,6 +71,8 @@ pub struct AppState {
     pub process_table: ProcessTableState,
     pub containers: Vec<ContainerData>,
     pub container_state: ContainerBackendState,
+    pub container_sort_col: ContainerSortColumn,
+    pub container_sort_asc: bool,
 
     // View navigation
     pub current_view: View,
@@ -124,6 +126,8 @@ impl AppState {
             process_table: ProcessTableState::default(),
             containers: vec![],
             container_state: ContainerBackendState::default(),
+            container_sort_col: ContainerSortColumn::default(),
+            container_sort_asc: true,
             current_view: View::Main,
             selected_process_idx: None,
             selected_container_idx: None,
@@ -153,6 +157,7 @@ impl AppState {
             self.proc_permission_denied = snapshot.proc_permission_denied;
             self.processes = snapshot.processes;
             self.containers = snapshot.containers;
+            self.sort_containers();
             self.container_state = snapshot.container_state;
             self.psi = snapshot.psi;
             if snapshot.docker_client.is_some() {
@@ -297,6 +302,40 @@ impl AppState {
         }
         self.process_table.cursor = 0;
         self.process_table.scroll = 0;
+    }
+
+    pub fn sort_containers(&mut self) {
+        self.containers.sort_by(|a, b| {
+            let ord = match self.container_sort_col {
+                ContainerSortColumn::Name => a.name.cmp(&b.name),
+                ContainerSortColumn::Cpu => a.cpu_pct.partial_cmp(&b.cpu_pct).unwrap_or(std::cmp::Ordering::Equal),
+                ContainerSortColumn::Memory => a.memory_bytes.cmp(&b.memory_bytes),
+                ContainerSortColumn::NetRecv => {
+                    a.net_recv_per_sec.partial_cmp(&b.net_recv_per_sec).unwrap_or(std::cmp::Ordering::Equal)
+                }
+                ContainerSortColumn::NetSent => {
+                    a.net_sent_per_sec.partial_cmp(&b.net_sent_per_sec).unwrap_or(std::cmp::Ordering::Equal)
+                }
+                ContainerSortColumn::DiskRead => {
+                    a.disk_read_per_sec.partial_cmp(&b.disk_read_per_sec).unwrap_or(std::cmp::Ordering::Equal)
+                }
+                ContainerSortColumn::DiskWrite => {
+                    a.disk_write_per_sec.partial_cmp(&b.disk_write_per_sec).unwrap_or(std::cmp::Ordering::Equal)
+                }
+            };
+            if self.container_sort_asc { ord } else { ord.reverse() }
+        });
+    }
+
+    pub fn container_sort_by(&mut self, col: ContainerSortColumn) {
+        if self.container_sort_col == col {
+            self.container_sort_asc = !self.container_sort_asc;
+        } else {
+            self.container_sort_col = col;
+            self.container_sort_asc = false;
+        }
+        self.sort_containers();
+        self.container_cursor = 0;
     }
 
     pub fn container_move_cursor(&mut self, delta: i32) {
@@ -714,6 +753,25 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         }
                         (KeyCode::Char('w'), _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
                             state.process_sort_by(ProcessSortColumn::DiskWrite);
+                        }
+                        // Container table: sort keys
+                        (KeyCode::Char('c'), _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            state.container_sort_by(ContainerSortColumn::Cpu);
+                        }
+                        (KeyCode::Char('m'), _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            state.container_sort_by(ContainerSortColumn::Memory);
+                        }
+                        (KeyCode::Char('i'), _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            state.container_sort_by(ContainerSortColumn::NetRecv);
+                        }
+                        (KeyCode::Char('o'), _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            state.container_sort_by(ContainerSortColumn::NetSent);
+                        }
+                        (KeyCode::Char('r'), _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            state.container_sort_by(ContainerSortColumn::DiskRead);
+                        }
+                        (KeyCode::Char('w'), _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            state.container_sort_by(ContainerSortColumn::DiskWrite);
                         }
                         // Process table: navigation
                         (KeyCode::Up, _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {

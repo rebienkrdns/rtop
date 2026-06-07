@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Cell, Paragraph, Row, Table},
     Frame,
 };
 
@@ -122,38 +122,36 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
     let is_dr = state.sort_col == ProcessSortColumn::DiskRead;
     let is_dw = state.sort_col == ProcessSortColumn::DiskWrite;
 
-    // Header
-    let header = Line::from(vec![
-        Span::styled(format!("{:<22}", "Proceso"), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled(
-            format!("{:>8}", col_header("CPU%", is_cpu, state.sort_asc)),
-            if is_cpu { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Cyan) },
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("{:>12}", col_header("RAM", is_mem, state.sort_asc)),
-            if is_mem { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Cyan) },
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("{:>12}", col_header("Disco R", is_dr, state.sort_asc)),
-            if is_dr { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Cyan) },
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("{:>12}", col_header("Disco W", is_dw, state.sort_asc)),
-            if is_dw { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Cyan) },
-        ),
-        Span::raw("  "),
-        Span::styled(format!("{:<12}", "Estado"), Style::default().fg(Color::Cyan)),
-    ]);
+    let header_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+
+    let header_cells = vec![
+        Cell::from(Line::from(Span::styled("PID", header_style)).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Span::styled("Proceso", header_style)),
+        Cell::from(Line::from(Span::styled(
+            col_header("CPU%", is_cpu, state.sort_asc),
+            if is_cpu { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Line::from(Span::styled(
+            col_header("RAM", is_mem, state.sort_asc),
+            if is_mem { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Line::from(Span::styled(
+            col_header("Disco R", is_dr, state.sort_asc),
+            if is_dr { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Line::from(Span::styled(
+            col_header("Disco W", is_dw, state.sort_asc),
+            if is_dw { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Span::styled("Estado", header_style)),
+    ];
+    let header_row = Row::new(header_cells).height(1);
 
     let visible_rows = (table_area.height as usize).saturating_sub(1); // minus header
     let scroll = state.scroll;
     let visible_end = (scroll + visible_rows).min(filtered.len());
 
-    let mut lines = vec![header];
-
+    let mut rows = Vec::new();
     for (i, p) in filtered[scroll..visible_end].iter().enumerate() {
         let abs_idx = scroll + i;
         let selected = abs_idx == state.cursor;
@@ -164,49 +162,81 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
         };
 
         let cpu_color = if selected { Color::Black } else { Theme::color_for_pct(p.cpu_pct) };
-        let name_display = if p.name.len() > 21 {
-            format!("{:.19}…", &p.name[..19])
-        } else {
-            p.name.clone()
-        };
 
-        lines.push(Line::from(vec![
-            Span::styled(format!("{:<22}", name_display), row_style.fg(if selected { Color::Black } else { Color::White })),
-            Span::styled(format!("{:>8.1}", p.cpu_pct), row_style.fg(cpu_color)),
-            Span::raw("  "),
-            Span::styled(format!("{:>12}", ByteSize(p.memory_bytes)), row_style.fg(if selected { Color::Black } else { Color::White })),
-            Span::raw("  "),
-            Span::styled(format!("{:>12}", fmt_rate(p.disk_read_per_sec)), row_style.fg(if selected { Color::Black } else { Color::Blue })),
-            Span::raw("  "),
-            Span::styled(format!("{:>12}", fmt_rate(p.disk_write_per_sec)), row_style.fg(if selected { Color::Black } else { Color::Yellow })),
-            Span::raw("  "),
+        let pid_cell = Cell::from(Line::from(vec![
             Span::styled(
-                format!("{:<12}", p.status.to_string_es()),
-                row_style.fg(if selected { Color::Black } else { Color::Green }),
-            ),
+                format!("{}", p.pid),
+                row_style.fg(if selected { Color::Black } else { Color::White })
+            )
+        ]).alignment(ratatui::layout::Alignment::Right));
+
+        let process_cell = Cell::from(Line::from(vec![
+            Span::styled(
+                p.name.clone(),
+                row_style.fg(if selected { Color::Black } else { Color::White })
+            )
         ]));
+
+        let cpu_cell = Cell::from(Line::from(vec![
+            Span::styled(
+                format!("{:.1}%", p.cpu_pct),
+                row_style.fg(cpu_color)
+            )
+        ]).alignment(ratatui::layout::Alignment::Right));
+
+        let ram_cell = Cell::from(Line::from(vec![
+            Span::styled(
+                format!("{}", ByteSize(p.memory_bytes)),
+                row_style.fg(if selected { Color::Black } else { Color::White })
+            )
+        ]).alignment(ratatui::layout::Alignment::Right));
+
+        let disk_r_cell = Cell::from(Line::from(vec![
+            Span::styled(
+                fmt_rate(p.disk_read_per_sec),
+                row_style.fg(if selected { Color::Black } else { Color::Blue })
+            )
+        ]).alignment(ratatui::layout::Alignment::Right));
+
+        let disk_w_cell = Cell::from(Line::from(vec![
+            Span::styled(
+                fmt_rate(p.disk_write_per_sec),
+                row_style.fg(if selected { Color::Black } else { Color::Yellow })
+            )
+        ]).alignment(ratatui::layout::Alignment::Right));
+
+        let status_cell = Cell::from(Line::from(vec![
+            Span::styled(
+                p.status.to_string_es(),
+                row_style.fg(if selected { Color::Black } else { Color::Green })
+            )
+        ]));
+
+        let row = Row::new(vec![
+            pid_cell,
+            process_cell,
+            cpu_cell,
+            ram_cell,
+            disk_r_cell,
+            disk_w_cell,
+            status_cell,
+        ]).style(row_style);
+        rows.push(row);
     }
 
-    // Status bar
-    let status = format!(
-        " {} procesos{}",
-        filtered.len(),
-        if !filter_lower.is_empty() { format!(" (filtrado de {})", processes.len()) } else { String::new() }
-    );
-    if let Some(last_line) = lines.last_mut() {
-        let _ = last_line; // keep borrow checker happy
-    }
+    let constraints = vec![
+        Constraint::Length(6),  // PID
+        Constraint::Min(15),    // Process Name
+        Constraint::Length(8),  // CPU%
+        Constraint::Length(12), // RAM
+        Constraint::Length(12), // Disk Read
+        Constraint::Length(12), // Disk Write
+        Constraint::Length(12), // Status
+    ];
 
-    // Render table
-    f.render_widget(Paragraph::new(lines), table_area);
+    let table = Table::new(rows, constraints)
+        .header(header_row)
+        .column_spacing(2);
 
-    // Status line at bottom if space
-    let status_area = Rect {
-        x: table_area.x,
-        y: table_area.y + table_area.height.saturating_sub(0),
-        width: table_area.width,
-        height: 0, // no extra space, skip
-    };
-    let _ = status_area;
-    let _ = status;
+    f.render_widget(table, table_area);
 }

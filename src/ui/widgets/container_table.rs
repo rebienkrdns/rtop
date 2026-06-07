@@ -3,15 +3,15 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Cell, Paragraph, Row, Table},
     Frame,
 };
 
-use crate::models::{ContainerData, ContainerStatus};
+use crate::models::{ContainerData, ContainerSortColumn, ContainerStatus};
 use crate::ui::theme::Theme;
 
-fn fmt_rate(rate: f64) -> String {
-    format!("{}/s", ByteSize(rate as u64))
+fn format_bps(bps: f64) -> String {
+    format!("{}/s", ByteSize(bps as u64))
 }
 
 fn status_color(status: &ContainerStatus) -> Color {
@@ -25,68 +25,248 @@ fn status_color(status: &ContainerStatus) -> Color {
     }
 }
 
-#[allow(dead_code)]
-pub fn render(f: &mut Frame, area: Rect, containers: &[ContainerData]) {
-    render_with_cursor(f, area, containers, 0);
+fn col_header(label: &str, active: bool, asc: bool) -> String {
+    if active {
+        let indicator = if asc { "▲" } else { "▼" };
+        format!("{} {}", label, indicator)
+    } else {
+        label.to_string()
+    }
 }
 
-pub fn render_with_cursor(f: &mut Frame, area: Rect, containers: &[ContainerData], cursor: usize) {
-    let header_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
-
-    let mut lines = vec![Line::from(vec![
-        Span::styled(format!("{:<18}", "Nombre"), header_style),
-        Span::styled(format!("{:>6}", "CPU%"), header_style),
-        Span::raw("  "),
-        Span::styled(format!("{:>12}", "RAM"), header_style),
-        Span::raw("  "),
-        Span::styled(format!("{:>14}", "Red ↓/↑"), header_style),
-        Span::raw("  "),
-        Span::styled(format!("{:>14}", "Disco R/W"), header_style),
-        Span::raw("  "),
-        Span::styled("Estado", header_style),
-    ])];
+pub fn render_with_cursor(
+    f: &mut Frame,
+    area: Rect,
+    containers: &[ContainerData],
+    cursor: usize,
+    sort_col: ContainerSortColumn,
+    sort_asc: bool,
+) {
+    let theme = Theme::default_theme();
 
     if containers.is_empty() {
-        lines.push(Line::from(Span::styled(
+        let msg = Paragraph::new(Line::from(Span::styled(
             "  Sin contenedores activos",
             Style::default().fg(Color::DarkGray),
         )));
-    } else {
-        for (i, c) in containers.iter().enumerate().take(area.height.saturating_sub(1) as usize) {
-            let selected = i == cursor;
-            let row_style = if selected {
-                Style::default().bg(Theme::default_theme().accent).fg(Color::Black)
-            } else {
-                Style::default()
-            };
-            let mem_str = format!("{}/{}", ByteSize(c.memory_bytes), ByteSize(c.memory_limit_bytes));
-            let net_str = format!("↓{} ↑{}", fmt_rate(c.net_recv_per_sec), fmt_rate(c.net_sent_per_sec));
-            let disk_str = format!("R{} W{}", fmt_rate(c.disk_read_per_sec), fmt_rate(c.disk_write_per_sec));
-            let status_label = c.status.as_str();
-
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("{:<18}", c.name.chars().take(17).collect::<String>()),
-                    row_style.fg(if selected { Color::Black } else { Color::White }),
-                ),
-                Span::styled(
-                    format!("{:>6.1}", c.cpu_pct),
-                    row_style.fg(if selected { Color::Black } else { Theme::color_for_pct(c.cpu_pct) }),
-                ),
-                Span::raw("  "),
-                Span::styled(format!("{:>12}", mem_str), row_style.fg(if selected { Color::Black } else { Color::White })),
-                Span::raw("  "),
-                Span::styled(format!("{:>14}", net_str), row_style.fg(if selected { Color::Black } else { Color::Cyan })),
-                Span::raw("  "),
-                Span::styled(format!("{:>14}", disk_str), row_style.fg(if selected { Color::Black } else { Color::Yellow })),
-                Span::raw("  "),
-                Span::styled(
-                    format!("● {}", status_label),
-                    if selected { row_style } else { Style::default().fg(status_color(&c.status)) },
-                ),
-            ]));
-        }
+        f.render_widget(msg, area);
+        return;
     }
 
-    f.render_widget(Paragraph::new(lines), area);
+    let is_wide = f.size().width >= 120;
+
+    let constraints = if is_wide {
+        vec![
+            ratatui::layout::Constraint::Length(8),  // ID
+            ratatui::layout::Constraint::Min(12),    // Name
+            ratatui::layout::Constraint::Length(7),  // CPU%
+            ratatui::layout::Constraint::Length(15), // RAM
+            ratatui::layout::Constraint::Length(18), // Net Recv
+            ratatui::layout::Constraint::Length(18), // Net Sent
+            ratatui::layout::Constraint::Length(18), // Disk Read
+            ratatui::layout::Constraint::Length(18), // Disk Write
+            ratatui::layout::Constraint::Length(10), // Status
+        ]
+    } else {
+        vec![
+            ratatui::layout::Constraint::Length(8),  // ID
+            ratatui::layout::Constraint::Min(10),    // Name
+            ratatui::layout::Constraint::Length(7),  // CPU%
+            ratatui::layout::Constraint::Length(12), // RAM
+            ratatui::layout::Constraint::Length(10), // Net Recv
+            ratatui::layout::Constraint::Length(10), // Net Sent
+            ratatui::layout::Constraint::Length(10), // Disk Read
+            ratatui::layout::Constraint::Length(10), // Disk Write
+            ratatui::layout::Constraint::Length(10), // Status
+        ]
+    };
+
+    let is_cpu = sort_col == ContainerSortColumn::Cpu;
+    let is_mem = sort_col == ContainerSortColumn::Memory;
+    let is_net_rx = sort_col == ContainerSortColumn::NetRecv;
+    let is_net_tx = sort_col == ContainerSortColumn::NetSent;
+    let is_disk_r = sort_col == ContainerSortColumn::DiskRead;
+    let is_disk_w = sort_col == ContainerSortColumn::DiskWrite;
+
+    let header_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+
+    let header_cells = vec![
+        Cell::from(Span::styled("ID", header_style)),
+        Cell::from(Span::styled(
+            col_header("Contenedor", sort_col == ContainerSortColumn::Name, sort_asc),
+            if sort_col == ContainerSortColumn::Name {
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+            } else {
+                header_style
+            },
+        )),
+        Cell::from(Line::from(Span::styled(
+            col_header("CPU%", is_cpu, sort_asc),
+            if is_cpu {
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+            } else {
+                header_style
+            },
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Line::from(Span::styled(
+            col_header("RAM", is_mem, sort_asc),
+            if is_mem {
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+            } else {
+                header_style
+            },
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Line::from(Span::styled(
+            col_header(if is_wide { "Red ↓ (Tot)" } else { "Red ↓" }, is_net_rx, sort_asc),
+            if is_net_rx {
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+            } else {
+                header_style
+            },
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Line::from(Span::styled(
+            col_header(if is_wide { "Red ↑ (Tot)" } else { "Red ↑" }, is_net_tx, sort_asc),
+            if is_net_tx {
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+            } else {
+                header_style
+            },
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Line::from(Span::styled(
+            col_header(if is_wide { "Disk R (Tot)" } else { "Disk R" }, is_disk_r, sort_asc),
+            if is_disk_r {
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+            } else {
+                header_style
+            },
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Line::from(Span::styled(
+            col_header(if is_wide { "Disk W (Tot)" } else { "Disk W" }, is_disk_w, sort_asc),
+            if is_disk_w {
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+            } else {
+                header_style
+            },
+        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(Span::styled("Estado", header_style)),
+    ];
+    let header_row = Row::new(header_cells).height(1);
+
+    let mut rows = Vec::new();
+    for (i, c) in containers.iter().enumerate() {
+        let selected = i == cursor;
+        let row_style = if selected {
+            Style::default().bg(theme.accent).fg(Color::Black)
+        } else {
+            Style::default()
+        };
+
+        // ID cell
+        let id_cell = Cell::from(Line::from(vec![Span::styled(
+            format!("{:<8}", c.id.chars().take(8).collect::<String>()),
+            row_style.fg(if selected { Color::Black } else { Color::White }),
+        )]));
+
+        // Name cell
+        let name_cell = Cell::from(Line::from(vec![Span::styled(
+            c.name.clone(),
+            row_style.fg(if selected { Color::Black } else { Color::White }),
+        )]));
+
+        // CPU% cell
+        let cpu_color = if selected {
+            Color::Black
+        } else {
+            Theme::color_for_pct(c.cpu_pct)
+        };
+        let cpu_cell = Cell::from(Line::from(vec![Span::styled(
+            format!("{:.1}%", c.cpu_pct),
+            row_style.fg(cpu_color),
+        )]).alignment(ratatui::layout::Alignment::Right));
+
+        // RAM Used + % cell
+        let ram_str = format!("{} ({:.1}%)", ByteSize(c.memory_bytes), c.memory_pct);
+        let ram_cell = Cell::from(Line::from(vec![Span::styled(
+            ram_str,
+            row_style.fg(if selected { Color::Black } else { Color::White }),
+        )]).alignment(ratatui::layout::Alignment::Right));
+
+        // Red ↓ (rate + total if wide)
+        let rx_str = if is_wide {
+            format!("{} ({})", format_bps(c.net_recv_per_sec), ByteSize(c.net_recv_total))
+        } else {
+            format_bps(c.net_recv_per_sec)
+        };
+        let rx_cell = Cell::from(Line::from(vec![Span::styled(
+            rx_str,
+            row_style.fg(if selected { Color::Black } else { Color::Green }),
+        )]).alignment(ratatui::layout::Alignment::Right));
+
+        // Red ↑ (rate + total if wide)
+        let tx_str = if is_wide {
+            format!("{} ({})", format_bps(c.net_sent_per_sec), ByteSize(c.net_sent_total))
+        } else {
+            format_bps(c.net_sent_per_sec)
+        };
+        let tx_cell = Cell::from(Line::from(vec![Span::styled(
+            tx_str,
+            row_style.fg(if selected { Color::Black } else { Color::Blue }),
+        )]).alignment(ratatui::layout::Alignment::Right));
+
+        // Disco R (rate + total if wide)
+        let disk_r_str = if is_wide {
+            format!("{} ({})", format_bps(c.disk_read_per_sec), ByteSize(c.disk_read_total))
+        } else {
+            format_bps(c.disk_read_per_sec)
+        };
+        let disk_r_cell = Cell::from(Line::from(vec![Span::styled(
+            disk_r_str,
+            row_style.fg(if selected { Color::Black } else { Color::Yellow }),
+        )]).alignment(ratatui::layout::Alignment::Right));
+
+        // Disco W (rate + total if wide)
+        let disk_w_str = if is_wide {
+            format!("{} ({})", format_bps(c.disk_write_per_sec), ByteSize(c.disk_write_total))
+        } else {
+            format_bps(c.disk_write_per_sec)
+        };
+        let disk_w_cell = Cell::from(Line::from(vec![Span::styled(
+            disk_w_str,
+            row_style.fg(if selected { Color::Black } else { Color::Yellow }),
+        )]).alignment(ratatui::layout::Alignment::Right));
+
+        // Estado cell (circular indicator + status)
+        let status_indicator = "● ";
+        let status_color = if selected {
+            Color::Black
+        } else {
+            status_color(&c.status)
+        };
+        let status_text = c.status.as_str();
+
+        let status_cell = Cell::from(Line::from(vec![
+            Span::styled(status_indicator, row_style.fg(status_color)),
+            Span::styled(status_text, row_style.fg(if selected { Color::Black } else { Color::White })),
+        ]));
+
+        let row = Row::new(vec![
+            id_cell,
+            name_cell,
+            cpu_cell,
+            ram_cell,
+            rx_cell,
+            tx_cell,
+            disk_r_cell,
+            disk_w_cell,
+            status_cell,
+        ])
+        .style(row_style);
+        rows.push(row);
+    }
+
+    let table = Table::new(rows, constraints)
+        .header(header_row)
+        .column_spacing(2);
+
+    f.render_widget(table, area);
 }
