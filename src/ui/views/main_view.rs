@@ -11,7 +11,7 @@ use crate::app::AppState;
 use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
 use crate::ui::views::{disk_selector, nic_selector};
-use crate::ui::widgets::{container_table, cpu_bar, disk_bar, memory_bar, network_widget, process_table};
+use crate::ui::widgets::{container_table, cpu_bar, disk_bar, memory_bar, network_widget, process_table, psi_widget};
 
 pub fn draw(f: &mut Frame, state: &AppState) {
     let theme = Theme::default_theme();
@@ -65,27 +65,117 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         header_area,
     );
 
-    // — Métricas: izquierda CPU/RAM/Disco | derecha Red —
-    let metrics_cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(metrics_area);
+    // — Métricas responsivas: 3 columnas si es ancho, 2 columnas si es compacto —
+    let is_wide = area.width >= 120;
 
-    let left_block = Block::default()
-        .title(Span::styled(" CPU · RAM · Disco ", Style::default().fg(theme.accent)))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.muted));
-    let left_inner = left_block.inner(metrics_cols[0]);
-    f.render_widget(left_block, metrics_cols[0]);
-    draw_metrics(f, left_inner, state);
+    if is_wide {
+        let metrics_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(30),
+                Constraint::Percentage(35),
+                Constraint::Percentage(35),
+            ])
+            .split(metrics_area);
 
-    let right_block = Block::default()
-        .title(Span::styled(" Red ", Style::default().fg(theme.accent)))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.muted));
-    let right_inner = right_block.inner(metrics_cols[1]);
-    f.render_widget(right_block, metrics_cols[1]);
-    network_widget::render(f, right_inner, state);
+        // Columna 1: CPU y RAM
+        let col1_block = Block::default()
+            .title(Span::styled(" CPU · RAM ", Style::default().fg(theme.accent)))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.muted));
+        let col1_inner = col1_block.inner(metrics_cols[0]);
+        f.render_widget(col1_block, metrics_cols[0]);
+
+        let col1_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2), // CPU
+                Constraint::Length(1), // spacer
+                Constraint::Length(2), // RAM
+                Constraint::Min(0),
+            ])
+            .split(col1_inner);
+        cpu_bar::render_with_loading(f, col1_layout[0], &state.cpu, state.data_loaded);
+        memory_bar::render_with_loading(f, col1_layout[2], &state.memory, state.data_loaded);
+
+        // Columna 2: Disco y Red (I/O)
+        let col2_block = Block::default()
+            .title(Span::styled(" Disco · Red (I/O) ", Style::default().fg(theme.accent)))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.muted));
+        let col2_inner = col2_block.inner(metrics_cols[1]);
+        f.render_widget(col2_block, metrics_cols[1]);
+
+        let col2_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4), // Disco (título + barra + I/O + margen/spacer)
+                Constraint::Length(1), // spacer
+                Constraint::Min(0),    // Red
+            ])
+            .split(col2_inner);
+
+        let selected_disk = state.selected_disk.as_deref().unwrap_or("");
+        let disk_to_render = state
+            .disks
+            .iter()
+            .find(|d| {
+                let short = crate::collectors::disk::device_short_name(&d.device);
+                short == selected_disk
+            })
+            .or_else(|| state.disks.first());
+
+        if let Some(disk) = disk_to_render {
+            disk_bar::render(f, col2_layout[0], disk);
+        }
+        network_widget::render(f, col2_layout[2], state);
+
+        // Columna 3: Presión (PSI)
+        let col3_block = Block::default()
+            .title(Span::styled(" Presión (PSI) ", Style::default().fg(theme.accent)))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.muted));
+        let col3_inner = col3_block.inner(metrics_cols[2]);
+        f.render_widget(col3_block, metrics_cols[2]);
+        psi_widget::render(f, col3_inner, state.psi.as_ref(), true);
+    } else {
+        let metrics_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(45),
+                Constraint::Percentage(55),
+            ])
+            .split(metrics_area);
+
+        // Columna 1: CPU, RAM y Disco
+        let col1_block = Block::default()
+            .title(Span::styled(" CPU · RAM · Disco ", Style::default().fg(theme.accent)))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.muted));
+        let col1_inner = col1_block.inner(metrics_cols[0]);
+        f.render_widget(col1_block, metrics_cols[0]);
+        draw_metrics(f, col1_inner, state);
+
+        // Columna 2: Red y Presión (PSI)
+        let col2_block = Block::default()
+            .title(Span::styled(" Red · Presión (PSI) ", Style::default().fg(theme.accent)))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.muted));
+        let col2_inner = col2_block.inner(metrics_cols[1]);
+        f.render_widget(col2_block, metrics_cols[1]);
+
+        let col2_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4), // Red
+                Constraint::Length(1), // spacer
+                Constraint::Min(0),    // PSI
+            ])
+            .split(col2_inner);
+
+        network_widget::render(f, col2_layout[0], state);
+        psi_widget::render(f, col2_layout[2], state.psi.as_ref(), false);
+    }
 
     // — Barra de pestañas —
     let tabs_line = Line::from(vec![

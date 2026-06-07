@@ -29,6 +29,30 @@ fn layout_no_panic_80x24() {
             .split(area);
         // El contenido mínimo (Min(5)) no debe ser negativo
         assert!(vertical[3].height >= 1, "área de contenido demasiado pequeña en 80x24");
+
+        // Test compact horizontal split (width < 120)
+        let metrics_area = vertical[1];
+        let metrics_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(45),
+                Constraint::Percentage(55),
+            ])
+            .split(metrics_area);
+
+        // Columna 2: Red y PSI
+        let col2_block = Block::default().borders(Borders::ALL);
+        let col2_inner = col2_block.inner(metrics_cols[1]);
+        let col2_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4), // Red
+                Constraint::Length(1), // spacer
+                Constraint::Min(0),    // PSI
+            ])
+            .split(col2_inner);
+        assert!(col2_layout[2].height >= 1);
+
         f.render_widget(Block::default().borders(Borders::ALL), area);
     }).unwrap();
 }
@@ -50,6 +74,45 @@ fn layout_no_panic_120x35() {
             ])
             .split(area);
         assert!(vertical[3].height >= 11);
+
+        // Test wide horizontal split (width >= 120)
+        let metrics_area = vertical[1];
+        let metrics_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(30),
+                Constraint::Percentage(35),
+                Constraint::Percentage(35),
+            ])
+            .split(metrics_area);
+
+        // Columna 1: CPU y RAM
+        let col1_block = Block::default().borders(Borders::ALL);
+        let col1_inner = col1_block.inner(metrics_cols[0]);
+        let col1_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Length(1),
+                Constraint::Length(2),
+                Constraint::Min(0),
+            ])
+            .split(col1_inner);
+        assert!(col1_layout[2].height >= 1);
+
+        // Columna 2: Disco y Red
+        let col2_block = Block::default().borders(Borders::ALL);
+        let col2_inner = col2_block.inner(metrics_cols[1]);
+        let col2_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4),
+                Constraint::Length(1),
+                Constraint::Min(0),
+            ])
+            .split(col2_inner);
+        assert!(col2_layout[2].height >= 1);
+
         f.render_widget(Block::default().borders(Borders::ALL), area);
     }).unwrap();
 }
@@ -71,6 +134,32 @@ fn layout_no_panic_200x50() {
             ])
             .split(area);
         assert!(vertical[3].height >= 26);
+
+        // Test wide horizontal split (width >= 120)
+        let metrics_area = vertical[1];
+        let metrics_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(30),
+                Constraint::Percentage(35),
+                Constraint::Percentage(35),
+            ])
+            .split(metrics_area);
+
+        // Columna 1
+        let col1_block = Block::default().borders(Borders::ALL);
+        let col1_inner = col1_block.inner(metrics_cols[0]);
+        let col1_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Length(1),
+                Constraint::Length(2),
+                Constraint::Min(0),
+            ])
+            .split(col1_inner);
+        assert!(col1_layout[2].height >= 1);
+
         f.render_widget(Block::default().borders(Borders::ALL), area);
     }).unwrap();
 }

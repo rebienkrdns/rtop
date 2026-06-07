@@ -4,3 +4,4 @@ pub mod memory_bar;
 pub mod process_table;
 pub mod container_table;
 pub mod network_widget;
+pub mod psi_widget;
