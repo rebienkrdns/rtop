@@ -1,4 +1,6 @@
 mod app;
+mod collectors;
+mod models;
 mod ui;
 
 use std::io::Stdout;
