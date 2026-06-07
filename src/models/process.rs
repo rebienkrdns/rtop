@@ -1,3 +1,12 @@
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProcessSortColumn {
+    #[default]
+    Cpu,
+    Memory,
+    DiskRead,
+    DiskWrite,
+}
+
 #[derive(Clone, Default)]
 #[allow(dead_code)]
 pub struct ProcessIoData {

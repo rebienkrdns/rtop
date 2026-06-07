@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::app::AppState;
-use crate::config::{interval_label, Tab, INTERVALS};
+use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
 use crate::ui::views::{disk_selector, nic_selector};
 use crate::ui::widgets::{container_table, cpu_bar, disk_bar, memory_bar, network_widget, process_table};
@@ -112,7 +112,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 .border_style(Style::default().fg(theme.muted));
             let inner = block.inner(content_area);
             f.render_widget(block, content_area);
-            process_table::render(f, inner, &state.processes);
+            process_table::render(f, inner, &state.processes, &state.process_table);
         }
         Tab::Containers => {
             let block = Block::default()
@@ -141,18 +141,38 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     }
 
     // — Footer —
-    let footer_text = Line::from(vec![
-        Span::styled(" [q] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled("Salir  ", Style::default().fg(theme.muted)),
-        Span::styled("[◀▶] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled("Refresco  ", Style::default().fg(theme.muted)),
-        Span::styled("[F2] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled("Disco  ", Style::default().fg(theme.muted)),
-        Span::styled("[F3] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled("Red  ", Style::default().fg(theme.muted)),
-        Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled("Cambiar pestaña", Style::default().fg(theme.muted)),
-    ]);
+    use crate::config::Tab;
+    let footer_text = if state.active_tab == Tab::Processes {
+        Line::from(vec![
+            Span::styled(" [q] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Salir  ", Style::default().fg(theme.muted)),
+            Span::styled("[/] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Filtrar  ", Style::default().fg(theme.muted)),
+            Span::styled("[c] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("CPU  ", Style::default().fg(theme.muted)),
+            Span::styled("[m] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("RAM  ", Style::default().fg(theme.muted)),
+            Span::styled("[r] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("DiskR  ", Style::default().fg(theme.muted)),
+            Span::styled("[w] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("DiskW  ", Style::default().fg(theme.muted)),
+            Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Contenedores", Style::default().fg(theme.muted)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(" [q] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Salir  ", Style::default().fg(theme.muted)),
+            Span::styled("[◀▶] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Refresco  ", Style::default().fg(theme.muted)),
+            Span::styled("[F2] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Disco  ", Style::default().fg(theme.muted)),
+            Span::styled("[F3] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Red  ", Style::default().fg(theme.muted)),
+            Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Cambiar pestaña", Style::default().fg(theme.muted)),
+        ])
+    };
     f.render_widget(
         Paragraph::new(footer_text)
             .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.muted))),

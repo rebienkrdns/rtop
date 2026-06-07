@@ -13,8 +13,9 @@ use crate::collectors::containers::{ContainerBackendState, ContainerCollector};
 use crate::collectors::disk::{DiskIoCollector, DiskSelectorEntry};
 use crate::collectors::system::SystemCollector;
 use crate::config::{self, Config, INTERVALS, Tab};
-use crate::models::{ContainerData, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData};
+use crate::models::{ContainerData, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessSortColumn};
 use crate::ui;
+use crate::ui::widgets::process_table::ProcessTableState;
 
 pub struct AppSnapshot {
     pub cpu: CpuData,
@@ -53,6 +54,7 @@ pub struct AppState {
 
     pub proc_permission_denied: bool,
     pub processes: Vec<ProcessData>,
+    pub process_table: ProcessTableState,
     pub containers: Vec<ContainerData>,
     pub container_state: ContainerBackendState,
 
@@ -89,6 +91,7 @@ impl AppState {
             nic_cursor: 0,
             proc_permission_denied: false,
             processes: vec![],
+            process_table: ProcessTableState::default(),
             containers: vec![],
             container_state: ContainerBackendState::default(),
             metrics_rx: rx,
@@ -209,6 +212,44 @@ impl AppState {
             config::save_non_blocking(self.cfg.clone());
         }
         self.show_disk_selector = false;
+    }
+
+    pub fn filtered_process_count(&self) -> usize {
+        if self.process_table.filter.is_empty() {
+            return self.processes.len();
+        }
+        let f = self.process_table.filter.to_lowercase();
+        self.processes.iter().filter(|p| p.name.to_lowercase().contains(&f)).count()
+    }
+
+    pub fn process_move_cursor(&mut self, delta: i32) {
+        let count = self.filtered_process_count();
+        if count == 0 {
+            return;
+        }
+        let new_cursor = (self.process_table.cursor as i32 + delta)
+            .clamp(0, (count as i32) - 1) as usize;
+        self.process_table.cursor = new_cursor;
+
+        // Adjust scroll to keep cursor visible
+        // We need to estimate visible rows: use a fixed estimate here, UI will handle the real clamp
+        let visible = 20usize; // conservative
+        if new_cursor < self.process_table.scroll {
+            self.process_table.scroll = new_cursor;
+        } else if new_cursor >= self.process_table.scroll + visible {
+            self.process_table.scroll = new_cursor.saturating_sub(visible - 1);
+        }
+    }
+
+    pub fn process_sort_by(&mut self, col: ProcessSortColumn) {
+        if self.process_table.sort_col == col {
+            self.process_table.sort_asc = !self.process_table.sort_asc;
+        } else {
+            self.process_table.sort_col = col;
+            self.process_table.sort_asc = false;
+        }
+        self.process_table.cursor = 0;
+        self.process_table.scroll = 0;
     }
 
     fn step_interval(&mut self, delta: i32) {
@@ -365,11 +406,57 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         (KeyCode::Esc, _) if state.show_disk_selector => {
                             state.show_disk_selector = false;
                         }
-                        (KeyCode::Char('['), _) if !state.show_nic_selector && !state.show_disk_selector => {
+                        (KeyCode::Char('['), _) if !state.show_nic_selector && !state.show_disk_selector && !state.process_table.filter_active => {
                             state.step_interval(-1);
                         }
-                        (KeyCode::Char(']'), _) if !state.show_nic_selector && !state.show_disk_selector => {
+                        (KeyCode::Char(']'), _) if !state.show_nic_selector && !state.show_disk_selector && !state.process_table.filter_active => {
                             state.step_interval(1);
+                        }
+                        // Process table: filter mode input
+                        (KeyCode::Char(ch), _) if state.process_table.filter_active && state.active_tab == Tab::Processes => {
+                            state.process_table.filter.push(ch);
+                            state.process_table.cursor = 0;
+                            state.process_table.scroll = 0;
+                        }
+                        (KeyCode::Backspace, _) if state.process_table.filter_active && state.active_tab == Tab::Processes => {
+                            state.process_table.filter.pop();
+                            state.process_table.cursor = 0;
+                            state.process_table.scroll = 0;
+                        }
+                        (KeyCode::Esc, _) if state.process_table.filter_active && state.active_tab == Tab::Processes => {
+                            state.process_table.filter_active = false;
+                        }
+                        (KeyCode::Enter, _) if state.process_table.filter_active && state.active_tab == Tab::Processes => {
+                            state.process_table.filter_active = false;
+                        }
+                        (KeyCode::Esc, _) if !state.process_table.filter.is_empty() && state.active_tab == Tab::Processes => {
+                            state.process_table.filter.clear();
+                            state.process_table.cursor = 0;
+                            state.process_table.scroll = 0;
+                        }
+                        // Process table: activate filter
+                        (KeyCode::Char('/'), _) if state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
+                            state.process_table.filter_active = true;
+                        }
+                        // Process table: sort keys
+                        (KeyCode::Char('c'), _) if state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                            state.process_sort_by(ProcessSortColumn::Cpu);
+                        }
+                        (KeyCode::Char('m'), _) if state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                            state.process_sort_by(ProcessSortColumn::Memory);
+                        }
+                        (KeyCode::Char('r'), _) if state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                            state.process_sort_by(ProcessSortColumn::DiskRead);
+                        }
+                        (KeyCode::Char('w'), _) if state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                            state.process_sort_by(ProcessSortColumn::DiskWrite);
+                        }
+                        // Process table: navigation
+                        (KeyCode::Up, _) if state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
+                            state.process_move_cursor(-1);
+                        }
+                        (KeyCode::Down, _) if state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
+                            state.process_move_cursor(1);
                         }
                         _ => {}
                     }
