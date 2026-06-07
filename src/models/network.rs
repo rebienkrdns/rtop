@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct NetworkData {
     pub interface: String,
     pub recv_bytes_per_sec: f64,

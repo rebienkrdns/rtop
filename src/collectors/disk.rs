@@ -18,6 +18,7 @@ pub struct DiskIoRate {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct DiskSelectorEntry {
     pub device_short: String,
     pub device_full: String,

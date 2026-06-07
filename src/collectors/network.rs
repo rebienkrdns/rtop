@@ -36,8 +36,8 @@ impl NetworkCollector {
     pub fn interfaces(&self) -> Vec<NetworkInterface> {
         let mut nics: Vec<NetworkInterface> = self
             .networks
-            .iter()
-            .map(|(name, _data)| {
+            .keys()
+            .map(|name| {
                 let is_loopback = name == "lo" || name.starts_with("lo0");
                 let is_docker = is_docker(name);
                 NetworkInterface {

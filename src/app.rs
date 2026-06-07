@@ -116,7 +116,9 @@ impl AppState {
 
     pub fn disk_selector_confirm(&mut self) {
         if let Some(entry) = self.selector_entries.get(self.disk_selector_cursor) {
-            self.cfg.selected_disk = Some(entry.device_short.clone());
+            let short = entry.device_short.clone();
+            self.selected_disk = Some(short.clone());
+            self.cfg.selected_disk = Some(short);
             config::save_non_blocking(self.cfg.clone());
         }
         self.show_disk_selector = false;
@@ -203,7 +205,10 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                     (KeyCode::Enter, _) if state.show_nic_selector => {
                         if let Some(nic) = state.available_nics.get(state.nic_cursor) {
                             if nic.is_up {
-                                state.selected_nic = Some(nic.name.clone());
+                                let name = nic.name.clone();
+                                state.selected_nic = Some(name.clone());
+                                state.cfg.selected_nic = Some(name);
+                                config::save_non_blocking(state.cfg.clone());
                             }
                         }
                         state.show_nic_selector = false;

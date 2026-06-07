@@ -52,6 +52,9 @@ impl Default for Config {
 }
 
 fn config_path() -> PathBuf {
+    if let Ok(val) = std::env::var("RTOP_CONFIG_PATH") {
+        return PathBuf::from(val);
+    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from(".config"))
         .join("rtop")
@@ -111,5 +114,78 @@ pub fn interval_label(idx: usize) -> String {
         format!("{:.1}s", secs)
     } else {
         format!("{}s", secs as u64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_config_lifecycle() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let temp_file_path = std::env::temp_dir().join(format!("rtop_config_test_{}.toml", now.as_nanos()));
+        
+        // Set path to temp file
+        std::env::set_var("RTOP_CONFIG_PATH", &temp_file_path);
+
+        // Ensure temp file is cleaned up if it existed
+        if temp_file_path.exists() {
+            fs::remove_file(&temp_file_path).unwrap();
+        }
+
+        // 1. First load: file does not exist.
+        // It should return default config and automatically create the config file.
+        let cfg = load();
+        assert_eq!(cfg.refresh_interval_secs, 2.0);
+        assert!(cfg.selected_disk.is_none());
+        assert!(cfg.selected_nic.is_none());
+        assert_eq!(cfg.default_tab, Tab::Processes);
+        assert_eq!(cfg.process_sort_column, SortColumn::Cpu);
+        assert!(cfg.show_swap);
+        assert!(cfg.docker_socket_path.is_none());
+
+        assert!(temp_file_path.exists(), "Config file should have been created automatically");
+
+        // 2. Save modified configuration and load again
+        let mut modified = cfg;
+        modified.refresh_interval_secs = 5.0;
+        modified.selected_disk = Some("sda1".to_string());
+        modified.selected_nic = Some("eth0".to_string());
+        modified.default_tab = Tab::Network;
+        modified.process_sort_column = SortColumn::Memory;
+        modified.show_swap = false;
+        modified.docker_socket_path = Some("/var/run/docker.sock".to_string());
+
+        save(&modified).expect("Failed to save config");
+
+        let loaded = load();
+        assert_eq!(loaded.refresh_interval_secs, 5.0);
+        assert_eq!(loaded.selected_disk.as_deref(), Some("sda1"));
+        assert_eq!(loaded.selected_nic.as_deref(), Some("eth0"));
+        assert_eq!(loaded.default_tab, Tab::Network);
+        assert_eq!(loaded.process_sort_column, SortColumn::Memory);
+        assert!(!loaded.show_swap);
+        assert_eq!(loaded.docker_socket_path.as_deref(), Some("/var/run/docker.sock"));
+
+        // 3. Corrupt configuration file
+        let corrupt_content = "this is invalid toml = [ {";
+        fs::write(&temp_file_path, corrupt_content).expect("Failed to write corrupt config");
+
+        // Load corrupt config
+        let fallback_cfg = load();
+        // Should use defaults
+        assert_eq!(fallback_cfg.refresh_interval_secs, 2.0);
+
+        // File should not have been overwritten or deleted
+        let current_content = fs::read_to_string(&temp_file_path).expect("Failed to read config file");
+        assert_eq!(current_content, corrupt_content, "Corrupt file should be preserved");
+
+        // Clean up
+        fs::remove_file(&temp_file_path).ok();
+        std::env::remove_var("RTOP_CONFIG_PATH");
     }
 }
