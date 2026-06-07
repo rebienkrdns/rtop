@@ -22,7 +22,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),  // header
-            Constraint::Length(10), // métricas (CPU/RAM/Disco + Red)
+            Constraint::Length(13), // métricas (CPU/RAM/Disco + Red)
             Constraint::Length(3),  // barra de pestañas
             Constraint::Min(5),     // contenido de pestaña activa
             Constraint::Length(3),  // footer
@@ -191,11 +191,11 @@ fn draw_metrics(f: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),
-            Constraint::Length(1),
-            Constraint::Length(2),
-            Constraint::Length(1),
-            Constraint::Length(3),
+            Constraint::Length(2), // CPU
+            Constraint::Length(1), // separador
+            Constraint::Length(2), // RAM
+            Constraint::Length(1), // separador
+            Constraint::Length(4), // Disco (título + barra + I/O + margen)
             Constraint::Min(0),
         ])
         .split(area);
