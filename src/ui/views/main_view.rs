@@ -10,7 +10,8 @@ use ratatui::{
 use crate::app::AppState;
 use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
-use crate::ui::widgets::{cpu_bar, disk_bar, memory_bar};
+use crate::ui::views::disk_selector;
+use crate::ui::widgets::{cpu_bar, disk_bar, memory_bar, network_widget, nic_selector};
 
 pub fn draw(f: &mut Frame, state: &AppState) {
     let theme = Theme::default_theme();
@@ -86,11 +87,13 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     draw_metrics(f, left_inner, state);
 
     // Panel derecho: Red
-    let right = Block::default()
+    let right_block = Block::default()
         .title(Span::styled(" Red ", Style::default().fg(theme.accent)))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.muted));
-    f.render_widget(right, right_area);
+    let right_inner = right_block.inner(right_area);
+    f.render_widget(right_block, right_area);
+    network_widget::render(f, right_inner, state);
 
     // Panel inferior: Procesos / Contenedores
     let bottom = Block::default()
@@ -112,19 +115,26 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         ),
         Span::styled("Salir  ", Style::default().fg(theme.muted)),
         Span::styled(
-            "[↑↓] ",
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("Navegar  ", Style::default().fg(theme.muted)),
-        Span::styled(
             "[ ] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("Refresco  ", Style::default().fg(theme.muted)),
+        Span::styled(
+            "[F2] ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("Disco  ", Style::default().fg(theme.muted)),
+        Span::styled(
+            "[F3] ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("Red  ", Style::default().fg(theme.muted)),
         Span::styled(
             "[Tab] ",
             Style::default()
@@ -146,6 +156,13 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             .border_style(Style::default().fg(theme.muted)),
     );
     f.render_widget(footer, footer_area);
+
+    if state.show_nic_selector {
+        nic_selector::render(f, state);
+    }
+    if state.show_disk_selector {
+        disk_selector::render(f, state);
+    }
 }
 
 fn draw_metrics(f: &mut Frame, area: Rect, state: &AppState) {
@@ -158,7 +175,7 @@ fn draw_metrics(f: &mut Frame, area: Rect, state: &AppState) {
         Constraint::Length(1), // spacer
     ];
     for _ in 0..disk_count {
-        constraints.push(Constraint::Length(2)); // disk
+        constraints.push(Constraint::Length(3)); // disk (encabezado + barra + R/W)
         constraints.push(Constraint::Length(1)); // spacer
     }
     constraints.push(Constraint::Min(0)); // remainder
