@@ -1,0 +1,10 @@
+# Configuration for cargo-rpm
+[package]
+name = "rtop"
+version = "0.1.0"
+release = "1"
+summary = "A modern TUI system resource monitor with Docker and disk I/O tracking"
+license = "MIT OR Apache-2.0"
+
+[install]
+bin = ["rtop"]

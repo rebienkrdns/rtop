@@ -30,6 +30,31 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        match args[1].as_str() {
+            "-v" | "--version" | "-V" => {
+                println!("rtop v{}", env!("CARGO_PKG_VERSION"));
+                return Ok(());
+            }
+            "-h" | "--help" => {
+                println!("rtop - Un monitor de recursos del sistema moderno en Rust");
+                println!();
+                println!("Uso: rtop [OPCIONES]");
+                println!();
+                println!("Opciones:");
+                println!("  -h, --help     Muestra este mensaje de ayuda");
+                println!("  -v, --version  Muestra la versión");
+                return Ok(());
+            }
+            _ => {
+                eprintln!("Error: Argumento no reconocido '{}'", args[1]);
+                eprintln!("Usa 'rtop --help' para ver las opciones.");
+                std::process::exit(1);
+            }
+        }
+    }
+
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
