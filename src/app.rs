@@ -399,11 +399,58 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
     let (tx, rx) = mpsc::channel::<AppSnapshot>(8);
     let (interval_tx, mut interval_rx) = watch::channel(INTERVALS[initial_idx]);
 
+    let shared_containers = std::sync::Arc::new(std::sync::Mutex::new((
+        Vec::<ContainerData>::new(),
+        ContainerBackendState::default(),
+        None::<Docker>,
+    )));
+
+    // Background task for container metrics collection
+    let shared_containers_clone = std::sync::Arc::clone(&shared_containers);
     tokio::spawn(async move {
-        let mut collector = SystemCollector::new();
-        let mut container_collector = timeout(Duration::from_secs(1), ContainerCollector::new())
+        let container_collector = timeout(Duration::from_secs(1), ContainerCollector::new())
             .await
             .ok();
+
+        let Some(mut cc) = container_collector else {
+            let mut lock = shared_containers_clone.lock().unwrap();
+            lock.1 = ContainerBackendState {
+                available: false,
+                message: Some("Docker/Podman no disponible".to_string()),
+            };
+            return;
+        };
+
+        // Seed initial state
+        {
+            let mut lock = shared_containers_clone.lock().unwrap();
+            lock.1 = cc.state.clone();
+            lock.2 = cc.docker_client();
+        }
+
+        let mut ticker = tokio::time::interval(Duration::from_secs(2));
+        loop {
+            ticker.tick().await;
+
+            let containers = match timeout(Duration::from_secs(3), cc.refresh()).await {
+                Ok(res) => res,
+                Err(_) => {
+                    cc.state.available = false;
+                    cc.state.message = Some("Contenedores no responden a tiempo".to_string());
+                    vec![]
+                }
+            };
+
+            let mut lock = shared_containers_clone.lock().unwrap();
+            lock.0 = containers;
+            lock.1 = cc.state.clone();
+            lock.2 = cc.docker_client();
+        }
+    });
+
+    // Background task for system metrics collection
+    tokio::spawn(async move {
+        let mut collector = SystemCollector::new();
         let mut current_secs = INTERVALS[config::DEFAULT_INTERVAL_IDX];
         let mut ticker = tokio::time::interval(Duration::from_secs_f64(current_secs));
         ticker.tick().await; // consume immediate first tick
@@ -413,25 +460,13 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                 _ = ticker.tick() => {
                     collector.refresh();
                     let system = collector.snapshot();
-                    let (containers, container_state, docker_client) = if let Some(ref mut cc) = container_collector {
-                        match timeout(Duration::from_millis(800), cc.refresh()).await {
-                            Ok(containers) => (containers, cc.state.clone(), cc.docker_client()),
-                            Err(_) => {
-                                cc.state.available = false;
-                                cc.state.message = Some("Contenedores no responden a tiempo".to_string());
-                                (vec![], cc.state.clone(), cc.docker_client())
-                            }
-                        }
-                    } else {
-                        (
-                            vec![],
-                            ContainerBackendState {
-                                available: false,
-                                message: Some("Docker/Podman no disponible".to_string()),
-                            },
-                            None,
-                        )
+
+                    // Retrieve cached container data
+                    let (containers, container_state, docker_client) = {
+                        let lock = shared_containers.lock().unwrap();
+                        (lock.0.clone(), lock.1.clone(), lock.2.clone())
                     };
+
                     let snapshot = AppSnapshot {
                         cpu: system.cpu,
                         memory: system.memory,

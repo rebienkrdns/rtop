@@ -92,8 +92,29 @@ impl ContainerCollector {
             }
         };
 
-        let mut result = Vec::new();
+        let mut stats_futures = Vec::new();
         for c in containers {
+            let docker_clone = docker.clone();
+            let id = c.id.clone().unwrap_or_default();
+            stats_futures.push(async move {
+                let stats_stream = docker_clone.stats(&id, Some(StatsOptions { stream: false, ..Default::default() }));
+                let mut stream = stats_stream.take(1);
+                let stats = match stream.next().await {
+                    Some(Ok(s)) => Some(s),
+                    _ => None,
+                };
+                (c, stats)
+            });
+        }
+
+        let stats_results = futures_util::future::join_all(stats_futures).await;
+
+        let mut result = Vec::new();
+        for (c, stats_opt) in stats_results {
+            let Some(stats) = stats_opt else {
+                continue;
+            };
+
             let id = c.id.clone().unwrap_or_default();
             let full_id = id.clone();
             let name = c
@@ -108,13 +129,6 @@ impl ContainerCollector {
                 c.state.as_deref().unwrap_or_default(),
                 c.status.as_deref().unwrap_or_default(),
             );
-
-            let stats_stream = docker.stats(&id, Some(StatsOptions { stream: false, ..Default::default() }));
-            let mut stream = stats_stream.take(1);
-            let stats = match stream.next().await {
-                Some(Ok(s)) => s,
-                _ => continue,
-            };
 
             let (cpu_pct, memory_bytes, memory_limit_bytes, net_recv, net_sent, disk_read, disk_write) =
                 derive_metrics(&id, &stats, self.prev.get(&id));
