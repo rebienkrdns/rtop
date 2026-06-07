@@ -4,7 +4,8 @@ use sysinfo::{Disks, System};
 
 use crate::collectors::disk::{device_short_name, DiskIoCollector};
 use crate::collectors::network::NetworkCollector;
-use crate::models::{CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessStatus};
+use crate::collectors::psi::PsiCollector;
+use crate::models::{CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessStatus, PsiData};
 
 pub struct SystemSnapshot {
     pub cpu: CpuData,
@@ -15,6 +16,7 @@ pub struct SystemSnapshot {
     pub suggested_nic: Option<String>,
     pub proc_permission_denied: bool,
     pub processes: Vec<ProcessData>,
+    pub psi: Option<PsiData>,
 }
 
 pub struct SystemCollector {
@@ -22,6 +24,7 @@ pub struct SystemCollector {
     disks: Disks,
     disk_io: DiskIoCollector,
     network: NetworkCollector,
+    psi: PsiCollector,
 }
 
 impl Default for SystemCollector {
@@ -35,7 +38,13 @@ impl SystemCollector {
         let mut sys = System::new_all();
         sys.refresh_all();
         let disks = Disks::new_with_refreshed_list();
-        Self { sys, disks, disk_io: DiskIoCollector::new(), network: NetworkCollector::new() }
+        Self {
+            sys,
+            disks,
+            disk_io: DiskIoCollector::new(),
+            network: NetworkCollector::new(),
+            psi: PsiCollector::new(),
+        }
     }
 
     pub fn refresh(&mut self) {
@@ -216,6 +225,7 @@ impl SystemCollector {
         let network_by_nic = self.network.all_data();
         let available_nics = self.network.interfaces();
         let suggested_nic = self.network.autodetect();
+        let psi = self.psi.collect();
 
         SystemSnapshot {
             cpu,
@@ -226,6 +236,7 @@ impl SystemCollector {
             suggested_nic,
             proc_permission_denied: permission_denied,
             processes,
+            psi,
         }
     }
 }

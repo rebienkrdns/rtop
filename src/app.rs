@@ -15,7 +15,7 @@ use crate::collectors::containers::{ContainerBackendState, ContainerCollector};
 use crate::collectors::disk::{DiskIoCollector, DiskSelectorEntry};
 use crate::collectors::system::SystemCollector;
 use crate::config::{self, Config, INTERVALS, Tab};
-use crate::models::{ContainerData, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessSortColumn};
+use crate::models::{ContainerData, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessSortColumn, PsiData};
 use crate::ui;
 use crate::ui::views::container_detail::ConfirmAction;
 use crate::ui::views::container_logs::LogsViewState;
@@ -41,6 +41,7 @@ pub struct AppSnapshot {
     pub containers: Vec<ContainerData>,
     pub container_state: ContainerBackendState,
     pub docker_client: Option<Docker>,
+    pub psi: Option<PsiData>,
 }
 
 pub struct AppState {
@@ -85,7 +86,8 @@ pub struct AppState {
     pub data_loaded: bool,
     pub refresh_tick: bool,
     pub show_help: bool,
-
+    pub psi: Option<PsiData>,
+ 
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -132,6 +134,7 @@ impl AppState {
             data_loaded: false,
             refresh_tick: false,
             show_help: false,
+            psi: None,
             metrics_rx: rx,
             interval_tx,
         }
@@ -151,6 +154,7 @@ impl AppState {
             self.processes = snapshot.processes;
             self.containers = snapshot.containers;
             self.container_state = snapshot.container_state;
+            self.psi = snapshot.psi;
             if snapshot.docker_client.is_some() {
                 self.docker_client = snapshot.docker_client;
             }
@@ -479,6 +483,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         containers,
                         container_state,
                         docker_client,
+                        psi: system.psi,
                     };
                     if tx.send(snapshot).await.is_err() {
                         break;
