@@ -29,7 +29,7 @@ impl NetworkCollector {
 
     pub fn refresh(&mut self) {
         self.last_elapsed = self.last_refresh.elapsed().as_secs_f64().max(0.1);
-        self.networks.refresh_list();
+        self.networks.refresh();
         self.last_refresh = Instant::now();
     }
 

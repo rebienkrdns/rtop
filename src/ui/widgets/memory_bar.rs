@@ -10,7 +10,7 @@ use ratatui::{
 use crate::models::MemoryData;
 use crate::ui::theme::Theme;
 
-pub fn render(f: &mut Frame, area: Rect, mem: &MemoryData) {
+pub fn render_with_loading(f: &mut Frame, area: Rect, mem: &MemoryData, data_loaded: bool) {
     if area.height < 2 {
         return;
     }
@@ -21,15 +21,22 @@ pub fn render(f: &mut Frame, area: Rect, mem: &MemoryData) {
         ..area
     };
 
-    let label = Line::from(vec![
-        Span::styled("RAM", Style::default().fg(Color::Cyan)),
-        Span::raw(format!(
-            "  {:.1}%  {} / {}",
-            mem.usage_pct,
-            ByteSize(mem.used_bytes),
-            ByteSize(mem.total_bytes),
-        )),
-    ]);
+    let label = if data_loaded {
+        Line::from(vec![
+            Span::styled("RAM", Style::default().fg(Color::Cyan)),
+            Span::raw(format!(
+                "  {:.1}%  {} / {}",
+                mem.usage_pct,
+                ByteSize(mem.used_bytes),
+                ByteSize(mem.total_bytes),
+            )),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("RAM", Style::default().fg(Color::Cyan)),
+            Span::raw("  [cargando…]"),
+        ])
+    };
     f.render_widget(Paragraph::new(label), label_area);
 
     let gauge = Gauge::default()

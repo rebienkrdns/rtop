@@ -43,14 +43,21 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     let label = interval_label(idx);
     let interval_ctrl = format!("[ {}{}{} ]", left_arrow, label, right_arrow);
 
+    // 10.4 — Indicador de actualización: alterna ● / ○ en cada refresh
+    let tick_dot = if state.refresh_tick { "●" } else { "○" };
+    let tick_color = if state.data_loaded { Color::Green } else { theme.muted };
+
     let header_text = Line::from(vec![
         Span::styled(" rtop ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
         Span::styled("│ ", Style::default().fg(theme.muted)),
         Span::styled(state.hostname.as_str(), Style::default().fg(theme.text)),
         Span::styled("    Refresco: ", Style::default().fg(theme.muted)),
         Span::styled(interval_ctrl, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled("    ", Style::default()),
+        Span::styled("  ", Style::default()),
+        Span::styled(tick_dot, Style::default().fg(tick_color)),
+        Span::styled("  ", Style::default()),
         Span::styled(now.as_str(), Style::default().fg(theme.muted)),
+        Span::styled("   [F1 Ayuda]", Style::default().fg(theme.muted)),
     ]);
     f.render_widget(
         Paragraph::new(header_text)
@@ -157,7 +164,9 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             Span::styled("[w] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled("DiskW  ", Style::default().fg(theme.muted)),
             Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled("Contenedores", Style::default().fg(theme.muted)),
+            Span::styled("Contenedores  ", Style::default().fg(theme.muted)),
+            Span::styled("[F1] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Ayuda", Style::default().fg(theme.muted)),
         ])
     } else {
         Line::from(vec![
@@ -170,7 +179,9 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             Span::styled("[F3] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled("Red  ", Style::default().fg(theme.muted)),
             Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled("Cambiar pestaña", Style::default().fg(theme.muted)),
+            Span::styled("Cambiar  ", Style::default().fg(theme.muted)),
+            Span::styled("[F1] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Ayuda", Style::default().fg(theme.muted)),
         ])
     };
     f.render_widget(
@@ -200,8 +211,8 @@ fn draw_metrics(f: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(area);
 
-    cpu_bar::render(f, chunks[0], &state.cpu);
-    memory_bar::render(f, chunks[2], &state.memory);
+    cpu_bar::render_with_loading(f, chunks[0], &state.cpu, state.data_loaded);
+    memory_bar::render_with_loading(f, chunks[2], &state.memory, state.data_loaded);
 
     let selected_disk = state.selected_disk.as_deref().unwrap_or("");
     let disk_to_render = state

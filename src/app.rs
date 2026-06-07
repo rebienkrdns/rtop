@@ -82,6 +82,10 @@ pub struct AppState {
     pub logs_state: Option<LogsViewState>,
     pub docker_client: Option<Docker>,
 
+    pub data_loaded: bool,
+    pub refresh_tick: bool,
+    pub show_help: bool,
+
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -125,6 +129,9 @@ impl AppState {
             confirm_action: None,
             logs_state: None,
             docker_client: None,
+            data_loaded: false,
+            refresh_tick: false,
+            show_help: false,
             metrics_rx: rx,
             interval_tx,
         }
@@ -132,6 +139,8 @@ impl AppState {
 
     fn try_update(&mut self) {
         while let Ok(snapshot) = self.metrics_rx.try_recv() {
+            self.data_loaded = true;
+            self.refresh_tick = !self.refresh_tick;
             self.cpu = snapshot.cpu;
             self.memory = snapshot.memory;
             self.selector_entries = DiskIoCollector::build_selector_entries(&snapshot.disks);
@@ -460,8 +469,16 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                 if let Ok(Event::Key(key)) = event::read() {
                     match (key.code, key.modifiers) {
                         // ── Global exits ──────────────────────────────────────
-                        (KeyCode::Char('q'), _) if state.current_view == View::Main && !state.show_nic_selector => break,
+                        (KeyCode::Char('q'), _) if state.current_view == View::Main && !state.show_nic_selector && !state.show_help => break,
                         (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+
+                        // ── Help modal (F1) ───────────────────────────────────
+                        (KeyCode::F(1), _) => {
+                            state.show_help = !state.show_help;
+                        }
+                        (KeyCode::Esc, _) if state.show_help => {
+                            state.show_help = false;
+                        }
 
                         // ── ContainerLogs view ────────────────────────────────
                         (KeyCode::Esc, _) if state.current_view == View::ContainerLogs => {

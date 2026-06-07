@@ -1004,6 +1004,7 @@ dependencies = [
  "chrono",
  "crossterm",
  "dirs",
+ "futures-util",
  "ratatui",
  "serde",
  "sysinfo",

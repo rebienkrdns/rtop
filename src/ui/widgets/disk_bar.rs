@@ -10,8 +10,11 @@ use ratatui::{
 use crate::models::DiskData;
 use crate::ui::theme::Theme;
 
-fn fmt_rate(bps: f64) -> String {
-    format!("{}/s", ByteSize(bps as u64))
+fn fmt_rate(bps: Option<f64>) -> String {
+    match bps {
+        Some(value) => format!("{}/s", ByteSize(value as u64)),
+        None => "N/D".to_string(),
+    }
 }
 
 pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {

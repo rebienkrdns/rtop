@@ -1,3 +1,4 @@
+use bytesize::ByteSize;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -21,7 +22,14 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(area);
 
-    match state.current_network() {
+    // Determine what data to show: aggregate of all NICs or a single NIC
+    let display_data: Option<crate::models::NetworkData> = if state.selected_nic.is_none() {
+        state.current_network_total()
+    } else {
+        state.current_network().cloned()
+    };
+
+    match display_data {
         None => {
             let msg = Paragraph::new(Line::from(vec![Span::styled(
                 "Detectando interfaz…",
@@ -33,10 +41,13 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             let recv_str = format_bps(data.recv_bytes_per_sec);
             let sent_str = format_bps(data.sent_bytes_per_sec);
 
+            let is_total = state.selected_nic.is_none();
+            let label = if is_total { "Todas (sumatoria)" } else { data.interface.as_str() };
+
             let info_line = Line::from(vec![
                 Span::styled("Interfaz: ", Style::default().fg(theme.muted)),
                 Span::styled(
-                    data.interface.as_str(),
+                    label,
                     Style::default()
                         .fg(theme.accent)
                         .add_modifier(Modifier::BOLD),
@@ -78,11 +89,5 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn format_bps(bps: f64) -> String {
-    if bps < 1024.0 {
-        format!("{:.0} B/s", bps)
-    } else if bps < 1024.0 * 1024.0 {
-        format!("{:.1} KB/s", bps / 1024.0)
-    } else {
-        format!("{:.1} MB/s", bps / (1024.0 * 1024.0))
-    }
+    format!("{}/s", ByteSize(bps as u64))
 }

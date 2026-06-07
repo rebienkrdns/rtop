@@ -9,7 +9,7 @@ use ratatui::{
 use crate::models::CpuData;
 use crate::ui::theme::Theme;
 
-pub fn render(f: &mut Frame, area: Rect, cpu: &CpuData) {
+pub fn render_with_loading(f: &mut Frame, area: Rect, cpu: &CpuData, data_loaded: bool) {
     if area.height < 2 {
         return;
     }
@@ -20,12 +20,15 @@ pub fn render(f: &mut Frame, area: Rect, cpu: &CpuData) {
         ..area
     };
 
+    let pct_str = if data_loaded {
+        format!("{:.1}%", cpu.global_usage_pct)
+    } else {
+        "[cargando…]".to_string()
+    };
+
     let label = Line::from(vec![
         Span::styled("CPU", Style::default().fg(Color::Cyan)),
-        Span::raw(format!(
-            "  {:.1}%  {} cores",
-            cpu.global_usage_pct, cpu.core_count
-        )),
+        Span::raw(format!("  {}  {} cores", pct_str, cpu.core_count)),
     ]);
     f.render_widget(Paragraph::new(label), label_area);
 

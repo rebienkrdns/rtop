@@ -4,7 +4,7 @@ use sysinfo::{Disks, System};
 
 use crate::collectors::disk::{device_short_name, DiskIoCollector};
 use crate::collectors::network::NetworkCollector;
-use crate::models::{CpuData, DiskData, MemoryData, NetworkData, NetworkInterface};
+use crate::models::{CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessStatus};
 
 pub struct SystemSnapshot {
     pub cpu: CpuData,
@@ -14,6 +14,7 @@ pub struct SystemSnapshot {
     pub available_nics: Vec<NetworkInterface>,
     pub suggested_nic: Option<String>,
     pub proc_permission_denied: bool,
+    pub processes: Vec<ProcessData>,
 }
 
 pub struct SystemCollector {
@@ -39,7 +40,7 @@ impl SystemCollector {
 
     pub fn refresh(&mut self) {
         self.sys.refresh_all();
-        self.disks.refresh_list();
+        self.disks.refresh();
         self.network.refresh();
     }
 
@@ -74,6 +75,11 @@ impl SystemCollector {
     }
 
     pub fn disk_data(&mut self) -> Vec<DiskData> {
+        #[cfg(not(target_os = "linux"))]
+        let rates = self.disk_io.io_rates_from_disks(self.disks.list());
+
+        #[cfg(target_os = "linux")]
+        let rates = {
         let mut disk_shorts: Vec<String> = self
             .disks
             .list()
@@ -89,6 +95,8 @@ impl SystemCollector {
         }
 
         let rates = self.disk_io.io_rates_batch(&disk_shorts);
+        rates
+        };
 
         #[allow(unused_mut)]
         let mut result: Vec<DiskData> = self.disks
@@ -111,8 +119,8 @@ impl SystemCollector {
                     total_bytes: total,
                     used_bytes: used,
                     usage_pct,
-                    read_bytes_per_sec: rate.read_bytes_per_sec,
-                    write_bytes_per_sec: rate.write_bytes_per_sec,
+                    read_bytes_per_sec: Some(rate.read_bytes_per_sec),
+                    write_bytes_per_sec: Some(rate.write_bytes_per_sec),
                 }
             })
             .collect();
@@ -137,8 +145,8 @@ impl SystemCollector {
                         total_bytes: total,
                         used_bytes: 0,
                         usage_pct: 0.0,
-                        read_bytes_per_sec: rate.read_bytes_per_sec,
-                        write_bytes_per_sec: rate.write_bytes_per_sec,
+                        read_bytes_per_sec: Some(rate.read_bytes_per_sec),
+                        write_bytes_per_sec: Some(rate.write_bytes_per_sec),
                     });
                 }
             }
@@ -149,16 +157,75 @@ impl SystemCollector {
 
     pub fn snapshot(&mut self) -> SystemSnapshot {
         let pids: Vec<u32> = self.sys.processes().keys().map(|pid| pid.as_u32()).collect();
-        let (_rates, permission_denied) = self.disk_io.process_io_rates(&pids);
+        let (rates, permission_denied) = self.disk_io.process_io_rates(&pids);
+        let users = sysinfo::Users::new_with_refreshed_list();
+        let total_mem = self.sys.total_memory();
+
+        let processes: Vec<ProcessData> = self.sys.processes()
+            .iter()
+            .map(|(pid_val, proc_val)| {
+                let pid = pid_val.as_u32();
+                let name = proc_val.name().to_string();
+                let user = proc_val
+                    .user_id()
+                    .and_then(|uid| users.get_user_by_id(uid))
+                    .map(|u| u.name().to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                let cpu_pct = proc_val.cpu_usage() as f64;
+                let memory_bytes = proc_val.memory();
+                let memory_pct = if total_mem > 0 {
+                    (memory_bytes as f64 / total_mem as f64) * 100.0
+                } else {
+                    0.0
+                };
+
+                let io_rate = rates.get(&pid);
+                let disk_read_per_sec = io_rate.map(|r| r.read_bytes_per_sec);
+                let disk_write_per_sec = io_rate.map(|r| r.write_bytes_per_sec);
+
+                let status = match proc_val.status() {
+                    sysinfo::ProcessStatus::Run => ProcessStatus::Running,
+                    sysinfo::ProcessStatus::Sleep => ProcessStatus::Sleeping,
+                    sysinfo::ProcessStatus::Stop => ProcessStatus::Stopped,
+                    sysinfo::ProcessStatus::Zombie => ProcessStatus::Zombie,
+                    _ => ProcessStatus::Other,
+                };
+
+                let uptime_secs = proc_val.run_time();
+                let threads = proc_val.tasks().map(|t| t.len() as u32).unwrap_or(1);
+
+                ProcessData {
+                    pid,
+                    name,
+                    user,
+                    cpu_pct,
+                    memory_bytes,
+                    memory_pct,
+                    disk_read_per_sec,
+                    disk_write_per_sec,
+                    status,
+                    uptime_secs,
+                    threads,
+                }
+            })
+            .collect();
+        let cpu = self.cpu_data();
+        let memory = self.memory_data();
+        let disks = self.disk_data();
+        let network_by_nic = self.network.all_data();
+        let available_nics = self.network.interfaces();
+        let suggested_nic = self.network.autodetect();
 
         SystemSnapshot {
-            cpu: self.cpu_data(),
-            memory: self.memory_data(),
-            disks: self.disk_data(),
-            network_by_nic: self.network.all_data(),
-            available_nics: self.network.interfaces(),
-            suggested_nic: self.network.autodetect(),
+            cpu,
+            memory,
+            disks,
+            network_by_nic,
+            available_nics,
+            suggested_nic,
             proc_permission_denied: permission_denied,
+            processes,
         }
     }
 }

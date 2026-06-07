@@ -6,6 +6,6 @@ pub struct DiskData {
     pub total_bytes: u64,
     pub used_bytes: u64,
     pub usage_pct: f64,
-    pub read_bytes_per_sec: f64,
-    pub write_bytes_per_sec: f64,
+    pub read_bytes_per_sec: Option<f64>,
+    pub write_bytes_per_sec: Option<f64>,
 }
