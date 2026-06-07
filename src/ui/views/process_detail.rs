@@ -19,14 +19,14 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData) {
             Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent));
+        .border_style(Style::default().fg(theme.accent_dim));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5), // info fields
+            Constraint::Length(8), // info fields
             Constraint::Length(3), // CPU bar
             Constraint::Length(3), // Memory bar
             Constraint::Length(3), // Disk Read bar
@@ -40,37 +40,50 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData) {
     let uptime_str = format_uptime(process.uptime_secs);
     let info_lines = vec![
         Line::from(vec![
-            Span::styled("PID:      ", Style::default().fg(theme.muted)),
-            Span::styled(process.pid.to_string(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::raw("   "),
+            Span::styled("PID:        ", Style::default().fg(theme.muted)),
+            Span::styled(process.pid.to_string(), Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
+            Span::raw("    "),
             Span::styled("Usuario: ", Style::default().fg(theme.muted)),
-            Span::styled(process.user.clone(), Style::default().fg(Color::White)),
+            Span::styled(process.user.clone(), Style::default().fg(theme.text)),
+            Span::raw("    "),
+            Span::styled("Estado: ", Style::default().fg(theme.muted)),
+            Span::styled(process.status.to_string_es(), Style::default().fg(theme.ok)),
+            Span::raw("    "),
+            Span::styled("Threads: ", Style::default().fg(theme.muted)),
+            Span::styled(process.threads.to_string(), Style::default().fg(theme.text)),
+            Span::raw("    "),
+            Span::styled("Uptime: ", Style::default().fg(theme.muted)),
+            Span::styled(uptime_str, Style::default().fg(theme.text)),
+            Span::raw("    "),
+            Span::styled("RAM: ", Style::default().fg(theme.muted)),
+            Span::styled(ByteSize(process.memory_bytes).to_string(), Style::default().fg(theme.text)),
         ]),
         Line::from(vec![
-            Span::styled("Threads:  ", Style::default().fg(theme.muted)),
-            Span::styled(process.threads.to_string(), Style::default().fg(Color::White)),
-            Span::raw("   "),
-            Span::styled("Uptime:  ", Style::default().fg(theme.muted)),
-            Span::styled(uptime_str, Style::default().fg(Color::White)),
+            Span::styled("Ruta (Exe): ", Style::default().fg(theme.muted)),
+            Span::styled(process.exe_path.clone(), Style::default().fg(theme.accent)),
         ]),
         Line::from(vec![
-            Span::styled("Estado:   ", Style::default().fg(theme.muted)),
-            Span::styled(process.status.to_string_es(), Style::default().fg(Color::Green)),
-            Span::raw("   "),
-            Span::styled("RAM:     ", Style::default().fg(theme.muted)),
-            Span::styled(ByteSize(process.memory_bytes).to_string(), Style::default().fg(Color::White)),
+            Span::styled("Directorio: ", Style::default().fg(theme.muted)),
+            Span::styled(process.cwd.clone(), Style::default().fg(theme.text)),
+        ]),
+        Line::from(vec![
+            Span::styled("Comando:    ", Style::default().fg(theme.muted)),
+            Span::styled(process.cmd.clone(), Style::default().fg(theme.warn)),
         ]),
     ];
-    f.render_widget(Paragraph::new(info_lines), chunks[0]);
+    f.render_widget(
+        Paragraph::new(info_lines).wrap(ratatui::widgets::Wrap { trim: false }),
+        chunks[0],
+    );
 
     // CPU bar
     let cpu_pct = process.cpu_pct.clamp(0.0, 100.0);
     let cpu_gauge = Gauge::default()
         .block(Block::default().title(Span::styled(
             format!(" CPU  {:.1}% ", cpu_pct),
-            Style::default().fg(theme.muted),
-        )).borders(Borders::ALL).border_style(Style::default().fg(theme.muted)))
-        .gauge_style(Style::default().fg(Theme::color_for_pct(cpu_pct)).bg(Color::DarkGray))
+            Style::default().fg(theme.accent),
+        )).borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim)))
+        .gauge_style(Style::default().fg(Theme::color_for_pct(cpu_pct)).bg(Color::Rgb(51, 52, 61)))
         .ratio(cpu_pct / 100.0);
     f.render_widget(cpu_gauge, chunks[1]);
 
@@ -79,9 +92,9 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData) {
     let mem_gauge = Gauge::default()
         .block(Block::default().title(Span::styled(
             format!(" Memoria  {} ({:.1}%) ", ByteSize(process.memory_bytes), mem_pct),
-            Style::default().fg(theme.muted),
-        )).borders(Borders::ALL).border_style(Style::default().fg(theme.muted)))
-        .gauge_style(Style::default().fg(Theme::color_for_pct(mem_pct)).bg(Color::DarkGray))
+            Style::default().fg(theme.accent),
+        )).borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim)))
+        .gauge_style(Style::default().fg(Theme::color_for_pct(mem_pct)).bg(Color::Rgb(51, 52, 61)))
         .ratio(mem_pct / 100.0);
     f.render_widget(mem_gauge, chunks[2]);
 
@@ -94,9 +107,9 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData) {
     };
     let read_ratio = (read_rate / 100_000_000.0).clamp(0.0, 1.0);
     let read_gauge = Gauge::default()
-        .block(Block::default().title(Span::styled(read_label, Style::default().fg(theme.muted)))
-            .borders(Borders::ALL).border_style(Style::default().fg(theme.muted)))
-        .gauge_style(Style::default().fg(Color::Blue).bg(Color::DarkGray))
+        .block(Block::default().title(Span::styled(read_label, Style::default().fg(theme.accent)))
+            .borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim)))
+        .gauge_style(Style::default().fg(theme.accent_dim).bg(Color::Rgb(51, 52, 61)))
         .ratio(read_ratio);
     f.render_widget(read_gauge, chunks[3]);
 
@@ -109,9 +122,9 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData) {
     };
     let write_ratio = (write_rate / 100_000_000.0).clamp(0.0, 1.0);
     let write_gauge = Gauge::default()
-        .block(Block::default().title(Span::styled(write_label, Style::default().fg(theme.muted)))
-            .borders(Borders::ALL).border_style(Style::default().fg(theme.muted)))
-        .gauge_style(Style::default().fg(Color::Yellow).bg(Color::DarkGray))
+        .block(Block::default().title(Span::styled(write_label, Style::default().fg(theme.accent)))
+            .borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim)))
+        .gauge_style(Style::default().fg(theme.ok).bg(Color::Rgb(51, 52, 61)))
         .ratio(write_ratio);
     f.render_widget(write_gauge, chunks[4]);
 

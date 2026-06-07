@@ -83,7 +83,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         let col1_block = Block::default()
             .title(Span::styled(" CPU · RAM ", Style::default().fg(theme.accent)))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.muted));
+            .border_style(Style::default().fg(theme.accent_dim));
         let col1_inner = col1_block.inner(metrics_cols[0]);
         f.render_widget(col1_block, metrics_cols[0]);
 
@@ -103,7 +103,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         let col2_block = Block::default()
             .title(Span::styled(" Disco · Red (I/O) ", Style::default().fg(theme.accent)))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.muted));
+            .border_style(Style::default().fg(theme.accent_dim));
         let col2_inner = col2_block.inner(metrics_cols[1]);
         f.render_widget(col2_block, metrics_cols[1]);
 
@@ -135,7 +135,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         let col3_block = Block::default()
             .title(Span::styled(" Presión (PSI) ", Style::default().fg(theme.accent)))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.muted));
+            .border_style(Style::default().fg(theme.accent_dim));
         let col3_inner = col3_block.inner(metrics_cols[2]);
         f.render_widget(col3_block, metrics_cols[2]);
         psi_widget::render(f, col3_inner, state.psi.as_ref(), true);
@@ -152,7 +152,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         let col1_block = Block::default()
             .title(Span::styled(" CPU · RAM · Disco ", Style::default().fg(theme.accent)))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.muted));
+            .border_style(Style::default().fg(theme.accent_dim));
         let col1_inner = col1_block.inner(metrics_cols[0]);
         f.render_widget(col1_block, metrics_cols[0]);
         draw_metrics(f, col1_inner, state);
@@ -161,7 +161,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         let col2_block = Block::default()
             .title(Span::styled(" Red · Presión (PSI) ", Style::default().fg(theme.accent)))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.muted));
+            .border_style(Style::default().fg(theme.accent_dim));
         let col2_inner = col2_block.inner(metrics_cols[1]);
         f.render_widget(col2_block, metrics_cols[1]);
 
@@ -183,22 +183,22 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Span::styled(
             " Procesos ",
             Style::default()
-                .fg(if state.active_tab == Tab::Processes { Color::Black } else { theme.text })
-                .bg(if state.active_tab == Tab::Processes { theme.accent } else { theme.bg })
+                .fg(if state.active_tab == Tab::Processes { theme.selected_fg } else { theme.muted })
+                .bg(if state.active_tab == Tab::Processes { theme.accent_dim } else { theme.bg })
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
         Span::styled(
             " Contenedores ",
             Style::default()
-                .fg(if state.active_tab == Tab::Containers { Color::Black } else { theme.text })
-                .bg(if state.active_tab == Tab::Containers { theme.accent } else { theme.bg })
+                .fg(if state.active_tab == Tab::Containers { theme.selected_fg } else { theme.muted })
+                .bg(if state.active_tab == Tab::Containers { theme.accent_dim } else { theme.bg })
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
     f.render_widget(
         Paragraph::new(tabs_line)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.muted))),
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim))),
         tabbar_area,
     );
 
@@ -207,7 +207,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Tab::Processes => {
             let block = Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.muted));
+                .border_style(Style::default().fg(theme.accent_dim));
             let inner = block.inner(content_area);
             f.render_widget(block, content_area);
             process_table::render(f, inner, &state.processes, &state.process_table);
@@ -245,7 +245,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             let block = Block::default()
                 .title(Span::styled(title_str, Style::default().fg(theme.accent)))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.muted));
+                .border_style(Style::default().fg(theme.accent_dim));
             let inner = block.inner(content_area);
             f.render_widget(block, content_area);
             if state.container_state.available {
@@ -314,7 +314,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     };
     f.render_widget(
         Paragraph::new(footer_text)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.muted))),
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim))),
         footer_area,
     );
 

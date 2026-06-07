@@ -20,15 +20,15 @@ pub fn render_with_loading(f: &mut Frame, area: Rect, cpu: &CpuData, data_loaded
         ..area
     };
 
+    let theme = Theme::default_theme();
     let pct_str = if data_loaded {
         format!("{:.1}%", cpu.global_usage_pct)
     } else {
         "[cargando…]".to_string()
     };
-
     let label = Line::from(vec![
-        Span::styled("CPU", Style::default().fg(Color::Cyan)),
-        Span::raw(format!("  {}  {} cores", pct_str, cpu.core_count)),
+        Span::styled("CPU", Style::default().fg(theme.accent)),
+        Span::styled(format!("  {}  {} cores", pct_str, cpu.core_count), Style::default().fg(theme.text)),
     ]);
     f.render_widget(Paragraph::new(label), label_area);
 
@@ -36,7 +36,7 @@ pub fn render_with_loading(f: &mut Frame, area: Rect, cpu: &CpuData, data_loaded
         .gauge_style(
             Style::default()
                 .fg(Theme::color_for_pct(cpu.global_usage_pct))
-                .bg(Color::DarkGray),
+                .bg(Color::Rgb(51, 52, 61)), // #33343d surface-container-highest
         )
         .ratio((cpu.global_usage_pct / 100.0).clamp(0.0, 1.0))
         .label("");

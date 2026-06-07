@@ -16,12 +16,12 @@ fn format_bps(bps: f64) -> String {
 
 fn status_color(status: &ContainerStatus) -> Color {
     match status {
-        ContainerStatus::Running => Color::Green,
-        ContainerStatus::Paused => Color::Yellow,
-        ContainerStatus::Restarting => Color::Magenta,
-        ContainerStatus::Exited => Color::DarkGray,
-        ContainerStatus::Dead => Color::Red,
-        ContainerStatus::Unknown => Color::Gray,
+        ContainerStatus::Running    => Color::Rgb(165, 213, 102), // ok    #a5d566
+        ContainerStatus::Paused     => Color::Rgb(235, 192, 109), // warn  #ebc06d
+        ContainerStatus::Restarting => Color::Rgb(235, 192, 109), // warn  #ebc06d
+        ContainerStatus::Exited     => Color::Rgb(136, 147, 145), // muted #889391
+        ContainerStatus::Dead       => Color::Rgb(255, 180, 171), // crit  #ffb4ab
+        ContainerStatus::Unknown    => Color::Rgb(136, 147, 145), // muted #889391
     }
 }
 
@@ -88,7 +88,7 @@ pub fn render_with_cursor(
     let is_disk_r = sort_col == ContainerSortColumn::DiskRead;
     let is_disk_w = sort_col == ContainerSortColumn::DiskWrite;
 
-    let header_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+    let header_style = Style::default().fg(theme.accent).add_modifier(Modifier::BOLD);
 
     let header_cells = vec![
         Cell::from(Span::styled("ID", header_style)),
@@ -156,29 +156,28 @@ pub fn render_with_cursor(
     for (i, c) in containers.iter().enumerate() {
         let selected = i == cursor;
         let row_style = if selected {
-            Style::default().bg(theme.accent).fg(Color::Black)
+            Style::default().bg(theme.selected_bg).fg(theme.selected_fg)
         } else {
             Style::default()
         };
 
+        let sel_fg = theme.selected_fg;
+        let normal_fg = theme.text;
+
         // ID cell
         let id_cell = Cell::from(Line::from(vec![Span::styled(
             format!("{:<8}", c.id.chars().take(8).collect::<String>()),
-            row_style.fg(if selected { Color::Black } else { Color::White }),
+            row_style.fg(if selected { sel_fg } else { normal_fg }),
         )]));
 
         // Name cell
         let name_cell = Cell::from(Line::from(vec![Span::styled(
             c.name.clone(),
-            row_style.fg(if selected { Color::Black } else { Color::White }),
+            row_style.fg(if selected { sel_fg } else { normal_fg }),
         )]));
 
         // CPU% cell
-        let cpu_color = if selected {
-            Color::Black
-        } else {
-            Theme::color_for_pct(c.cpu_pct)
-        };
+        let cpu_color = if selected { sel_fg } else { Theme::color_for_pct(c.cpu_pct) };
         let cpu_cell = Cell::from(Line::from(vec![Span::styled(
             format!("{:.1}%", c.cpu_pct),
             row_style.fg(cpu_color),
@@ -188,7 +187,7 @@ pub fn render_with_cursor(
         let ram_str = format!("{} ({:.1}%)", ByteSize(c.memory_bytes), c.memory_pct);
         let ram_cell = Cell::from(Line::from(vec![Span::styled(
             ram_str,
-            row_style.fg(if selected { Color::Black } else { Color::White }),
+            row_style.fg(if selected { sel_fg } else { normal_fg }),
         )]).alignment(ratatui::layout::Alignment::Right));
 
         // Red ↓ (rate + total if wide)
@@ -199,7 +198,7 @@ pub fn render_with_cursor(
         };
         let rx_cell = Cell::from(Line::from(vec![Span::styled(
             rx_str,
-            row_style.fg(if selected { Color::Black } else { Color::Green }),
+            row_style.fg(if selected { sel_fg } else { theme.ok }),
         )]).alignment(ratatui::layout::Alignment::Right));
 
         // Red ↑ (rate + total if wide)
@@ -210,7 +209,7 @@ pub fn render_with_cursor(
         };
         let tx_cell = Cell::from(Line::from(vec![Span::styled(
             tx_str,
-            row_style.fg(if selected { Color::Black } else { Color::Blue }),
+            row_style.fg(if selected { sel_fg } else { theme.accent_dim }),
         )]).alignment(ratatui::layout::Alignment::Right));
 
         // Disco R (rate + total if wide)
@@ -221,7 +220,7 @@ pub fn render_with_cursor(
         };
         let disk_r_cell = Cell::from(Line::from(vec![Span::styled(
             disk_r_str,
-            row_style.fg(if selected { Color::Black } else { Color::Yellow }),
+            row_style.fg(if selected { sel_fg } else { theme.accent_dim }),
         )]).alignment(ratatui::layout::Alignment::Right));
 
         // Disco W (rate + total if wide)
@@ -232,21 +231,17 @@ pub fn render_with_cursor(
         };
         let disk_w_cell = Cell::from(Line::from(vec![Span::styled(
             disk_w_str,
-            row_style.fg(if selected { Color::Black } else { Color::Yellow }),
+            row_style.fg(if selected { sel_fg } else { theme.ok }),
         )]).alignment(ratatui::layout::Alignment::Right));
 
         // Estado cell (circular indicator + status)
         let status_indicator = "● ";
-        let status_color = if selected {
-            Color::Black
-        } else {
-            status_color(&c.status)
-        };
+        let scolor = if selected { sel_fg } else { status_color(&c.status) };
         let status_text = c.status.as_str();
 
         let status_cell = Cell::from(Line::from(vec![
-            Span::styled(status_indicator, row_style.fg(status_color)),
-            Span::styled(status_text, row_style.fg(if selected { Color::Black } else { Color::White })),
+            Span::styled(status_indicator, row_style.fg(scolor)),
+            Span::styled(status_text, row_style.fg(if selected { sel_fg } else { normal_fg })),
         ]));
 
         let row = Row::new(vec![

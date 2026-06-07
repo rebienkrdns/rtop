@@ -1,7 +1,7 @@
 use bytesize::ByteSize;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Gauge, Paragraph},
     Frame,
@@ -22,6 +22,7 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
         return;
     }
 
+    let theme = Theme::default_theme();
     let has_io_row = area.height >= 3;
 
     let chunks = if has_io_row {
@@ -51,22 +52,26 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
     } else {
         format!("Disco  {} ({})", disk.device, disk.mount_point)
     };
-    f.render_widget(Paragraph::new(name_str).style(Style::default().fg(Color::Cyan)), header_cols[0]);
+    f.render_widget(
+        Paragraph::new(name_str).style(Style::default().fg(theme.accent)),
+        header_cols[0],
+    );
 
+    let usage_color = Theme::color_for_pct(disk.usage_pct);
     let usage_str = format!("{:.0}%", disk.usage_pct);
     f.render_widget(
         Paragraph::new(usage_str)
-            .style(Style::default().fg(Theme::color_for_pct(disk.usage_pct)).add_modifier(Modifier::BOLD))
+            .style(Style::default().fg(usage_color).add_modifier(Modifier::BOLD))
             .alignment(ratatui::layout::Alignment::Right),
         header_cols[1],
     );
 
-    // Línea 2: barra de uso
+    // Línea 2: barra de uso — relleno coral (Obsidian tertiary-fixed-dim)
     let gauge = Gauge::default()
         .gauge_style(
             Style::default()
-                .fg(Theme::color_for_pct(disk.usage_pct))
-                .bg(Color::DarkGray),
+                .fg(theme.disk_fill)
+                .bg(ratatui::style::Color::Rgb(51, 52, 61)), // #33343d
         )
         .ratio((disk.usage_pct / 100.0).clamp(0.0, 1.0))
         .label("");
@@ -83,16 +88,16 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
         let read_str = fmt_rate(disk.read_bytes_per_sec);
 
         let io_line = Line::from(vec![
-            Span::styled("↑ Escritura ", Style::default().fg(Color::Rgb(255, 140, 0)).add_modifier(Modifier::BOLD)),
-            Span::styled(write_str, Style::default().fg(Color::Rgb(255, 140, 0))),
+            Span::styled("↑ Escritura ", Style::default().fg(theme.ok).add_modifier(Modifier::BOLD)),
+            Span::styled(write_str, Style::default().fg(theme.ok)),
             Span::raw("     "),
-            Span::styled("↓ Lectura ", Style::default().fg(Color::Rgb(30, 144, 255)).add_modifier(Modifier::BOLD)),
-            Span::styled(read_str, Style::default().fg(Color::Rgb(30, 144, 255))),
+            Span::styled("↓ Lectura ", Style::default().fg(theme.accent_dim).add_modifier(Modifier::BOLD)),
+            Span::styled(read_str, Style::default().fg(theme.accent_dim)),
         ]);
         f.render_widget(Paragraph::new(io_line), io_cols[0]);
 
         let hint = Paragraph::new("[ F2 cambiar ]")
-            .style(Style::default().fg(Color::DarkGray))
+            .style(Style::default().fg(theme.muted))
             .alignment(ratatui::layout::Alignment::Right);
         f.render_widget(hint, io_cols[1]);
     }

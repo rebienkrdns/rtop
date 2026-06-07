@@ -1,7 +1,7 @@
 use bytesize::ByteSize;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -88,12 +88,12 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             // Line 3: ↓ Entrada: <rate> (Total Recibido: <total>)
             let recv_total_str = format!("{}", ByteSize(data.total_recv_bytes));
             left_lines.push(Line::from(vec![
-                Span::styled("↓ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("↓ ", Style::default().fg(theme.ok).add_modifier(Modifier::BOLD)),
                 Span::styled("Entrada: ", Style::default().fg(theme.muted)),
                 Span::styled(
                     format!("{:<10}", recv_str),
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(theme.ok)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("   "),
@@ -106,12 +106,12 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             // Line 4: ↑ Salida: <rate> (Total Enviado: <total>)
             let sent_total_str = format!("{}", ByteSize(data.total_sent_bytes));
             left_lines.push(Line::from(vec![
-                Span::styled("↑ ", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+                Span::styled("↑ ", Style::default().fg(theme.accent_dim).add_modifier(Modifier::BOLD)),
                 Span::styled("Salida:  ", Style::default().fg(theme.muted)),
                 Span::styled(
                     format!("{:<10}", sent_str),
                     Style::default()
-                        .fg(Color::Blue)
+                        .fg(theme.accent_dim)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("   "),

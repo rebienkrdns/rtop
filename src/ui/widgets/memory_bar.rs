@@ -21,20 +21,24 @@ pub fn render_with_loading(f: &mut Frame, area: Rect, mem: &MemoryData, data_loa
         ..area
     };
 
+    let theme = Theme::default_theme();
     let label = if data_loaded {
         Line::from(vec![
-            Span::styled("RAM", Style::default().fg(Color::Cyan)),
-            Span::raw(format!(
-                "  {:.1}%  {} / {}",
-                mem.usage_pct,
-                ByteSize(mem.used_bytes),
-                ByteSize(mem.total_bytes),
-            )),
+            Span::styled("RAM", Style::default().fg(theme.accent)),
+            Span::styled(
+                format!(
+                    "  {:.1}%  {} / {}",
+                    mem.usage_pct,
+                    ByteSize(mem.used_bytes),
+                    ByteSize(mem.total_bytes),
+                ),
+                Style::default().fg(theme.text),
+            ),
         ])
     } else {
         Line::from(vec![
-            Span::styled("RAM", Style::default().fg(Color::Cyan)),
-            Span::raw("  [cargando…]"),
+            Span::styled("RAM", Style::default().fg(theme.accent)),
+            Span::styled("  [cargando…]", Style::default().fg(theme.muted)),
         ])
     };
     f.render_widget(Paragraph::new(label), label_area);
@@ -43,7 +47,7 @@ pub fn render_with_loading(f: &mut Frame, area: Rect, mem: &MemoryData, data_loa
         .gauge_style(
             Style::default()
                 .fg(Theme::color_for_pct(mem.usage_pct))
-                .bg(Color::DarkGray),
+                .bg(Color::Rgb(51, 52, 61)), // #33343d surface-container-highest
         )
         .ratio((mem.usage_pct / 100.0).clamp(0.0, 1.0))
         .label("");

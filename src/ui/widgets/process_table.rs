@@ -122,7 +122,7 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
     let is_dr = state.sort_col == ProcessSortColumn::DiskRead;
     let is_dw = state.sort_col == ProcessSortColumn::DiskWrite;
 
-    let header_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+    let header_style = Style::default().fg(theme.accent).add_modifier(Modifier::BOLD);
 
     let header_cells = vec![
         Cell::from(Line::from(Span::styled("PID", header_style)).alignment(ratatui::layout::Alignment::Right)),
@@ -156,24 +156,36 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
         let abs_idx = scroll + i;
         let selected = abs_idx == state.cursor;
         let row_style = if selected {
-            Style::default().bg(theme.accent).fg(Color::Black)
+            Style::default().bg(theme.selected_bg).fg(theme.selected_fg)
         } else {
             Style::default()
         };
 
-        let cpu_color = if selected { Color::Black } else { Theme::color_for_pct(p.cpu_pct) };
+        let cpu_color = if selected { theme.selected_fg } else { Theme::color_for_pct(p.cpu_pct) };
+
+        let normal_fg = theme.text;
+        let sel_fg = theme.selected_fg;
+
+        let status_color = if selected {
+            sel_fg
+        } else {
+            match p.status {
+                crate::models::ProcessStatus::Running => theme.ok,
+                _ => theme.muted,
+            }
+        };
 
         let pid_cell = Cell::from(Line::from(vec![
             Span::styled(
                 format!("{}", p.pid),
-                row_style.fg(if selected { Color::Black } else { Color::White })
+                row_style.fg(if selected { sel_fg } else { normal_fg })
             )
         ]).alignment(ratatui::layout::Alignment::Right));
 
         let process_cell = Cell::from(Line::from(vec![
             Span::styled(
                 p.name.clone(),
-                row_style.fg(if selected { Color::Black } else { Color::White })
+                row_style.fg(if selected { sel_fg } else { normal_fg })
             )
         ]));
 
@@ -187,28 +199,28 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
         let ram_cell = Cell::from(Line::from(vec![
             Span::styled(
                 format!("{}", ByteSize(p.memory_bytes)),
-                row_style.fg(if selected { Color::Black } else { Color::White })
+                row_style.fg(if selected { sel_fg } else { normal_fg })
             )
         ]).alignment(ratatui::layout::Alignment::Right));
 
         let disk_r_cell = Cell::from(Line::from(vec![
             Span::styled(
                 fmt_rate(p.disk_read_per_sec),
-                row_style.fg(if selected { Color::Black } else { Color::Blue })
+                row_style.fg(if selected { sel_fg } else { theme.accent_dim })
             )
         ]).alignment(ratatui::layout::Alignment::Right));
 
         let disk_w_cell = Cell::from(Line::from(vec![
             Span::styled(
                 fmt_rate(p.disk_write_per_sec),
-                row_style.fg(if selected { Color::Black } else { Color::Yellow })
+                row_style.fg(if selected { sel_fg } else { theme.ok })
             )
         ]).alignment(ratatui::layout::Alignment::Right));
 
         let status_cell = Cell::from(Line::from(vec![
             Span::styled(
                 p.status.to_string_es(),
-                row_style.fg(if selected { Color::Black } else { Color::Green })
+                row_style.fg(status_color)
             )
         ]));
 
