@@ -33,6 +33,10 @@ pub struct ContainerCollector {
 }
 
 impl ContainerCollector {
+    pub fn docker_client(&self) -> Option<Docker> {
+        self.docker.clone()
+    }
+
     pub async fn new() -> Self {
         let docker = Self::connect().await;
         let state = if docker.is_some() {

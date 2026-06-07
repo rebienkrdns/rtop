@@ -25,7 +25,12 @@ fn status_color(status: &ContainerStatus) -> Color {
     }
 }
 
+#[allow(dead_code)]
 pub fn render(f: &mut Frame, area: Rect, containers: &[ContainerData]) {
+    render_with_cursor(f, area, containers, 0);
+}
+
+pub fn render_with_cursor(f: &mut Frame, area: Rect, containers: &[ContainerData], cursor: usize) {
     let header_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
 
     let mut lines = vec![Line::from(vec![
@@ -47,7 +52,13 @@ pub fn render(f: &mut Frame, area: Rect, containers: &[ContainerData]) {
             Style::default().fg(Color::DarkGray),
         )));
     } else {
-        for c in containers.iter().take(area.height.saturating_sub(1) as usize) {
+        for (i, c) in containers.iter().enumerate().take(area.height.saturating_sub(1) as usize) {
+            let selected = i == cursor;
+            let row_style = if selected {
+                Style::default().bg(Theme::default_theme().accent).fg(Color::Black)
+            } else {
+                Style::default()
+            };
             let mem_str = format!("{}/{}", ByteSize(c.memory_bytes), ByteSize(c.memory_limit_bytes));
             let net_str = format!("↓{} ↑{}", fmt_rate(c.net_recv_per_sec), fmt_rate(c.net_sent_per_sec));
             let disk_str = format!("R{} W{}", fmt_rate(c.disk_read_per_sec), fmt_rate(c.disk_write_per_sec));
@@ -56,22 +67,22 @@ pub fn render(f: &mut Frame, area: Rect, containers: &[ContainerData]) {
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("{:<18}", c.name.chars().take(17).collect::<String>()),
-                    Style::default().fg(Color::White),
+                    row_style.fg(if selected { Color::Black } else { Color::White }),
                 ),
                 Span::styled(
                     format!("{:>6.1}", c.cpu_pct),
-                    Style::default().fg(Theme::color_for_pct(c.cpu_pct)),
+                    row_style.fg(if selected { Color::Black } else { Theme::color_for_pct(c.cpu_pct) }),
                 ),
                 Span::raw("  "),
-                Span::styled(format!("{:>12}", mem_str), Style::default().fg(Color::White)),
+                Span::styled(format!("{:>12}", mem_str), row_style.fg(if selected { Color::Black } else { Color::White })),
                 Span::raw("  "),
-                Span::styled(format!("{:>14}", net_str), Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{:>14}", net_str), row_style.fg(if selected { Color::Black } else { Color::Cyan })),
                 Span::raw("  "),
-                Span::styled(format!("{:>14}", disk_str), Style::default().fg(Color::Yellow)),
+                Span::styled(format!("{:>14}", disk_str), row_style.fg(if selected { Color::Black } else { Color::Yellow })),
                 Span::raw("  "),
                 Span::styled(
                     format!("● {}", status_label),
-                    Style::default().fg(status_color(&c.status)),
+                    if selected { row_style } else { Style::default().fg(status_color(&c.status)) },
                 ),
             ]));
         }

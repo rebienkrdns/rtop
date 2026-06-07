@@ -121,7 +121,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             let inner = block.inner(content_area);
             f.render_widget(block, content_area);
             if state.container_state.available {
-                container_table::render(f, inner, &state.containers);
+                container_table::render_with_cursor(f, inner, &state.containers, state.container_cursor);
             } else {
                 let msg = state
                     .container_state

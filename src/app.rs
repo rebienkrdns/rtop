@@ -9,13 +9,25 @@ use sysinfo::System;
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 
+use bollard::Docker;
+
 use crate::collectors::containers::{ContainerBackendState, ContainerCollector};
 use crate::collectors::disk::{DiskIoCollector, DiskSelectorEntry};
 use crate::collectors::system::SystemCollector;
 use crate::config::{self, Config, INTERVALS, Tab};
 use crate::models::{ContainerData, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessSortColumn};
 use crate::ui;
+use crate::ui::views::container_detail::ConfirmAction;
+use crate::ui::views::container_logs::LogsViewState;
 use crate::ui::widgets::process_table::ProcessTableState;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum View {
+    Main,
+    ProcessDetail,
+    ContainerDetail,
+    ContainerLogs,
+}
 
 pub struct AppSnapshot {
     pub cpu: CpuData,
@@ -28,6 +40,7 @@ pub struct AppSnapshot {
     pub processes: Vec<ProcessData>,
     pub containers: Vec<ContainerData>,
     pub container_state: ContainerBackendState,
+    pub docker_client: Option<Docker>,
 }
 
 pub struct AppState {
@@ -57,6 +70,17 @@ pub struct AppState {
     pub process_table: ProcessTableState,
     pub containers: Vec<ContainerData>,
     pub container_state: ContainerBackendState,
+
+    // View navigation
+    pub current_view: View,
+    #[allow(dead_code)]
+    pub selected_process_idx: Option<usize>,
+    #[allow(dead_code)]
+    pub selected_container_idx: Option<usize>,
+    pub container_cursor: usize,
+    pub confirm_action: Option<ConfirmAction>,
+    pub logs_state: Option<LogsViewState>,
+    pub docker_client: Option<Docker>,
 
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
@@ -94,6 +118,13 @@ impl AppState {
             process_table: ProcessTableState::default(),
             containers: vec![],
             container_state: ContainerBackendState::default(),
+            current_view: View::Main,
+            selected_process_idx: None,
+            selected_container_idx: None,
+            container_cursor: 0,
+            confirm_action: None,
+            logs_state: None,
+            docker_client: None,
             metrics_rx: rx,
             interval_tx,
         }
@@ -111,6 +142,9 @@ impl AppState {
             self.processes = snapshot.processes;
             self.containers = snapshot.containers;
             self.container_state = snapshot.container_state;
+            if snapshot.docker_client.is_some() {
+                self.docker_client = snapshot.docker_client;
+            }
 
             // By default keep selected_nic as None which means "all interfaces"
             // Only auto-select if the config had a specific NIC saved
@@ -252,6 +286,47 @@ impl AppState {
         self.process_table.scroll = 0;
     }
 
+    pub fn container_move_cursor(&mut self, delta: i32) {
+        let count = self.containers.len();
+        if count == 0 {
+            return;
+        }
+        let new_cursor = (self.container_cursor as i32 + delta)
+            .clamp(0, (count as i32) - 1) as usize;
+        self.container_cursor = new_cursor;
+    }
+
+    pub fn selected_process(&self) -> Option<&ProcessData> {
+        // Get the filtered+sorted list the same way the table does, then index into it
+        let filter_lower = self.process_table.filter.to_lowercase();
+        let cursor = self.process_table.cursor;
+        let mut filtered: Vec<&ProcessData> = self.processes.iter()
+            .filter(|p| filter_lower.is_empty() || p.name.to_lowercase().contains(&filter_lower))
+            .collect();
+        filtered.sort_by(|a, b| {
+            let ord = match self.process_table.sort_col {
+                ProcessSortColumn::Cpu => a.cpu_pct.partial_cmp(&b.cpu_pct).unwrap_or(std::cmp::Ordering::Equal),
+                ProcessSortColumn::Memory => a.memory_bytes.cmp(&b.memory_bytes),
+                ProcessSortColumn::DiskRead => {
+                    let ar = a.disk_read_per_sec.unwrap_or(0.0);
+                    let br = b.disk_read_per_sec.unwrap_or(0.0);
+                    ar.partial_cmp(&br).unwrap_or(std::cmp::Ordering::Equal)
+                }
+                ProcessSortColumn::DiskWrite => {
+                    let aw = a.disk_write_per_sec.unwrap_or(0.0);
+                    let bw = b.disk_write_per_sec.unwrap_or(0.0);
+                    aw.partial_cmp(&bw).unwrap_or(std::cmp::Ordering::Equal)
+                }
+            };
+            if self.process_table.sort_asc { ord } else { ord.reverse() }
+        });
+        filtered.get(cursor).copied()
+    }
+
+    pub fn selected_container(&self) -> Option<&ContainerData> {
+        self.containers.get(self.container_cursor)
+    }
+
     fn step_interval(&mut self, delta: i32) {
         let new_idx = (self.interval_idx as i32 + delta)
             .clamp(0, (INTERVALS.len() - 1) as i32) as usize;
@@ -260,6 +335,47 @@ impl AppState {
             let _ = self.interval_tx.send(INTERVALS[new_idx]);
             self.cfg.refresh_interval_secs = INTERVALS[new_idx];
             config::save_non_blocking(self.cfg.clone());
+        }
+    }
+}
+
+fn fetch_logs_blocking(docker: Docker, container_id: String) -> Vec<String> {
+    use bollard::container::LogsOptions;
+    use futures_util::StreamExt;
+
+    let rt = tokio::runtime::Handle::try_current();
+    let future = async move {
+        let opts = LogsOptions::<String> {
+            stdout: true,
+            stderr: true,
+            tail: "200".to_string(),
+            ..Default::default()
+        };
+        let mut stream = docker.logs(&container_id, Some(opts));
+        let mut lines = Vec::new();
+        while let Some(Ok(msg)) = stream.next().await {
+            let text = msg.to_string();
+            for line in text.lines() {
+                lines.push(line.to_string());
+            }
+        }
+        lines
+    };
+
+    match rt {
+        Ok(_handle) => {
+            // We're in an async context — run in a blocking thread
+            std::thread::spawn(move || {
+                let rt2 = tokio::runtime::Runtime::new().unwrap();
+                rt2.block_on(future)
+            })
+            .join()
+            .unwrap_or_default()
+        }
+        Err(_) => {
+            // Not in async context — create a new runtime
+            let rt2 = tokio::runtime::Runtime::new().unwrap();
+            rt2.block_on(future)
         }
     }
 }
@@ -288,13 +404,13 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                 _ = ticker.tick() => {
                     collector.refresh();
                     let system = collector.snapshot();
-                    let (containers, container_state) = if let Some(ref mut cc) = container_collector {
+                    let (containers, container_state, docker_client) = if let Some(ref mut cc) = container_collector {
                         match timeout(Duration::from_millis(800), cc.refresh()).await {
-                            Ok(containers) => (containers, cc.state.clone()),
+                            Ok(containers) => (containers, cc.state.clone(), cc.docker_client()),
                             Err(_) => {
                                 cc.state.available = false;
                                 cc.state.message = Some("Contenedores no responden a tiempo".to_string());
-                                (vec![], cc.state.clone())
+                                (vec![], cc.state.clone(), cc.docker_client())
                             }
                         }
                     } else {
@@ -304,6 +420,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 available: false,
                                 message: Some("Docker/Podman no disponible".to_string()),
                             },
+                            None,
                         )
                     };
                     let snapshot = AppSnapshot {
@@ -317,6 +434,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         processes: system.processes,
                         containers,
                         container_state,
+                        docker_client,
                     };
                     if tx.send(snapshot).await.is_err() {
                         break;
@@ -341,9 +459,90 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
             Ok(true) => {
                 if let Ok(Event::Key(key)) = event::read() {
                     match (key.code, key.modifiers) {
-                        (KeyCode::Char('q'), _) if !state.show_nic_selector => break,
+                        // ── Global exits ──────────────────────────────────────
+                        (KeyCode::Char('q'), _) if state.current_view == View::Main && !state.show_nic_selector => break,
                         (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
-                        (KeyCode::Tab, _) => {
+
+                        // ── ContainerLogs view ────────────────────────────────
+                        (KeyCode::Esc, _) if state.current_view == View::ContainerLogs => {
+                            state.current_view = View::ContainerDetail;
+                            state.logs_state = None;
+                        }
+                        (KeyCode::Char('f'), _) if state.current_view == View::ContainerLogs => {
+                            if let Some(ref mut ls) = state.logs_state {
+                                ls.toggle_follow();
+                            }
+                        }
+                        (KeyCode::Up, _) if state.current_view == View::ContainerLogs => {
+                            if let Some(ref mut ls) = state.logs_state {
+                                ls.scroll_up();
+                            }
+                        }
+                        (KeyCode::Down, _) if state.current_view == View::ContainerLogs => {
+                            if let Some(ref mut ls) = state.logs_state {
+                                ls.scroll_down(20);
+                            }
+                        }
+
+                        // ── ContainerDetail view ──────────────────────────────
+                        (KeyCode::Esc, _) if state.current_view == View::ContainerDetail && state.confirm_action.is_some() => {
+                            state.confirm_action = None;
+                        }
+                        (KeyCode::Enter, _) if state.current_view == View::ContainerDetail && state.confirm_action.is_some() => {
+                            if let Some(action) = state.confirm_action.take() {
+                                let docker = state.docker_client.clone();
+                                tokio::spawn(async move {
+                                    if let Some(d) = docker {
+                                        match &action {
+                                            ConfirmAction::Restart(id) => {
+                                                let _ = d.restart_container(id, None).await;
+                                            }
+                                            ConfirmAction::Stop(id) => {
+                                                let _ = d.stop_container(id, None).await;
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                        (KeyCode::Esc, _) if state.current_view == View::ContainerDetail => {
+                            state.current_view = View::Main;
+                        }
+                        (KeyCode::Char('l'), _) if state.current_view == View::ContainerDetail => {
+                            if let Some(c) = state.selected_container().cloned() {
+                                let mut ls = LogsViewState::new(c.id.clone(), c.name.clone());
+                                // Fetch last 200 lines statically
+                                if let Some(docker) = state.docker_client.clone() {
+                                    let id = c.id.clone();
+                                    // Fetch synchronously via blocking to avoid async complexity in event loop
+                                    let lines = fetch_logs_blocking(docker, id);
+                                    for line in lines {
+                                        ls.lines.push(line);
+                                    }
+                                    ls.scroll = ls.lines.len().saturating_sub(20);
+                                }
+                                state.logs_state = Some(ls);
+                                state.current_view = View::ContainerLogs;
+                            }
+                        }
+                        (KeyCode::Char('r'), _) if state.current_view == View::ContainerDetail => {
+                            if let Some(c) = state.selected_container() {
+                                state.confirm_action = Some(ConfirmAction::Restart(c.id.clone()));
+                            }
+                        }
+                        (KeyCode::Char('s'), _) if state.current_view == View::ContainerDetail => {
+                            if let Some(c) = state.selected_container() {
+                                state.confirm_action = Some(ConfirmAction::Stop(c.id.clone()));
+                            }
+                        }
+
+                        // ── ProcessDetail view ────────────────────────────────
+                        (KeyCode::Esc, _) if state.current_view == View::ProcessDetail => {
+                            state.current_view = View::Main;
+                        }
+
+                        // ── Main view ─────────────────────────────────────────
+                        (KeyCode::Tab, _) if state.current_view == View::Main => {
                             state.active_tab = match state.active_tab {
                                 Tab::Processes => Tab::Containers,
                                 Tab::Containers => Tab::Processes,
@@ -352,7 +551,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             state.cfg.default_tab = state.active_tab.clone();
                             config::save_non_blocking(state.cfg.clone());
                         }
-                        (KeyCode::F(3), _) => {
+                        (KeyCode::F(3), _) if state.current_view == View::Main => {
                             state.toggle_nic_selector();
                         }
                         (KeyCode::Up, _) if state.show_nic_selector => {
@@ -361,15 +560,13 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             }
                         }
                         (KeyCode::Down, _) if state.show_nic_selector => {
-                            // +1 because position 0 is "Todas"
-                            let max = state.available_nics.len(); // len() not saturating_sub because 0 = All
+                            let max = state.available_nics.len();
                             if state.nic_cursor < max {
                                 state.nic_cursor += 1;
                             }
                         }
                         (KeyCode::Enter, _) if state.show_nic_selector => {
                             if state.nic_cursor == 0 {
-                                // "Todas las interfaces"
                                 state.selected_nic = None;
                                 state.cfg.selected_nic = None;
                                 config::save_non_blocking(state.cfg.clone());
@@ -386,7 +583,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         (KeyCode::Esc, _) if state.show_nic_selector => {
                             state.show_nic_selector = false;
                         }
-                        (KeyCode::F(2), _) => {
+                        (KeyCode::F(2), _) if state.current_view == View::Main => {
                             state.toggle_disk_selector();
                         }
                         (KeyCode::Up, _) if state.show_disk_selector => {
@@ -406,10 +603,10 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         (KeyCode::Esc, _) if state.show_disk_selector => {
                             state.show_disk_selector = false;
                         }
-                        (KeyCode::Char('['), _) if !state.show_nic_selector && !state.show_disk_selector && !state.process_table.filter_active => {
+                        (KeyCode::Char('['), _) if state.current_view == View::Main && !state.show_nic_selector && !state.show_disk_selector && !state.process_table.filter_active => {
                             state.step_interval(-1);
                         }
-                        (KeyCode::Char(']'), _) if !state.show_nic_selector && !state.show_disk_selector && !state.process_table.filter_active => {
+                        (KeyCode::Char(']'), _) if state.current_view == View::Main && !state.show_nic_selector && !state.show_disk_selector && !state.process_table.filter_active => {
                             state.step_interval(1);
                         }
                         // Process table: filter mode input
@@ -434,29 +631,46 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             state.process_table.cursor = 0;
                             state.process_table.scroll = 0;
                         }
+                        // Process table: navigate to detail on Enter
+                        (KeyCode::Enter, _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                            state.current_view = View::ProcessDetail;
+                        }
+                        // Container table: navigate to detail on Enter
+                        (KeyCode::Enter, _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            if !state.containers.is_empty() {
+                                state.current_view = View::ContainerDetail;
+                            }
+                        }
                         // Process table: activate filter
-                        (KeyCode::Char('/'), _) if state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
+                        (KeyCode::Char('/'), _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
                             state.process_table.filter_active = true;
                         }
                         // Process table: sort keys
-                        (KeyCode::Char('c'), _) if state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                        (KeyCode::Char('c'), _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
                             state.process_sort_by(ProcessSortColumn::Cpu);
                         }
-                        (KeyCode::Char('m'), _) if state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                        (KeyCode::Char('m'), _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
                             state.process_sort_by(ProcessSortColumn::Memory);
                         }
-                        (KeyCode::Char('r'), _) if state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                        (KeyCode::Char('r'), _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
                             state.process_sort_by(ProcessSortColumn::DiskRead);
                         }
-                        (KeyCode::Char('w'), _) if state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                        (KeyCode::Char('w'), _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
                             state.process_sort_by(ProcessSortColumn::DiskWrite);
                         }
                         // Process table: navigation
-                        (KeyCode::Up, _) if state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
+                        (KeyCode::Up, _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
                             state.process_move_cursor(-1);
                         }
-                        (KeyCode::Down, _) if state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
+                        (KeyCode::Down, _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.show_nic_selector && !state.show_disk_selector => {
                             state.process_move_cursor(1);
+                        }
+                        // Container table: navigation
+                        (KeyCode::Up, _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            state.container_move_cursor(-1);
+                        }
+                        (KeyCode::Down, _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
+                            state.container_move_cursor(1);
                         }
                         _ => {}
                     }
