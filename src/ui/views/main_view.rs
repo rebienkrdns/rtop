@@ -10,8 +10,8 @@ use ratatui::{
 use crate::app::AppState;
 use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
-use crate::ui::views::disk_selector;
-use crate::ui::widgets::{cpu_bar, disk_bar, memory_bar, network_widget, nic_selector};
+use crate::ui::views::{disk_selector, nic_selector};
+use crate::ui::widgets::{cpu_bar, disk_bar, memory_bar, network_widget};
 
 pub fn draw(f: &mut Frame, state: &AppState) {
     let theme = Theme::default_theme();
