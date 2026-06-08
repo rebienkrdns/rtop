@@ -29,7 +29,9 @@ fn prepare_sparkline_data<T>(
         .map(f)
         .collect();
 
-    let t_size = width;
+    let t_size = ((s_len as f64 * width as f64) / limit as f64).round() as usize;
+    let t_size = t_size.clamp(1, width);
+
     let mut interpolated = Vec::with_capacity(t_size);
     if t_size == 1 {
         interpolated.push(values.last().copied().unwrap_or(0));
@@ -47,8 +49,15 @@ fn prepare_sparkline_data<T>(
             interpolated.push(val.round() as u64);
         }
     }
+
+    if interpolated.len() < width {
+        let pad_len = width - interpolated.len();
+        interpolated.extend(vec![0; pad_len]);
+    }
+
     interpolated
 }
+
 
 fn calculate_max<T>(
     history: &std::collections::VecDeque<T>,
