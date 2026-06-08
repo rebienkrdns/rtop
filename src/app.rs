@@ -17,7 +17,7 @@ use crate::collectors::system::SystemCollector;
 use crate::config::{self, Config, INTERVALS, Tab};
 use crate::models::{ContainerData, ContainerSortColumn, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessSortColumn, PsiData};
 use crate::ui;
-use crate::ui::history::{HistoryRange, MetricSample, MetricsHistory};
+use crate::ui::history::{HistoryRange, MetricSample, MetricsHistory, ProcessHistorySample, ContainerHistorySample};
 use crate::ui::views::container_detail::ConfirmAction;
 use crate::ui::views::container_logs::LogsViewState;
 use crate::ui::widgets::process_table::ProcessTableState;
@@ -78,6 +78,7 @@ pub struct AppState {
     // View navigation
     pub current_view: View,
     pub detail_process_pid: Option<u32>,
+    pub detail_container_id: Option<String>,
     #[allow(dead_code)]
     pub selected_process_idx: Option<usize>,
     #[allow(dead_code)]
@@ -96,6 +97,8 @@ pub struct AppState {
     pub metrics_history: MetricsHistory,
     pub history_mode: bool,
     pub history_range: HistoryRange,
+    pub process_history: std::collections::VecDeque<ProcessHistorySample>,
+    pub container_history: std::collections::VecDeque<ContainerHistorySample>,
 
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
@@ -137,6 +140,7 @@ impl AppState {
             container_sort_asc: true,
             current_view: View::Main,
             detail_process_pid: None,
+            detail_container_id: None,
             selected_process_idx: None,
             selected_container_idx: None,
             container_cursor: 0,
@@ -150,6 +154,8 @@ impl AppState {
             metrics_history: MetricsHistory::new(),
             history_mode: false,
             history_range: HistoryRange::OneMin,
+            process_history: std::collections::VecDeque::new(),
+            container_history: std::collections::VecDeque::new(),
             metrics_rx: rx,
             interval_tx,
         }
@@ -182,6 +188,44 @@ impl AppState {
                 disk_read_bps: disk_read,
                 disk_write_bps: disk_write,
             });
+
+            // Update process history
+            if let Some(pid) = self.detail_process_pid {
+                if let Some(proc) = snapshot.processes.iter().find(|p| p.pid == pid) {
+                    self.process_history.push_back(ProcessHistorySample {
+                        cpu_pct: proc.cpu_pct,
+                        mem_pct: proc.memory_pct,
+                        memory_bytes: proc.memory_bytes,
+                        disk_read_bps: proc.disk_read_per_sec.unwrap_or(0.0),
+                        disk_write_bps: proc.disk_write_per_sec.unwrap_or(0.0),
+                    });
+                    if self.process_history.len() > 3600 {
+                        self.process_history.pop_front();
+                    }
+                }
+            } else {
+                self.process_history.clear();
+            }
+
+            // Update container history
+            if let Some(ref cid) = self.detail_container_id {
+                if let Some(c) = snapshot.containers.iter().find(|c| &c.id == cid) {
+                    self.container_history.push_back(ContainerHistorySample {
+                        cpu_pct: c.cpu_pct,
+                        mem_pct: c.memory_pct,
+                        memory_bytes: c.memory_bytes,
+                        net_recv_bps: c.net_recv_per_sec,
+                        net_sent_bps: c.net_sent_per_sec,
+                        disk_read_bps: c.disk_read_per_sec,
+                        disk_write_bps: c.disk_write_per_sec,
+                    });
+                    if self.container_history.len() > 3600 {
+                        self.container_history.pop_front();
+                    }
+                }
+            } else {
+                self.container_history.clear();
+            }
             self.selector_entries = DiskIoCollector::build_selector_entries(&snapshot.disks);
             self.disks = snapshot.disks;
             self.network_by_nic = snapshot.network_by_nic;
@@ -417,6 +461,9 @@ impl AppState {
     }
 
     pub fn selected_container(&self) -> Option<&ContainerData> {
+        if let Some(ref id) = self.detail_container_id {
+            return self.containers.iter().find(|c| &c.id == id);
+        }
         self.containers.get(self.container_cursor)
     }
 
@@ -644,6 +691,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         }
                         (KeyCode::Esc, _) if state.current_view == View::ContainerDetail => {
                             state.current_view = View::Main;
+                            state.detail_container_id = None;
                         }
                         (KeyCode::Char('l'), _) if state.current_view == View::ContainerDetail => {
                             if let Some(c) = state.selected_container().cloned() {
@@ -748,11 +796,11 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             state.step_interval(1);
                         }
                         // Toggle historial de métricas
-                        (KeyCode::Char('h'), _) if state.current_view == View::Main && !state.process_table.filter_active => {
+                        (KeyCode::Char('h'), _) if (state.current_view == View::Main || state.current_view == View::ProcessDetail || state.current_view == View::ContainerDetail) && !state.process_table.filter_active => {
                             state.history_mode = !state.history_mode;
                         }
                         // Ciclar rango de tiempo del historial
-                        (KeyCode::Char('t'), _) if state.current_view == View::Main && !state.process_table.filter_active => {
+                        (KeyCode::Char('t'), _) if (state.current_view == View::Main || state.current_view == View::ProcessDetail || state.current_view == View::ContainerDetail) && !state.process_table.filter_active => {
                             state.history_range = state.history_range.next();
                         }
                         // Process table: filter mode input
@@ -786,6 +834,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         // Container table: navigate to detail on Enter
                         (KeyCode::Enter, _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
                             if !state.containers.is_empty() {
+                                state.detail_container_id = state.selected_container().map(|c| c.id.clone());
                                 state.current_view = View::ContainerDetail;
                             }
                         }

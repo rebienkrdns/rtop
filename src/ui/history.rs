@@ -14,6 +14,28 @@ pub struct MetricSample {
     pub disk_write_bps: f64,
 }
 
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct ProcessHistorySample {
+    pub cpu_pct: f64,
+    pub mem_pct: f64,
+    pub memory_bytes: u64,
+    pub disk_read_bps: f64,
+    pub disk_write_bps: f64,
+}
+
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct ContainerHistorySample {
+    pub cpu_pct: f64,
+    pub mem_pct: f64,
+    pub memory_bytes: u64,
+    pub net_recv_bps: f64,
+    pub net_sent_bps: f64,
+    pub disk_read_bps: f64,
+    pub disk_write_bps: f64,
+}
+
 pub struct MetricsHistory {
     pub samples: VecDeque<MetricSample>,
 }

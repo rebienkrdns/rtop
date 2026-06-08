@@ -41,14 +41,14 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         View::Main => main_view::draw(f, state),
         View::ProcessDetail => {
             if let Some(proc) = state.selected_process() {
-                process_detail::render(f, area, proc);
+                process_detail::render(f, area, proc, state);
             } else {
                 main_view::draw(f, state);
             }
         }
         View::ContainerDetail => {
             if let Some(c) = state.selected_container() {
-                container_detail::render(f, area, c, state.confirm_action.as_ref());
+                container_detail::render(f, area, c, state.confirm_action.as_ref(), state);
             } else {
                 main_view::draw(f, state);
             }

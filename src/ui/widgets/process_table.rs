@@ -93,7 +93,7 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
         .constraints([Constraint::Length(1), Constraint::Min(0)])
         .split(area);
 
-    // Filter bar
+    // Filter bar — shows hint text and active status filter chip
     let status_label = state.status_filter.label();
     let filter_line = if state.filter_active {
         Line::from(vec![
@@ -105,18 +105,24 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
         Line::from(vec![
             Span::styled("Filtro: ", Style::default().fg(theme.muted)),
             Span::styled(state.filter.as_str(), Style::default().fg(Color::White)),
-            Span::styled("  [ESC limpiar]  ", Style::default().fg(theme.muted)),
-            Span::styled("f estado: ", Style::default().fg(theme.muted)),
-            Span::styled(status_label, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("  ESC limpiar  ", Style::default().fg(theme.muted)),
+            Span::styled("  [f] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(status_label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
         ])
     } else {
         Line::from(vec![
-            Span::styled(
-                "/ filtrar  c CPU  m RAM  r DiskR  w DiskW  f estado: ",
-                Style::default().fg(theme.muted),
-            ),
-            Span::styled(status_label, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled("  ↑↓ navegar  Enter detalle", Style::default().fg(theme.muted)),
+            Span::styled("/ ", Style::default().fg(theme.accent)),
+            Span::styled("filtrar  ", Style::default().fg(theme.muted)),
+            Span::styled("c", Style::default().fg(theme.accent)),
+            Span::styled(" CPU  ", Style::default().fg(theme.muted)),
+            Span::styled("m", Style::default().fg(theme.accent)),
+            Span::styled(" RAM  ", Style::default().fg(theme.muted)),
+            Span::styled("r", Style::default().fg(theme.accent)),
+            Span::styled(" DiskR  ", Style::default().fg(theme.muted)),
+            Span::styled("w", Style::default().fg(theme.accent)),
+            Span::styled(" DiskW  ↑↓ navegar  Enter detalle  ", Style::default().fg(theme.muted)),
+            Span::styled("[f] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(status_label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
         ])
     };
     f.render_widget(Paragraph::new(filter_line), chunks[0]);
