@@ -5,7 +5,10 @@ use sysinfo::{Disks, System};
 use crate::collectors::disk::{device_short_name, DiskIoCollector};
 use crate::collectors::network::NetworkCollector;
 use crate::collectors::psi::PsiCollector;
-use crate::models::{CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessStatus, PsiData};
+use crate::models::{
+    CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessStatus,
+    PsiData,
+};
 
 pub struct SystemSnapshot {
     pub cpu: CpuData,
@@ -54,8 +57,12 @@ impl SystemCollector {
     }
 
     pub fn cpu_data(&self) -> CpuData {
-        let per_core: Vec<f64> =
-            self.sys.cpus().iter().map(|c| c.cpu_usage() as f64).collect();
+        let per_core: Vec<f64> = self
+            .sys
+            .cpus()
+            .iter()
+            .map(|c| c.cpu_usage() as f64)
+            .collect();
         let core_count = per_core.len();
         let la = sysinfo::System::load_average();
         CpuData {
@@ -91,26 +98,27 @@ impl SystemCollector {
 
         #[cfg(target_os = "linux")]
         let rates = {
-        let mut disk_shorts: Vec<String> = self
-            .disks
-            .list()
-            .iter()
-            .map(|d| device_short_name(&d.name().to_string_lossy()))
-            .collect();
+            let mut disk_shorts: Vec<String> = self
+                .disks
+                .list()
+                .iter()
+                .map(|d| device_short_name(&d.name().to_string_lossy()))
+                .collect();
 
-        // Also query diskstats_names to support unmounted disks
-        for name in DiskIoCollector::diskstats_names() {
-            if !disk_shorts.contains(&name) {
-                disk_shorts.push(name);
+            // Also query diskstats_names to support unmounted disks
+            for name in DiskIoCollector::diskstats_names() {
+                if !disk_shorts.contains(&name) {
+                    disk_shorts.push(name);
+                }
             }
-        }
 
-        let rates = self.disk_io.io_rates_batch(&disk_shorts);
-        rates
+            let rates = self.disk_io.io_rates_batch(&disk_shorts);
+            rates
         };
 
         #[allow(unused_mut)]
-        let mut result: Vec<DiskData> = self.disks
+        let mut result: Vec<DiskData> = self
+            .disks
             .list()
             .iter()
             .map(|disk| {
@@ -140,7 +148,8 @@ impl SystemCollector {
         #[cfg(target_os = "linux")]
         {
             use std::collections::HashSet;
-            let mounted_shorts: HashSet<String> = self.disks
+            let mounted_shorts: HashSet<String> = self
+                .disks
                 .list()
                 .iter()
                 .map(|d| device_short_name(&d.name().to_string_lossy()))
@@ -167,12 +176,19 @@ impl SystemCollector {
     }
 
     pub fn snapshot(&mut self) -> SystemSnapshot {
-        let pids: Vec<u32> = self.sys.processes().keys().map(|pid| pid.as_u32()).collect();
+        let pids: Vec<u32> = self
+            .sys
+            .processes()
+            .keys()
+            .map(|pid| pid.as_u32())
+            .collect();
         let (rates, permission_denied) = self.disk_io.process_io_rates(&pids);
         let users = sysinfo::Users::new_with_refreshed_list();
         let total_mem = self.sys.total_memory();
 
-        let processes: Vec<ProcessData> = self.sys.processes()
+        let processes: Vec<ProcessData> = self
+            .sys
+            .processes()
             .iter()
             .map(|(pid_val, proc_val)| {
                 let pid = pid_val.as_u32();

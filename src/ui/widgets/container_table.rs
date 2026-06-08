@@ -16,12 +16,12 @@ fn format_bps(bps: f64) -> String {
 
 fn status_color(status: &ContainerStatus) -> Color {
     match status {
-        ContainerStatus::Running    => Color::Rgb(165, 213, 102), // ok    #a5d566
-        ContainerStatus::Paused     => Color::Rgb(235, 192, 109), // warn  #ebc06d
+        ContainerStatus::Running => Color::Rgb(165, 213, 102), // ok    #a5d566
+        ContainerStatus::Paused => Color::Rgb(235, 192, 109),  // warn  #ebc06d
         ContainerStatus::Restarting => Color::Rgb(235, 192, 109), // warn  #ebc06d
-        ContainerStatus::Exited     => Color::Rgb(136, 147, 145), // muted #889391
-        ContainerStatus::Dead       => Color::Rgb(255, 180, 171), // crit  #ffb4ab
-        ContainerStatus::Unknown    => Color::Rgb(136, 147, 145), // muted #889391
+        ContainerStatus::Exited => Color::Rgb(136, 147, 145),  // muted #889391
+        ContainerStatus::Dead => Color::Rgb(255, 180, 171),    // crit  #ffb4ab
+        ContainerStatus::Unknown => Color::Rgb(136, 147, 145), // muted #889391
     }
 }
 
@@ -90,66 +90,136 @@ pub fn render_with_cursor(
     let is_disk_r = sort_col == ContainerSortColumn::DiskRead;
     let is_disk_w = sort_col == ContainerSortColumn::DiskWrite;
 
-    let header_style = Style::default().fg(theme.accent).add_modifier(Modifier::BOLD);
+    let header_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
 
     let header_cells = vec![
         Cell::from(Span::styled("ID", header_style)),
         Cell::from(Span::styled(
-            col_header(t("Process"), sort_col == ContainerSortColumn::Name, sort_asc),
+            col_header(
+                t("Process"),
+                sort_col == ContainerSortColumn::Name,
+                sort_asc,
+            ),
             if sort_col == ContainerSortColumn::Name {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 header_style
             },
         )),
-        Cell::from(Line::from(Span::styled(
-            col_header("CPU%", is_cpu, sort_asc),
-            if is_cpu {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
-            } else {
-                header_style
-            },
-        )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Line::from(Span::styled(
-            col_header("RAM", is_mem, sort_asc),
-            if is_mem {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
-            } else {
-                header_style
-            },
-        )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Line::from(Span::styled(
-            col_header(&if is_wide { format!("{} ↓ (Tot)", t("Network")) } else { format!("{} ↓", t("Network")) }, is_net_rx, sort_asc),
-            if is_net_rx {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
-            } else {
-                header_style
-            },
-        )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Line::from(Span::styled(
-            col_header(&if is_wide { format!("{} ↑ (Tot)", t("Network")) } else { format!("{} ↑", t("Network")) }, is_net_tx, sort_asc),
-            if is_net_tx {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
-            } else {
-                header_style
-            },
-        )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Line::from(Span::styled(
-            col_header(&if is_wide { format!("{} R (Tot)", t("Disk")) } else { format!("{} R", t("Disk")) }, is_disk_r, sort_asc),
-            if is_disk_r {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
-            } else {
-                header_style
-            },
-        )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Line::from(Span::styled(
-            col_header(&if is_wide { format!("{} W (Tot)", t("Disk")) } else { format!("{} W", t("Disk")) }, is_disk_w, sort_asc),
-            if is_disk_w {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
-            } else {
-                header_style
-            },
-        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header("CPU%", is_cpu, sort_asc),
+                if is_cpu {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header("RAM", is_mem, sort_asc),
+                if is_mem {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header(
+                    &if is_wide {
+                        format!("{} ↓ (Tot)", t("Network"))
+                    } else {
+                        format!("{} ↓", t("Network"))
+                    },
+                    is_net_rx,
+                    sort_asc,
+                ),
+                if is_net_rx {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header(
+                    &if is_wide {
+                        format!("{} ↑ (Tot)", t("Network"))
+                    } else {
+                        format!("{} ↑", t("Network"))
+                    },
+                    is_net_tx,
+                    sort_asc,
+                ),
+                if is_net_tx {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header(
+                    &if is_wide {
+                        format!("{} R (Tot)", t("Disk"))
+                    } else {
+                        format!("{} R", t("Disk"))
+                    },
+                    is_disk_r,
+                    sort_asc,
+                ),
+                if is_disk_r {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header(
+                    &if is_wide {
+                        format!("{} W (Tot)", t("Disk"))
+                    } else {
+                        format!("{} W", t("Disk"))
+                    },
+                    is_disk_w,
+                    sort_asc,
+                ),
+                if is_disk_w {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
         Cell::from(Span::styled(t("State"), header_style)),
     ];
     let header_row = Row::new(header_cells).height(1);
@@ -179,71 +249,116 @@ pub fn render_with_cursor(
         )]));
 
         // CPU% cell
-        let cpu_color = if selected { sel_fg } else { Theme::color_for_pct(c.cpu_pct) };
-        let cpu_cell = Cell::from(Line::from(vec![Span::styled(
-            format!("{:.1}%", c.cpu_pct),
-            row_style.fg(cpu_color),
-        )]).alignment(ratatui::layout::Alignment::Right));
+        let cpu_color = if selected {
+            sel_fg
+        } else {
+            Theme::color_for_pct(c.cpu_pct)
+        };
+        let cpu_cell = Cell::from(
+            Line::from(vec![Span::styled(
+                format!("{:.1}%", c.cpu_pct),
+                row_style.fg(cpu_color),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
         // RAM Used + % cell
         let ram_str = format!("{} ({:.1}%)", ByteSize(c.memory_bytes), c.memory_pct);
-        let ram_cell = Cell::from(Line::from(vec![Span::styled(
-            ram_str,
-            row_style.fg(if selected { sel_fg } else { normal_fg }),
-        )]).alignment(ratatui::layout::Alignment::Right));
+        let ram_cell = Cell::from(
+            Line::from(vec![Span::styled(
+                ram_str,
+                row_style.fg(if selected { sel_fg } else { normal_fg }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
         // Red ↓ (rate + total if wide)
         let rx_str = if is_wide {
-            format!("{} ({})", format_bps(c.net_recv_per_sec), ByteSize(c.net_recv_total))
+            format!(
+                "{} ({})",
+                format_bps(c.net_recv_per_sec),
+                ByteSize(c.net_recv_total)
+            )
         } else {
             format_bps(c.net_recv_per_sec)
         };
-        let rx_cell = Cell::from(Line::from(vec![Span::styled(
-            rx_str,
-            row_style.fg(if selected { sel_fg } else { theme.ok }),
-        )]).alignment(ratatui::layout::Alignment::Right));
+        let rx_cell = Cell::from(
+            Line::from(vec![Span::styled(
+                rx_str,
+                row_style.fg(if selected { sel_fg } else { theme.ok }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
         // Red ↑ (rate + total if wide)
         let tx_str = if is_wide {
-            format!("{} ({})", format_bps(c.net_sent_per_sec), ByteSize(c.net_sent_total))
+            format!(
+                "{} ({})",
+                format_bps(c.net_sent_per_sec),
+                ByteSize(c.net_sent_total)
+            )
         } else {
             format_bps(c.net_sent_per_sec)
         };
-        let tx_cell = Cell::from(Line::from(vec![Span::styled(
-            tx_str,
-            row_style.fg(if selected { sel_fg } else { theme.accent_dim }),
-        )]).alignment(ratatui::layout::Alignment::Right));
+        let tx_cell = Cell::from(
+            Line::from(vec![Span::styled(
+                tx_str,
+                row_style.fg(if selected { sel_fg } else { theme.accent_dim }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
         // Disco R (rate + total if wide)
         let disk_r_str = if is_wide {
-            format!("{} ({})", format_bps(c.disk_read_per_sec), ByteSize(c.disk_read_total))
+            format!(
+                "{} ({})",
+                format_bps(c.disk_read_per_sec),
+                ByteSize(c.disk_read_total)
+            )
         } else {
             format_bps(c.disk_read_per_sec)
         };
-        let disk_r_cell = Cell::from(Line::from(vec![Span::styled(
-            disk_r_str,
-            row_style.fg(if selected { sel_fg } else { theme.accent_dim }),
-        )]).alignment(ratatui::layout::Alignment::Right));
+        let disk_r_cell = Cell::from(
+            Line::from(vec![Span::styled(
+                disk_r_str,
+                row_style.fg(if selected { sel_fg } else { theme.accent_dim }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
         // Disco W (rate + total if wide)
         let disk_w_str = if is_wide {
-            format!("{} ({})", format_bps(c.disk_write_per_sec), ByteSize(c.disk_write_total))
+            format!(
+                "{} ({})",
+                format_bps(c.disk_write_per_sec),
+                ByteSize(c.disk_write_total)
+            )
         } else {
             format_bps(c.disk_write_per_sec)
         };
-        let disk_w_cell = Cell::from(Line::from(vec![Span::styled(
-            disk_w_str,
-            row_style.fg(if selected { sel_fg } else { theme.ok }),
-        )]).alignment(ratatui::layout::Alignment::Right));
+        let disk_w_cell = Cell::from(
+            Line::from(vec![Span::styled(
+                disk_w_str,
+                row_style.fg(if selected { sel_fg } else { theme.ok }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
         // Estado cell (circular indicator + status)
         let status_indicator = "● ";
-        let scolor = if selected { sel_fg } else { status_color(&c.status) };
+        let scolor = if selected {
+            sel_fg
+        } else {
+            status_color(&c.status)
+        };
         let status_text = t(c.status.as_str());
 
         let status_cell = Cell::from(Line::from(vec![
             Span::styled(status_indicator, row_style.fg(scolor)),
-            Span::styled(status_text, row_style.fg(if selected { sel_fg } else { normal_fg })),
+            Span::styled(
+                status_text,
+                row_style.fg(if selected { sel_fg } else { normal_fg }),
+            ),
         ]));
 
         let row = Row::new(vec![

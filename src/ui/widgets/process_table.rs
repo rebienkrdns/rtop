@@ -91,7 +91,13 @@ fn col_header(label: &str, active: bool, asc: bool) -> String {
     }
 }
 
-pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &ProcessTableState, lang: crate::localization::Language) {
+pub fn render(
+    f: &mut Frame,
+    area: Rect,
+    processes: &[ProcessData],
+    state: &ProcessTableState,
+    lang: crate::localization::Language,
+) {
     let theme = Theme::default_theme();
     let t = |key: &'static str| crate::localization::translate(key, lang);
 
@@ -105,22 +111,46 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
     let status_label = state.status_filter.label(lang);
     let filter_line = if state.filter_active {
         Line::from(vec![
-            Span::styled(format!("{}: /", t("Filter")), Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}: /", t("Filter")),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(state.filter.as_str(), Style::default().fg(Color::White)),
             Span::styled("█", Style::default().fg(theme.accent)),
         ])
     } else if !state.filter.is_empty() {
         Line::from(vec![
-            Span::styled(format!("{}: ", t("Filter")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}: ", t("Filter")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(state.filter.as_str(), Style::default().fg(Color::White)),
-            Span::styled(format!("  {}  ", t("Clean filter")), Style::default().fg(theme.muted)),
-            Span::styled("  [f] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(status_label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("  {}  ", t("Clean filter")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "  [f] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                status_label,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ])
     } else {
         Line::from(vec![
             Span::styled("/ ", Style::default().fg(theme.accent)),
-            Span::styled(format!("{}  ", t("PressSlashToFilter")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", t("PressSlashToFilter")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled("c", Style::default().fg(theme.accent)),
             Span::styled(" CPU  ", Style::default().fg(theme.muted)),
             Span::styled("m", Style::default().fg(theme.accent)),
@@ -128,9 +158,22 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
             Span::styled("r", Style::default().fg(theme.accent)),
             Span::styled(" DiskR  ", Style::default().fg(theme.muted)),
             Span::styled("w", Style::default().fg(theme.accent)),
-            Span::styled(format!(" DiskW  ↑↓ {}  Enter {}  ", t("Navigate"), t("EnterDetail")), Style::default().fg(theme.muted)),
-            Span::styled("[f] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(status_label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!(" DiskW  ↑↓ {}  Enter {}  ", t("Navigate"), t("EnterDetail")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[f] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                status_label,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ])
     };
     f.render_widget(Paragraph::new(filter_line), chunks[0]);
@@ -154,7 +197,10 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
     // Apply sort
     filtered.sort_by(|a, b| {
         let ord = match state.sort_col {
-            ProcessSortColumn::Cpu => a.cpu_pct.partial_cmp(&b.cpu_pct).unwrap_or(std::cmp::Ordering::Equal),
+            ProcessSortColumn::Cpu => a
+                .cpu_pct
+                .partial_cmp(&b.cpu_pct)
+                .unwrap_or(std::cmp::Ordering::Equal),
             ProcessSortColumn::Memory => a.memory_bytes.cmp(&b.memory_bytes),
             ProcessSortColumn::DiskRead => {
                 let ar = a.disk_read_per_sec.unwrap_or(0.0);
@@ -167,7 +213,11 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
                 aw.partial_cmp(&bw).unwrap_or(std::cmp::Ordering::Equal)
             }
         };
-        if state.sort_asc { ord } else { ord.reverse() }
+        if state.sort_asc {
+            ord
+        } else {
+            ord.reverse()
+        }
     });
 
     let is_cpu = state.sort_col == ProcessSortColumn::Cpu;
@@ -175,27 +225,68 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
     let is_dr = state.sort_col == ProcessSortColumn::DiskRead;
     let is_dw = state.sort_col == ProcessSortColumn::DiskWrite;
 
-    let header_style = Style::default().fg(theme.accent).add_modifier(Modifier::BOLD);
+    let header_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
 
     let header_cells = vec![
-        Cell::from(Line::from(Span::styled("PID", header_style)).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(
+            Line::from(Span::styled("PID", header_style))
+                .alignment(ratatui::layout::Alignment::Right),
+        ),
         Cell::from(Span::styled(t("Process"), header_style)),
-        Cell::from(Line::from(Span::styled(
-            col_header("CPU%", is_cpu, state.sort_asc),
-            if is_cpu { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
-        )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Line::from(Span::styled(
-            col_header("RAM", is_mem, state.sort_asc),
-            if is_mem { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
-        )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Line::from(Span::styled(
-            col_header(t("Disk R"), is_dr, state.sort_asc),
-            if is_dr { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
-        )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Line::from(Span::styled(
-            col_header(t("Disk W"), is_dw, state.sort_asc),
-            if is_dw { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
-        )).alignment(ratatui::layout::Alignment::Right)),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header("CPU%", is_cpu, state.sort_asc),
+                if is_cpu {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header("RAM", is_mem, state.sort_asc),
+                if is_mem {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header(t("Disk R"), is_dr, state.sort_asc),
+                if is_dr {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
+        Cell::from(
+            Line::from(Span::styled(
+                col_header(t("Disk W"), is_dw, state.sort_asc),
+                if is_dw {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ),
         Cell::from(Span::styled(t("State"), header_style)),
     ];
     let header_row = Row::new(header_cells).height(1);
@@ -214,7 +305,11 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
             Style::default()
         };
 
-        let cpu_color = if selected { theme.selected_fg } else { Theme::color_for_pct(p.cpu_pct) };
+        let cpu_color = if selected {
+            theme.selected_fg
+        } else {
+            Theme::color_for_pct(p.cpu_pct)
+        };
 
         let normal_fg = theme.text;
         let sel_fg = theme.selected_fg;
@@ -228,54 +323,55 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
             }
         };
 
-        let pid_cell = Cell::from(Line::from(vec![
-            Span::styled(
+        let pid_cell = Cell::from(
+            Line::from(vec![Span::styled(
                 format!("{}", p.pid),
-                row_style.fg(if selected { sel_fg } else { normal_fg })
-            )
-        ]).alignment(ratatui::layout::Alignment::Right));
+                row_style.fg(if selected { sel_fg } else { normal_fg }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
-        let process_cell = Cell::from(Line::from(vec![
-            Span::styled(
-                p.name.clone(),
-                row_style.fg(if selected { sel_fg } else { normal_fg })
-            )
-        ]));
+        let process_cell = Cell::from(Line::from(vec![Span::styled(
+            p.name.clone(),
+            row_style.fg(if selected { sel_fg } else { normal_fg }),
+        )]));
 
-        let cpu_cell = Cell::from(Line::from(vec![
-            Span::styled(
+        let cpu_cell = Cell::from(
+            Line::from(vec![Span::styled(
                 format!("{:.1}%", p.cpu_pct),
-                row_style.fg(cpu_color)
-            )
-        ]).alignment(ratatui::layout::Alignment::Right));
+                row_style.fg(cpu_color),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
-        let ram_cell = Cell::from(Line::from(vec![
-            Span::styled(
+        let ram_cell = Cell::from(
+            Line::from(vec![Span::styled(
                 format!("{}", ByteSize(p.memory_bytes)),
-                row_style.fg(if selected { sel_fg } else { normal_fg })
-            )
-        ]).alignment(ratatui::layout::Alignment::Right));
+                row_style.fg(if selected { sel_fg } else { normal_fg }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
-        let disk_r_cell = Cell::from(Line::from(vec![
-            Span::styled(
+        let disk_r_cell = Cell::from(
+            Line::from(vec![Span::styled(
                 fmt_rate(p.disk_read_per_sec),
-                row_style.fg(if selected { sel_fg } else { theme.accent_dim })
-            )
-        ]).alignment(ratatui::layout::Alignment::Right));
+                row_style.fg(if selected { sel_fg } else { theme.accent_dim }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
-        let disk_w_cell = Cell::from(Line::from(vec![
-            Span::styled(
+        let disk_w_cell = Cell::from(
+            Line::from(vec![Span::styled(
                 fmt_rate(p.disk_write_per_sec),
-                row_style.fg(if selected { sel_fg } else { theme.ok })
-            )
-        ]).alignment(ratatui::layout::Alignment::Right));
+                row_style.fg(if selected { sel_fg } else { theme.ok }),
+            )])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
 
-        let status_cell = Cell::from(Line::from(vec![
-            Span::styled(
-                p.status.to_localized_str(lang),
-                row_style.fg(status_color)
-            )
-        ]));
+        let status_cell = Cell::from(Line::from(vec![Span::styled(
+            p.status.to_localized_str(lang),
+            row_style.fg(status_color),
+        )]));
 
         let row = Row::new(vec![
             pid_cell,
@@ -285,7 +381,8 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
             disk_r_cell,
             disk_w_cell,
             status_cell,
-        ]).style(row_style);
+        ])
+        .style(row_style);
         rows.push(row);
     }
 

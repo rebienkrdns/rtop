@@ -116,7 +116,11 @@ impl DiskIoCollector {
                 };
                 self.prev.insert(
                     name.clone(),
-                    DiskIoSnapshot { timestamp: now, sectors_read: sr, sectors_written: sw },
+                    DiskIoSnapshot {
+                        timestamp: now,
+                        sectors_read: sr,
+                        sectors_written: sw,
+                    },
                 );
                 result.insert(name.clone(), rate);
             }
@@ -201,7 +205,10 @@ impl DiskIoCollector {
     }
 
     #[cfg(target_os = "linux")]
-    pub fn process_io_rates(&mut self, pids: &[u32]) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
+    pub fn process_io_rates(
+        &mut self,
+        pids: &[u32],
+    ) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
         use std::fs;
         let now = Instant::now();
         let mut result = HashMap::new();
@@ -266,7 +273,10 @@ impl DiskIoCollector {
     }
 
     #[cfg(target_os = "macos")]
-    pub fn process_io_rates(&mut self, pids: &[u32]) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
+    pub fn process_io_rates(
+        &mut self,
+        pids: &[u32],
+    ) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
         use libproc::libproc::pid_rusage::{pidrusage, RUsageInfoV2};
         let now = Instant::now();
         let mut result = HashMap::new();
@@ -292,11 +302,14 @@ impl DiskIoCollector {
                     crate::models::process::ProcessIoData::default()
                 };
 
-                self.proc_prev.insert(pid, DiskIoSnapshot {
-                    timestamp: now,
-                    sectors_read: read_bytes,
-                    sectors_written: write_bytes,
-                });
+                self.proc_prev.insert(
+                    pid,
+                    DiskIoSnapshot {
+                        timestamp: now,
+                        sectors_read: read_bytes,
+                        sectors_written: write_bytes,
+                    },
+                );
                 result.insert(pid, rate);
             }
         }
@@ -306,7 +319,10 @@ impl DiskIoCollector {
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    pub fn process_io_rates(&mut self, _pids: &[u32]) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
+    pub fn process_io_rates(
+        &mut self,
+        _pids: &[u32],
+    ) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
         (HashMap::new(), false)
     }
 }

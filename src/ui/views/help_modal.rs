@@ -31,20 +31,20 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
         (
             state.t("General Navigation"),
             vec![
-                ("[q]",   state.t("Quit rtop")),
+                ("[q]", state.t("Quit rtop")),
                 ("[Ctrl+C]", state.t("Quit always")),
                 ("[Tab]", state.t("Change tab")),
-                ("[F1]",  state.t("Show hide help")),
+                ("[F1]", state.t("Show hide help")),
                 ("[Esc]", state.t("Close modal exit detail")),
             ],
         ),
         (
             state.t("System"),
             vec![
-                ("[[]]",   state.t("Decrease refresh interval")),
-                ("[]]]",   state.t("Increase refresh interval")),
-                ("[F2]",   state.t("Select disk")),
-                ("[F3]",   state.t("Select network interface")),
+                ("[[]]", state.t("Decrease refresh interval")),
+                ("[]]]", state.t("Increase refresh interval")),
+                ("[F2]", state.t("Select disk")),
+                ("[F3]", state.t("Select network interface")),
             ],
         ),
         (
@@ -52,12 +52,12 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             vec![
                 ("[↑ / ↓]", state.t("Navigate list")),
                 ("[Enter]", state.t("View process detail")),
-                ("[/]",     state.t("Toggle filter by name")),
-                ("[Esc]",   state.t("Clear filter")),
-                ("[c]",     state.t("Sort by CPU")),
-                ("[m]",     state.t("Sort by Memory")),
-                ("[r]",     state.t("Sort by disk read")),
-                ("[w]",     state.t("Sort by disk write")),
+                ("[/]", state.t("Toggle filter by name")),
+                ("[Esc]", state.t("Clear filter")),
+                ("[c]", state.t("Sort by CPU")),
+                ("[m]", state.t("Sort by Memory")),
+                ("[r]", state.t("Sort by disk read")),
+                ("[w]", state.t("Sort by disk write")),
             ],
         ),
         (
@@ -65,17 +65,17 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             vec![
                 ("[↑ / ↓]", state.t("Navigate list")),
                 ("[Enter]", state.t("View container detail")),
-                ("[l]",     state.t("View container logs")),
-                ("[r]",     state.t("Restart container")),
-                ("[s]",     state.t("Stop container")),
+                ("[l]", state.t("View container logs")),
+                ("[r]", state.t("Restart container")),
+                ("[s]", state.t("Stop container")),
             ],
         ),
         (
             state.t("Container logs"),
             vec![
                 ("[↑ / ↓]", state.t("Scroll logs")),
-                ("[f]",     state.t("Toggle auto-scroll")),
-                ("[Esc]",   state.t("Back to container detail")),
+                ("[f]", state.t("Toggle auto-scroll")),
+                ("[Esc]", state.t("Back to container detail")),
             ],
         ),
     ];

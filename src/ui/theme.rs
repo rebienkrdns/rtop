@@ -18,15 +18,15 @@ pub struct Theme {
 impl Theme {
     pub fn default_theme() -> Self {
         Self {
-            ok:          Color::Rgb(165, 213, 102), // #a5d566
-            warn:        Color::Rgb(235, 192, 109), // #ebc06d
-            crit:        Color::Rgb(255, 180, 171), // #ffb4ab
-            accent:      Color::Rgb(146, 227, 218), // #92e3da
-            accent_dim:  Color::Rgb(118, 199, 190), // #76c7be
-            disk_fill:   Color::Rgb(255, 180, 166), // #ffb4a6
-            text:        Color::Rgb(227, 225, 237), // #e3e1ed
-            muted:       Color::Rgb(136, 147, 145), // #889391
-            bg:          Color::Reset,
+            ok: Color::Rgb(165, 213, 102),         // #a5d566
+            warn: Color::Rgb(235, 192, 109),       // #ebc06d
+            crit: Color::Rgb(255, 180, 171),       // #ffb4ab
+            accent: Color::Rgb(146, 227, 218),     // #92e3da
+            accent_dim: Color::Rgb(118, 199, 190), // #76c7be
+            disk_fill: Color::Rgb(255, 180, 166),  // #ffb4a6
+            text: Color::Rgb(227, 225, 237),       // #e3e1ed
+            muted: Color::Rgb(136, 147, 145),      // #889391
+            bg: Color::Reset,
             selected_bg: Color::Rgb(118, 199, 190), // #76c7be
             selected_fg: Color::Rgb(0, 32, 29),     // #00201d
         }

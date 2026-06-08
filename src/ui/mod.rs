@@ -17,14 +17,12 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
     // 10.1 — Advertencia en terminales muy pequeñas
     if area.width < 80 || area.height < 24 {
-        let msg = Paragraph::new(Line::from(vec![
-            Span::styled(
-                state.t("TerminalTooSmall"),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]))
+        let msg = Paragraph::new(Line::from(vec![Span::styled(
+            state.t("TerminalTooSmall"),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )]))
         .block(Block::default().borders(Borders::ALL).title(" rtop "))
         .alignment(Alignment::Center);
         f.render_widget(msg, area);

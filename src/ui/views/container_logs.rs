@@ -63,14 +63,24 @@ pub fn render(f: &mut Frame, area: Rect, state: &LogsViewState) {
 
     let title = format!(" Logs: {} ", state.container_name);
     let follow_indicator = if state.follow {
-        Span::styled(" [SIGUIENDO] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+        Span::styled(
+            " [SIGUIENDO] ",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         Span::styled(" [ESTÁTICO] ", Style::default().fg(theme.muted))
     };
 
     let block = Block::default()
         .title(Line::from(vec![
-            Span::styled(title, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                title,
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             follow_indicator,
         ]))
         .borders(Borders::ALL)
@@ -111,14 +121,33 @@ pub fn render(f: &mut Frame, area: Rect, state: &LogsViewState) {
 
     // Footer hint
     let hint = Line::from(vec![
-        Span::styled("[ESC] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[ESC] ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("Volver  ", Style::default().fg(theme.muted)),
-        Span::styled("[F] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[F] ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("Seguir  ", Style::default().fg(theme.muted)),
-        Span::styled("[↑↓] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[↑↓] ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("Scroll  ", Style::default().fg(theme.muted)),
         Span::styled(
-            format!(" {}/{} líneas", state.scroll + visible_rows.min(state.lines.len()), state.lines.len()),
+            format!(
+                " {}/{} líneas",
+                state.scroll + visible_rows.min(state.lines.len()),
+                state.lines.len()
+            ),
             Style::default().fg(theme.muted),
         ),
     ]);

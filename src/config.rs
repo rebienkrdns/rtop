@@ -127,8 +127,9 @@ mod tests {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
             .unwrap();
-        let temp_file_path = std::env::temp_dir().join(format!("rtop_config_test_{}.toml", now.as_nanos()));
-        
+        let temp_file_path =
+            std::env::temp_dir().join(format!("rtop_config_test_{}.toml", now.as_nanos()));
+
         // Set path to temp file
         std::env::set_var("RTOP_CONFIG_PATH", &temp_file_path);
 
@@ -148,7 +149,10 @@ mod tests {
         assert!(cfg.show_swap);
         assert!(cfg.docker_socket_path.is_none());
 
-        assert!(temp_file_path.exists(), "Config file should have been created automatically");
+        assert!(
+            temp_file_path.exists(),
+            "Config file should have been created automatically"
+        );
 
         // 2. Save modified configuration and load again
         let mut modified = cfg;
@@ -169,7 +173,10 @@ mod tests {
         assert_eq!(loaded.default_tab, Tab::Network);
         assert_eq!(loaded.process_sort_column, SortColumn::Memory);
         assert!(!loaded.show_swap);
-        assert_eq!(loaded.docker_socket_path.as_deref(), Some("/var/run/docker.sock"));
+        assert_eq!(
+            loaded.docker_socket_path.as_deref(),
+            Some("/var/run/docker.sock")
+        );
 
         // 3. Corrupt configuration file
         let corrupt_content = "this is invalid toml = [ {";
@@ -181,8 +188,12 @@ mod tests {
         assert_eq!(fallback_cfg.refresh_interval_secs, 2.0);
 
         // File should not have been overwritten or deleted
-        let current_content = fs::read_to_string(&temp_file_path).expect("Failed to read config file");
-        assert_eq!(current_content, corrupt_content, "Corrupt file should be preserved");
+        let current_content =
+            fs::read_to_string(&temp_file_path).expect("Failed to read config file");
+        assert_eq!(
+            current_content, corrupt_content,
+            "Corrupt file should be preserved"
+        );
 
         // Clean up
         fs::remove_file(&temp_file_path).ok();

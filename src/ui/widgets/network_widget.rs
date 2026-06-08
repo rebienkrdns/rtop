@@ -33,11 +33,17 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             let sent_str = format_bps(data.sent_bytes_per_sec);
 
             let is_total = state.selected_nic.is_none();
-            let label = if is_total { "Todas (sumatoria)" } else { data.interface.as_str() };
+            let label = if is_total {
+                "Todas (sumatoria)"
+            } else {
+                data.interface.as_str()
+            };
 
             // Find IP if a specific interface is selected
             let ip = if !is_total {
-                state.available_nics.iter()
+                state
+                    .available_nics
+                    .iter()
                     .find(|nic| nic.name == data.interface)
                     .and_then(|nic| nic.ip_address.as_ref())
             } else {
@@ -47,10 +53,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             // Layout horizontal: left (content) and right (hint)
             let horizontal = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Min(0),
-                    Constraint::Length(16),
-                ])
+                .constraints([Constraint::Min(0), Constraint::Length(16)])
                 .split(area);
 
             // Left content layout
@@ -77,24 +80,23 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
 
             // Line 2: separator line if height >= 5
             if area.height >= 5 {
-                left_lines.push(Line::from(vec![
-                    Span::styled(
-                        "─".repeat(horizontal[0].width as usize),
-                        Style::default().fg(theme.muted),
-                    ),
-                ]));
+                left_lines.push(Line::from(vec![Span::styled(
+                    "─".repeat(horizontal[0].width as usize),
+                    Style::default().fg(theme.muted),
+                )]));
             }
 
             // Line 3: ↓ Entrada: <rate> (Total Recibido: <total>)
             let recv_total_str = format!("{}", ByteSize(data.total_recv_bytes));
             left_lines.push(Line::from(vec![
-                Span::styled("↓ ", Style::default().fg(theme.ok).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "↓ ",
+                    Style::default().fg(theme.ok).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Entrada: ", Style::default().fg(theme.muted)),
                 Span::styled(
                     format!("{:<10}", recv_str),
-                    Style::default()
-                        .fg(theme.ok)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(theme.ok).add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("   "),
                 Span::styled(
@@ -106,7 +108,12 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             // Line 4: ↑ Salida: <rate> (Total Enviado: <total>)
             let sent_total_str = format!("{}", ByteSize(data.total_sent_bytes));
             left_lines.push(Line::from(vec![
-                Span::styled("↑ ", Style::default().fg(theme.accent_dim).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "↑ ",
+                    Style::default()
+                        .fg(theme.accent_dim)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Salida:  ", Style::default().fg(theme.muted)),
                 Span::styled(
                     format!("{:<10}", sent_str),
@@ -124,12 +131,10 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             f.render_widget(Paragraph::new(left_lines), horizontal[0]);
 
             // Right content (hint)
-            let hint = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    "[ F3 cambiar ]",
-                    Style::default().fg(theme.muted),
-                ),
-            ]))
+            let hint = Paragraph::new(Line::from(vec![Span::styled(
+                "[ F3 cambiar ]",
+                Style::default().fg(theme.muted),
+            )]))
             .alignment(Alignment::Right);
             f.render_widget(hint, horizontal[1]);
         }

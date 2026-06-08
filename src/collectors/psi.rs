@@ -1,7 +1,7 @@
+use crate::models::{PsiData, PsiValues};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use crate::models::{PsiData, PsiValues};
 
 pub struct PsiCollector {
     base_path: PathBuf,
@@ -96,7 +96,12 @@ impl PsiCollector {
                 }
             }
 
-            let values = PsiValues { avg10, avg60, avg300, total };
+            let values = PsiValues {
+                avg10,
+                avg60,
+                avg300,
+                total,
+            };
             if kind == "some" {
                 some_val = Some(values);
             } else if kind == "full" {
@@ -111,7 +116,7 @@ impl PsiCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::{create_dir_all, write, remove_dir_all};
+    use std::fs::{create_dir_all, remove_dir_all, write};
 
     #[test]
     fn test_psi_collector_success() {
@@ -122,8 +127,9 @@ mod tests {
         // Write mock CPU
         write(
             test_dir.join("cpu"),
-            "some avg10=1.23 avg60=4.56 avg300=7.89 total=123456\n"
-        ).unwrap();
+            "some avg10=1.23 avg60=4.56 avg300=7.89 total=123456\n",
+        )
+        .unwrap();
 
         // Write mock memory
         write(
@@ -175,8 +181,9 @@ mod tests {
         // CPU exists but Memory is missing
         write(
             test_dir.join("cpu"),
-            "some avg10=1.23 avg60=4.56 avg300=7.89 total=123456\n"
-        ).unwrap();
+            "some avg10=1.23 avg60=4.56 avg300=7.89 total=123456\n",
+        )
+        .unwrap();
 
         let collector = PsiCollector::with_base_path(&test_dir);
         let data = collector.collect();

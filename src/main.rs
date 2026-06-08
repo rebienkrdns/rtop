@@ -1,9 +1,9 @@
 mod app;
 mod collectors;
 mod config;
+mod localization;
 mod models;
 mod ui;
-mod localization;
 
 use std::io::Stdout;
 

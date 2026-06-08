@@ -38,7 +38,9 @@ pub fn render(f: &mut Frame, state: &AppState) {
     let all_is_selected = state.selected_nic.is_none();
     let all_prefix = if all_is_cursor { "> " } else { "  " };
     let all_style = if all_is_cursor || all_is_selected {
-        Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(theme.accent)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };
@@ -50,9 +52,19 @@ pub fn render(f: &mut Frame, state: &AppState) {
     let all_item = ListItem::new(Line::from(vec![
         Span::styled(all_prefix, all_style),
         Span::styled(format!("{:<12}", "Todas"), all_style),
-        Span::styled(format!("{:<18}", "(sumatoria)"), Style::default().fg(theme.muted)),
         Span::styled(
-            format!("★ {}", if all_is_selected { "seleccionada" } else { "suma de interfaces" }),
+            format!("{:<18}", "(sumatoria)"),
+            Style::default().fg(theme.muted),
+        ),
+        Span::styled(
+            format!(
+                "★ {}",
+                if all_is_selected {
+                    "seleccionada"
+                } else {
+                    "suma de interfaces"
+                }
+            ),
             all_status_style,
         ),
     ]));

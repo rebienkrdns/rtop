@@ -40,14 +40,21 @@ impl ContainerCollector {
     pub async fn new() -> Self {
         let docker = Self::connect().await;
         let state = if docker.is_some() {
-            ContainerBackendState { available: true, message: None }
+            ContainerBackendState {
+                available: true,
+                message: None,
+            }
         } else {
             ContainerBackendState {
                 available: false,
                 message: Some("Docker/Podman no disponible".to_string()),
             }
         };
-        Self { docker, prev: HashMap::new(), state }
+        Self {
+            docker,
+            prev: HashMap::new(),
+            state,
+        }
     }
 
     async fn connect() -> Option<Docker> {
@@ -62,7 +69,9 @@ impl ContainerCollector {
                 if !Path::new(path).exists() {
                     continue;
                 }
-                if let Ok(docker) = Docker::connect_with_unix(path, 120, bollard::API_DEFAULT_VERSION) {
+                if let Ok(docker) =
+                    Docker::connect_with_unix(path, 120, bollard::API_DEFAULT_VERSION)
+                {
                     if docker.version().await.is_ok() {
                         return Some(docker);
                     }
@@ -97,7 +106,13 @@ impl ContainerCollector {
             let docker_clone = docker.clone();
             let id = c.id.clone().unwrap_or_default();
             stats_futures.push(async move {
-                let stats_stream = docker_clone.stats(&id, Some(StatsOptions { stream: false, ..Default::default() }));
+                let stats_stream = docker_clone.stats(
+                    &id,
+                    Some(StatsOptions {
+                        stream: false,
+                        ..Default::default()
+                    }),
+                );
                 let mut stream = stats_stream.take(1);
                 let stats = match stream.next().await {
                     Some(Ok(s)) => Some(s),
@@ -196,9 +211,15 @@ impl ContainerCollector {
 }
 
 fn extract_ports(inspect: &Option<bollard::models::ContainerInspectResponse>) -> Vec<String> {
-    let Some(resp) = inspect else { return vec![]; };
-    let Some(host_config) = resp.host_config.as_ref() else { return vec![]; };
-    let Some(bindings) = host_config.port_bindings.as_ref() else { return vec![]; };
+    let Some(resp) = inspect else {
+        return vec![];
+    };
+    let Some(host_config) = resp.host_config.as_ref() else {
+        return vec![];
+    };
+    let Some(bindings) = host_config.port_bindings.as_ref() else {
+        return vec![];
+    };
     let mut ports = Vec::new();
     for (container_port, host_binds) in bindings {
         if let Some(binds) = host_binds {
@@ -215,8 +236,12 @@ fn extract_ports(inspect: &Option<bollard::models::ContainerInspectResponse>) ->
 }
 
 fn extract_volumes(inspect: &Option<bollard::models::ContainerInspectResponse>) -> Vec<String> {
-    let Some(resp) = inspect else { return vec![]; };
-    let Some(mounts) = resp.mounts.as_ref() else { return vec![]; };
+    let Some(resp) = inspect else {
+        return vec![];
+    };
+    let Some(mounts) = resp.mounts.as_ref() else {
+        return vec![];
+    };
     mounts
         .iter()
         .map(|m| {
@@ -229,9 +254,15 @@ fn extract_volumes(inspect: &Option<bollard::models::ContainerInspectResponse>) 
 }
 
 fn extract_networks(inspect: &Option<bollard::models::ContainerInspectResponse>) -> Vec<String> {
-    let Some(resp) = inspect else { return vec![]; };
-    let Some(ns) = resp.network_settings.as_ref() else { return vec![]; };
-    let Some(networks) = ns.networks.as_ref() else { return vec![]; };
+    let Some(resp) = inspect else {
+        return vec![];
+    };
+    let Some(ns) = resp.network_settings.as_ref() else {
+        return vec![];
+    };
+    let Some(networks) = ns.networks.as_ref() else {
+        return vec![];
+    };
     networks
         .iter()
         .map(|(name, net)| {
@@ -242,8 +273,12 @@ fn extract_networks(inspect: &Option<bollard::models::ContainerInspectResponse>)
 }
 
 fn extract_env_vars(inspect: &Option<bollard::models::ContainerInspectResponse>) -> Vec<String> {
-    let Some(resp) = inspect else { return vec![]; };
-    let Some(config) = resp.config.as_ref() else { return vec![]; };
+    let Some(resp) = inspect else {
+        return vec![];
+    };
+    let Some(config) = resp.config.as_ref() else {
+        return vec![];
+    };
     config.env.clone().unwrap_or_default()
 }
 
@@ -363,7 +398,8 @@ mod tests {
         blk_read: u64,
         blk_write: u64,
     ) -> bollard::container::Stats {
-        let json = format!(r#"{{
+        let json = format!(
+            r#"{{
             "read": "",
             "preread": "",
             "num_procs": 0,
@@ -419,7 +455,17 @@ mod tests {
             "storage_stats": {{}},
             "name": "",
             "id": ""
-        }}"#, rx_bytes, tx_bytes, mem_usage, mem_limit, blk_read, blk_write, total_usage, system_cpu_usage, online_cpus);
+        }}"#,
+            rx_bytes,
+            tx_bytes,
+            mem_usage,
+            mem_limit,
+            blk_read,
+            blk_write,
+            total_usage,
+            system_cpu_usage,
+            online_cpus
+        );
 
         serde_json::from_str(&json).unwrap()
     }
@@ -462,7 +508,7 @@ mod tests {
         assert!((res.0 - 40.0).abs() < 1.0);
         assert_eq!(res.1, 50000); // memory_bytes
         assert_eq!(res.2, 100000); // memory_limit_bytes
-        // rates should be approx (delta / 2.0s) = delta / 2.0
+                                   // rates should be approx (delta / 2.0s) = delta / 2.0
         assert!((res.3 - 100.0).abs() < 5.0); // net_recv_per_sec
         assert_eq!(res.4, 300); // net_recv_total
         assert!((res.5 - 200.0).abs() < 5.0); // net_sent_per_sec

@@ -1,5 +1,5 @@
-use chrono::Local;
 use bytesize::ByteSize;
+use chrono::Local;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -12,7 +12,10 @@ use crate::app::AppState;
 use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
 use crate::ui::views::{disk_selector, nic_selector};
-use crate::ui::widgets::{container_table, cpu_bar, disk_bar, history_chart, memory_bar, network_widget, process_table, psi_widget};
+use crate::ui::widgets::{
+    container_table, cpu_bar, disk_bar, history_chart, memory_bar, network_widget, process_table,
+    psi_widget,
+};
 
 pub fn draw(f: &mut Frame, state: &AppState) {
     let theme = Theme::default_theme();
@@ -40,20 +43,38 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     let now = Local::now().format("%H:%M:%S").to_string();
     let idx = state.interval_idx;
     let left_arrow = if idx > 0 { "◀ " } else { "  " };
-    let right_arrow = if idx < INTERVALS.len() - 1 { " ▶" } else { "  " };
+    let right_arrow = if idx < INTERVALS.len() - 1 {
+        " ▶"
+    } else {
+        "  "
+    };
     let label = interval_label(idx);
     let interval_ctrl = format!("[ {}{}{} ]", left_arrow, label, right_arrow);
 
     // 10.4 — Indicador de actualización: alterna ● / ○ en cada refresh
     let tick_dot = if state.refresh_tick { "●" } else { "○" };
-    let tick_color = if state.data_loaded { Color::Green } else { theme.muted };
+    let tick_color = if state.data_loaded {
+        Color::Green
+    } else {
+        theme.muted
+    };
 
     let header_text = Line::from(vec![
-        Span::styled(" rtop ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " rtop ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("│ ", Style::default().fg(theme.muted)),
         Span::styled(state.hostname.as_str(), Style::default().fg(theme.text)),
         Span::styled("    Refresco: ", Style::default().fg(theme.muted)),
-        Span::styled(interval_ctrl, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            interval_ctrl,
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("  ", Style::default()),
         Span::styled(tick_dot, Style::default().fg(tick_color)),
         Span::styled("  ", Style::default()),
@@ -61,8 +82,11 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Span::styled("   [F1 Ayuda]", Style::default().fg(theme.muted)),
     ]);
     f.render_widget(
-        Paragraph::new(header_text)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.accent))),
+        Paragraph::new(header_text).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent)),
+        ),
         header_area,
     );
 
@@ -81,7 +105,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
         // Columna 1: CPU y RAM
         let col1_block = Block::default()
-            .title(Span::styled(" CPU · RAM ", Style::default().fg(theme.accent)))
+            .title(Span::styled(
+                " CPU · RAM ",
+                Style::default().fg(theme.accent),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.accent_dim));
         let col1_inner = col1_block.inner(metrics_cols[0]);
@@ -106,7 +133,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
         // Columna 2: Disco y Red (I/O)
         let col2_block = Block::default()
-            .title(Span::styled(" Disco · Red (I/O) ", Style::default().fg(theme.accent)))
+            .title(Span::styled(
+                " Disco · Red (I/O) ",
+                Style::default().fg(theme.accent),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.accent_dim));
         let col2_inner = col2_block.inner(metrics_cols[1]);
@@ -143,7 +173,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
         // Columna 3: Presión (PSI)
         let col3_block = Block::default()
-            .title(Span::styled(" Presión (PSI) ", Style::default().fg(theme.accent)))
+            .title(Span::styled(
+                " Presión (PSI) ",
+                Style::default().fg(theme.accent),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.accent_dim));
         let col3_inner = col3_block.inner(metrics_cols[2]);
@@ -152,15 +185,15 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     } else {
         let metrics_cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(45),
-                Constraint::Percentage(55),
-            ])
+            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
             .split(metrics_area);
 
         // Columna 1: CPU, RAM y Disco
         let col1_block = Block::default()
-            .title(Span::styled(" CPU · RAM · Disco ", Style::default().fg(theme.accent)))
+            .title(Span::styled(
+                " CPU · RAM · Disco ",
+                Style::default().fg(theme.accent),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.accent_dim));
         let col1_inner = col1_block.inner(metrics_cols[0]);
@@ -174,7 +207,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
         // Columna 2: Red y Presión (PSI)
         let col2_block = Block::default()
-            .title(Span::styled(" Red · Presión (PSI) ", Style::default().fg(theme.accent)))
+            .title(Span::styled(
+                " Red · Presión (PSI) ",
+                Style::default().fg(theme.accent),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.accent_dim));
         let col2_inner = col2_block.inner(metrics_cols[1]);
@@ -184,7 +220,11 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             let samples = state.metrics_history.tail_n(state.history_range.samples());
             let col2_layout = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Min(0), Constraint::Length(1), Constraint::Min(0)])
+                .constraints([
+                    Constraint::Min(0),
+                    Constraint::Length(1),
+                    Constraint::Min(0),
+                ])
                 .split(col2_inner);
             history_chart::render_disk_net(f, col2_layout[0], &samples, state.history_range);
             psi_widget::render(f, col2_layout[2], state.psi.as_ref(), false);
@@ -208,22 +248,41 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Span::styled(
             " Procesos ",
             Style::default()
-                .fg(if state.active_tab == Tab::Processes { theme.selected_fg } else { theme.muted })
-                .bg(if state.active_tab == Tab::Processes { theme.accent_dim } else { theme.bg })
+                .fg(if state.active_tab == Tab::Processes {
+                    theme.selected_fg
+                } else {
+                    theme.muted
+                })
+                .bg(if state.active_tab == Tab::Processes {
+                    theme.accent_dim
+                } else {
+                    theme.bg
+                })
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
         Span::styled(
             " Contenedores ",
             Style::default()
-                .fg(if state.active_tab == Tab::Containers { theme.selected_fg } else { theme.muted })
-                .bg(if state.active_tab == Tab::Containers { theme.accent_dim } else { theme.bg })
+                .fg(if state.active_tab == Tab::Containers {
+                    theme.selected_fg
+                } else {
+                    theme.muted
+                })
+                .bg(if state.active_tab == Tab::Containers {
+                    theme.accent_dim
+                } else {
+                    theme.bg
+                })
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
     f.render_widget(
-        Paragraph::new(tabs_line)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim))),
+        Paragraph::new(tabs_line).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_dim)),
+        ),
         tabbar_area,
     );
 
@@ -241,16 +300,31 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             let title_str = if state.container_state.available {
                 let host_mem = state.memory.total_bytes;
                 let total_used: u64 = state.containers.iter().map(|c| c.memory_bytes).sum();
-                let has_unlimited = state.containers.iter().any(|c| c.memory_limit_bytes >= host_mem || c.memory_limit_bytes == 0);
+                let has_unlimited = state
+                    .containers
+                    .iter()
+                    .any(|c| c.memory_limit_bytes >= host_mem || c.memory_limit_bytes == 0);
                 let (total_limit, has_limit) = if has_unlimited {
                     (0, false)
                 } else {
-                    (state.containers.iter().map(|c| c.memory_limit_bytes).sum(), true)
+                    (
+                        state.containers.iter().map(|c| c.memory_limit_bytes).sum(),
+                        true,
+                    )
                 };
                 if has_limit {
-                    format!(" Contenedores: {} activos · Mem: {} / {} ", state.containers.len(), ByteSize(total_used), ByteSize(total_limit))
+                    format!(
+                        " Contenedores: {} activos · Mem: {} / {} ",
+                        state.containers.len(),
+                        ByteSize(total_used),
+                        ByteSize(total_limit)
+                    )
                 } else {
-                    format!(" Contenedores: {} activos · Mem: {} (límite: host) ", state.containers.len(), ByteSize(total_used))
+                    format!(
+                        " Contenedores: {} activos · Mem: {} (límite: host) ",
+                        state.containers.len(),
+                        ByteSize(total_used)
+                    )
                 }
             } else {
                 " Contenedores ".to_string()
@@ -294,48 +368,136 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     use crate::config::Tab;
     let footer_text = if state.active_tab == Tab::Processes {
         Line::from(vec![
-            Span::styled(" [q] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " [q] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Salir  ", Style::default().fg(theme.muted)),
-            Span::styled("[/] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[/] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Filtrar  ", Style::default().fg(theme.muted)),
-            Span::styled("[c] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[c] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("CPU  ", Style::default().fg(theme.muted)),
-            Span::styled("[m] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[m] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("RAM  ", Style::default().fg(theme.muted)),
-            Span::styled("[r] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[r] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("DiskR  ", Style::default().fg(theme.muted)),
-            Span::styled("[w] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[w] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("DiskW  ", Style::default().fg(theme.muted)),
-            Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[Tab] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Contenedores  ", Style::default().fg(theme.muted)),
-            Span::styled("[h] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[h] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Historial  ", Style::default().fg(theme.muted)),
-            Span::styled("[F1] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[F1] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Ayuda", Style::default().fg(theme.muted)),
         ])
     } else {
         Line::from(vec![
-            Span::styled(" [q] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " [q] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Salir  ", Style::default().fg(theme.muted)),
-            Span::styled("[◀▶] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[◀▶] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Refresco  ", Style::default().fg(theme.muted)),
-            Span::styled("[F2] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[F2] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Disco  ", Style::default().fg(theme.muted)),
-            Span::styled("[F3] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[F3] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Red  ", Style::default().fg(theme.muted)),
-            Span::styled("[h] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[h] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Historial  ", Style::default().fg(theme.muted)),
-            Span::styled("[t] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[t] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Rango  ", Style::default().fg(theme.muted)),
-            Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[Tab] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Cambiar  ", Style::default().fg(theme.muted)),
-            Span::styled("[F1] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[F1] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("Ayuda", Style::default().fg(theme.muted)),
         ])
     };
     f.render_widget(
-        Paragraph::new(footer_text)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim))),
+        Paragraph::new(footer_text).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_dim)),
+        ),
         footer_area,
     );
 

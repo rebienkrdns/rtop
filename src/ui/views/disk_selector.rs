@@ -17,7 +17,9 @@ pub fn render(f: &mut Frame, state: &AppState) {
     let block = Block::default()
         .title(Span::styled(
             " Seleccionar dispositivo de disco ",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
@@ -82,17 +84,20 @@ pub fn render(f: &mut Frame, state: &AppState) {
         let sel_mark = if is_selected { "  (seleccionado)" } else { "" };
 
         let base_style = if is_cursor {
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray)
         };
 
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{}{:<14} {:<12} {:>8}{}", cursor_sym, entry.device_short, mount, size_str, sel_mark),
-                base_style,
+        lines.push(Line::from(vec![Span::styled(
+            format!(
+                "{}{:<14} {:<12} {:>8}{}",
+                cursor_sym, entry.device_short, mount, size_str, sel_mark
             ),
-        ]));
+            base_style,
+        )]));
     }
 
     f.render_widget(Paragraph::new(lines), list_area);

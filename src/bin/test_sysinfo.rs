@@ -5,6 +5,11 @@ fn main() {
     sys.refresh_all();
     if let Some((pid, process)) = sys.processes().iter().next() {
         let thread_count = process.tasks().map(|t| t.len()).unwrap_or(1);
-        println!("PID: {}, name: {}, threads: {}", pid, process.name(), thread_count);
+        println!(
+            "PID: {}, name: {}, threads: {}",
+            pid,
+            process.name(),
+            thread_count
+        );
     }
 }

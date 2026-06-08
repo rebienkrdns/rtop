@@ -124,7 +124,7 @@ pub fn translate(key: &'static str, lang: Language) -> &'static str {
             "Clean filter" => "ESC clear",
             "All" => "All",
             "HelpShort" => "F1 Help",
-            
+
             // process_detail / container_detail specific keys
             "ProcessDetailHeader" => "Process detail:",
             "ContainerDetailHeader" => "Container:",
@@ -287,6 +287,6 @@ pub fn translate(key: &'static str, lang: Language) -> &'static str {
             "RestartLabel" => "reiniciar",
             "StopLabel" => "detener",
             _ => key,
-        }
+        },
     }
 }

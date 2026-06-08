@@ -18,12 +18,7 @@ fn max_bps(samples: &[&MetricSample], f: impl Fn(&MetricSample) -> f64) -> f64 {
     samples.iter().map(|s| f(s)).fold(0.0_f64, f64::max)
 }
 
-pub fn render_cpu_ram(
-    f: &mut Frame,
-    area: Rect,
-    samples: &[&MetricSample],
-    range: HistoryRange,
-) {
+pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange) {
     if area.height < 4 {
         return;
     }
@@ -91,12 +86,7 @@ pub fn render_cpu_ram(
     );
 }
 
-pub fn render_disk_net(
-    f: &mut Frame,
-    area: Rect,
-    samples: &[&MetricSample],
-    _range: HistoryRange,
-) {
+pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], _range: HistoryRange) {
     if area.height < 4 {
         return;
     }
@@ -173,11 +163,7 @@ pub fn render_disk_net(
         Sparkline::default()
             .data(&net_data)
             .max(net_max as u64)
-            .style(
-                Style::default()
-                    .fg(theme.ok)
-                    .bg(Color::Rgb(51, 52, 61)),
-            ),
+            .style(Style::default().fg(theme.ok).bg(Color::Rgb(51, 52, 61))),
         chunks[3],
     );
 }
@@ -195,7 +181,11 @@ pub fn render_load(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: 
         .split(area);
 
     let load_last = samples.last().map(|s| s.load1).unwrap_or(0.0);
-    let load_max = samples.iter().map(|s| s.load1).fold(0.0_f64, f64::max).max(1.0);
+    let load_max = samples
+        .iter()
+        .map(|s| s.load1)
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
 
     f.render_widget(
         Paragraph::new(Line::from(vec![

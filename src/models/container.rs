@@ -37,7 +37,7 @@ impl ContainerStatus {
 #[derive(Clone, Default, Debug)]
 #[allow(dead_code)]
 pub struct ContainerData {
-    pub id: String,            // primeros 12 chars del ID
+    pub id: String, // primeros 12 chars del ID
     pub name: String,
     pub image: String,
     pub status: ContainerStatus,

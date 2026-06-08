@@ -61,7 +61,11 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
     let usage_str = format!("{:.0}%", disk.usage_pct);
     f.render_widget(
         Paragraph::new(usage_str)
-            .style(Style::default().fg(usage_color).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(usage_color)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(ratatui::layout::Alignment::Right),
         header_cols[1],
     );
@@ -88,10 +92,18 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
         let read_str = fmt_rate(disk.read_bytes_per_sec);
 
         let io_line = Line::from(vec![
-            Span::styled("↑ Escritura ", Style::default().fg(theme.ok).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "↑ Escritura ",
+                Style::default().fg(theme.ok).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(write_str, Style::default().fg(theme.ok)),
             Span::raw("     "),
-            Span::styled("↓ Lectura ", Style::default().fg(theme.accent_dim).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "↓ Lectura ",
+                Style::default()
+                    .fg(theme.accent_dim)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(read_str, Style::default().fg(theme.accent_dim)),
         ]);
         f.render_widget(Paragraph::new(io_line), io_cols[0]);
