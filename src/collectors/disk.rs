@@ -218,8 +218,8 @@ impl DiskIoCollector {
             let path = format!("/proc/{}/io", pid);
             match fs::read_to_string(&path) {
                 Ok(content) => {
-                    let mut read_bytes = 0;
-                    let mut write_bytes = 0;
+                    let mut read_bytes: u64 = 0;
+                    let mut write_bytes: u64 = 0;
                     for line in content.lines() {
                         if line.starts_with("read_bytes:") {
                             if let Some(val_str) = line.split_whitespace().nth(1) {
