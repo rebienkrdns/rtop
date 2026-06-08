@@ -23,16 +23,19 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let env_lines = container.env_vars.len().max(1) as u16;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5), // info
-            Constraint::Length(3), // CPU bar
-            Constraint::Length(3), // Memory bar
-            Constraint::Length(3), // Net bar
-            Constraint::Length(3), // Disk bar
-            Constraint::Length(4), // ports + volumes
-            Constraint::Length(2), // footer
+            Constraint::Length(5),              // info básica
+            Constraint::Length(3),              // CPU bar
+            Constraint::Length(3),              // Memory bar
+            Constraint::Length(3),              // Net bar
+            Constraint::Length(3),              // Disk bar
+            Constraint::Length(4),              // ports + volumes
+            Constraint::Length(3),              // networks
+            Constraint::Length(env_lines + 2),  // env vars (con borde)
+            Constraint::Length(2),              // footer
             Constraint::Min(0),
         ])
         .split(inner);
@@ -138,19 +141,11 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
     f.render_widget(disk_gauge, chunks[4]);
 
     // Ports + Volumes
-    let ports_str = if container.ports.is_empty() {
-        "—".to_string()
-    } else {
-        container.ports.join(", ")
-    };
-    let volumes_str = if container.volumes.is_empty() {
-        "—".to_string()
-    } else {
-        container.volumes.join(", ")
-    };
+    let ports_str = if container.ports.is_empty() { "—".to_string() } else { container.ports.join("  ·  ") };
+    let volumes_str = if container.volumes.is_empty() { "—".to_string() } else { container.volumes.join("  ·  ") };
     let pv_lines = vec![
         Line::from(vec![
-            Span::styled("Puertos:  ", Style::default().fg(theme.muted)),
+            Span::styled("Puertos:   ", Style::default().fg(theme.muted)),
             Span::styled(ports_str, Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
@@ -159,6 +154,40 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
         ]),
     ];
     f.render_widget(Paragraph::new(pv_lines), chunks[5]);
+
+    // Networks
+    let nets_str = if container.networks.is_empty() { "—".to_string() } else { container.networks.join("  ·  ") };
+    let net_lines = vec![
+        Line::from(vec![
+            Span::styled("Redes:     ", Style::default().fg(theme.muted)),
+            Span::styled(nets_str, Style::default().fg(Color::Magenta)),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(net_lines), chunks[6]);
+
+    // Environment variables
+    use ratatui::widgets::Wrap;
+    let env_block = Block::default()
+        .title(Span::styled(" Variables de entorno ", Style::default().fg(theme.muted)))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.muted));
+    let env_inner = env_block.inner(chunks[7]);
+    f.render_widget(env_block, chunks[7]);
+    let env_content: Vec<Line> = if container.env_vars.is_empty() {
+        vec![Line::from(Span::styled("—", Style::default().fg(Color::DarkGray)))]
+    } else {
+        container.env_vars.iter().map(|e| {
+            if let Some((key, val)) = e.split_once('=') {
+                Line::from(vec![
+                    Span::styled(format!("{}=", key), Style::default().fg(Color::Rgb(165, 213, 102))),
+                    Span::styled(val, Style::default().fg(Color::White)),
+                ])
+            } else {
+                Line::from(Span::styled(e.as_str(), Style::default().fg(Color::White)))
+            }
+        }).collect()
+    };
+    f.render_widget(Paragraph::new(env_content).wrap(Wrap { trim: false }), env_inner);
 
     // Footer
     let hint = Line::from(vec![
@@ -171,7 +200,7 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
         Span::styled("[S] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
         Span::styled("Detener", Style::default().fg(theme.muted)),
     ]);
-    f.render_widget(Paragraph::new(hint), chunks[6]);
+    f.render_widget(Paragraph::new(hint), chunks[8]);
 
     // Confirmation overlay
     if let Some(action) = confirm {

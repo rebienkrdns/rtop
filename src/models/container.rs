@@ -56,4 +56,6 @@ pub struct ContainerData {
     pub disk_write_total: u64,
     pub ports: Vec<String>,
     pub volumes: Vec<String>,
+    pub networks: Vec<String>,
+    pub env_vars: Vec<String>,
 }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
-use bollard::container::{ListContainersOptions, StatsOptions};
+use bollard::container::{InspectContainerOptions, ListContainersOptions, StatsOptions};
 use bollard::Docker;
 use futures_util::StreamExt;
 
@@ -103,14 +103,18 @@ impl ContainerCollector {
                     Some(Ok(s)) => Some(s),
                     _ => None,
                 };
-                (c, stats)
+                let inspect = docker_clone
+                    .inspect_container(&id, Some(InspectContainerOptions { size: false }))
+                    .await
+                    .ok();
+                (c, stats, inspect)
             });
         }
 
         let stats_results = futures_util::future::join_all(stats_futures).await;
 
         let mut result = Vec::new();
-        for (c, stats_opt) in stats_results {
+        for (c, stats_opt, inspect_opt) in stats_results {
             let Some(stats) = stats_opt else {
                 continue;
             };
@@ -179,14 +183,68 @@ impl ContainerCollector {
                 disk_read_total,
                 disk_write_per_sec,
                 disk_write_total,
-                ports: vec![],
-                volumes: vec![],
+                ports: extract_ports(&inspect_opt),
+                volumes: extract_volumes(&inspect_opt),
+                networks: extract_networks(&inspect_opt),
+                env_vars: extract_env_vars(&inspect_opt),
             });
         }
 
         result.sort_by(|a, b| a.name.cmp(&b.name));
         result
     }
+}
+
+fn extract_ports(inspect: &Option<bollard::models::ContainerInspectResponse>) -> Vec<String> {
+    let Some(resp) = inspect else { return vec![]; };
+    let Some(host_config) = resp.host_config.as_ref() else { return vec![]; };
+    let Some(bindings) = host_config.port_bindings.as_ref() else { return vec![]; };
+    let mut ports = Vec::new();
+    for (container_port, host_binds) in bindings {
+        if let Some(binds) = host_binds {
+            for b in binds {
+                let host_ip = b.host_ip.as_deref().unwrap_or("0.0.0.0");
+                let host_port = b.host_port.as_deref().unwrap_or("?");
+                ports.push(format!("{}:{}->{}", host_ip, host_port, container_port));
+            }
+        } else {
+            ports.push(container_port.clone());
+        }
+    }
+    ports
+}
+
+fn extract_volumes(inspect: &Option<bollard::models::ContainerInspectResponse>) -> Vec<String> {
+    let Some(resp) = inspect else { return vec![]; };
+    let Some(mounts) = resp.mounts.as_ref() else { return vec![]; };
+    mounts
+        .iter()
+        .map(|m| {
+            let src = m.source.as_deref().unwrap_or("?");
+            let dst = m.destination.as_deref().unwrap_or("?");
+            let rw = if m.rw.unwrap_or(true) { "rw" } else { "ro" };
+            format!("{}:{} ({})", src, dst, rw)
+        })
+        .collect()
+}
+
+fn extract_networks(inspect: &Option<bollard::models::ContainerInspectResponse>) -> Vec<String> {
+    let Some(resp) = inspect else { return vec![]; };
+    let Some(ns) = resp.network_settings.as_ref() else { return vec![]; };
+    let Some(networks) = ns.networks.as_ref() else { return vec![]; };
+    networks
+        .iter()
+        .map(|(name, net)| {
+            let ip = net.ip_address.as_deref().unwrap_or("—");
+            format!("{} ({})", name, ip)
+        })
+        .collect()
+}
+
+fn extract_env_vars(inspect: &Option<bollard::models::ContainerInspectResponse>) -> Vec<String> {
+    let Some(resp) = inspect else { return vec![]; };
+    let Some(config) = resp.config.as_ref() else { return vec![]; };
+    config.env.clone().unwrap_or_default()
 }
 
 fn map_status(state: &str, status: &str) -> ContainerStatus {
