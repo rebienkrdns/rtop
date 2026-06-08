@@ -2,7 +2,7 @@
 set -e
 
 # Repository configuration
-REPO="usuario/rtop"
+REPO="rebienkrdns/rtop"
 GITHUB_URL="https://github.com/$REPO"
 
 # Detect OS
