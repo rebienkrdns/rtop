@@ -7,8 +7,42 @@ use ratatui::{
     Frame,
 };
 
-use crate::models::{ProcessData, ProcessSortColumn};
+use crate::models::{ProcessData, ProcessSortColumn, ProcessStatus};
 use crate::ui::theme::Theme;
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProcessStatusFilter {
+    #[default]
+    Running,
+    Sleeping,
+    All,
+}
+
+impl ProcessStatusFilter {
+    pub fn label(self) -> &'static str {
+        match self {
+            ProcessStatusFilter::Running => "ejecutando",
+            ProcessStatusFilter::Sleeping => "durmiendo",
+            ProcessStatusFilter::All => "todos",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            ProcessStatusFilter::Running => ProcessStatusFilter::Sleeping,
+            ProcessStatusFilter::Sleeping => ProcessStatusFilter::All,
+            ProcessStatusFilter::All => ProcessStatusFilter::Running,
+        }
+    }
+
+    pub fn matches(self, status: ProcessStatus) -> bool {
+        match self {
+            ProcessStatusFilter::All => true,
+            ProcessStatusFilter::Running => status == ProcessStatus::Running,
+            ProcessStatusFilter::Sleeping => status == ProcessStatus::Sleeping,
+        }
+    }
+}
 
 pub struct ProcessTableState {
     pub filter: String,
@@ -17,6 +51,7 @@ pub struct ProcessTableState {
     pub sort_asc: bool,
     pub cursor: usize,
     pub scroll: usize,
+    pub status_filter: ProcessStatusFilter,
 }
 
 impl Default for ProcessTableState {
@@ -28,6 +63,7 @@ impl Default for ProcessTableState {
             sort_asc: false,
             cursor: 0,
             scroll: 0,
+            status_filter: ProcessStatusFilter::Running,
         }
     }
 }
@@ -58,6 +94,7 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
         .split(area);
 
     // Filter bar
+    let status_label = state.status_filter.label();
     let filter_line = if state.filter_active {
         Line::from(vec![
             Span::styled("Filtrar: /", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
@@ -68,14 +105,18 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
         Line::from(vec![
             Span::styled("Filtro: ", Style::default().fg(theme.muted)),
             Span::styled(state.filter.as_str(), Style::default().fg(Color::White)),
-            Span::styled("  [ESC limpiar]", Style::default().fg(theme.muted)),
+            Span::styled("  [ESC limpiar]  ", Style::default().fg(theme.muted)),
+            Span::styled("f estado: ", Style::default().fg(theme.muted)),
+            Span::styled(status_label, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
         ])
     } else {
         Line::from(vec![
             Span::styled(
-                "/ filtrar  c CPU  m RAM  r DiskR  w DiskW  ↑↓ navegar  Enter detalle",
+                "/ filtrar  c CPU  m RAM  r DiskR  w DiskW  f estado: ",
                 Style::default().fg(theme.muted),
             ),
+            Span::styled(status_label, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("  ↑↓ navegar  Enter detalle", Style::default().fg(theme.muted)),
         ])
     };
     f.render_widget(Paragraph::new(filter_line), chunks[0]);
@@ -90,11 +131,9 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
     let mut filtered: Vec<&ProcessData> = processes
         .iter()
         .filter(|p| {
-            if filter_lower.is_empty() {
-                true
-            } else {
-                p.name.to_lowercase().contains(&filter_lower)
-            }
+            let name_ok = filter_lower.is_empty() || p.name.to_lowercase().contains(&filter_lower);
+            let status_ok = state.status_filter.matches(p.status);
+            name_ok && status_ok
         })
         .collect();
 

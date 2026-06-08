@@ -33,7 +33,7 @@ pub struct DiskSelectorEntry {
 pub struct DiskIoCollector {
     #[allow(dead_code)]
     prev: HashMap<String, DiskIoSnapshot>,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     proc_prev: HashMap<u32, DiskIoSnapshot>,
 }
 
@@ -47,7 +47,7 @@ impl DiskIoCollector {
     pub fn new() -> Self {
         Self {
             prev: HashMap::new(),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             proc_prev: HashMap::new(),
         }
     }
@@ -265,7 +265,47 @@ impl DiskIoCollector {
         (result, permission_denied)
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    pub fn process_io_rates(&mut self, pids: &[u32]) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
+        use libproc::libproc::pid_rusage::{pidrusage, RUsageInfoV2};
+        let now = Instant::now();
+        let mut result = HashMap::new();
+
+        for &pid in pids {
+            if let Ok(info) = pidrusage::<RUsageInfoV2>(pid as i32) {
+                let read_bytes = info.ri_diskio_bytesread;
+                let write_bytes = info.ri_diskio_byteswritten;
+
+                let rate = if let Some(prev) = self.proc_prev.get(&pid) {
+                    let elapsed = now.duration_since(prev.timestamp).as_secs_f64();
+                    if elapsed > 0.0 {
+                        let dr = read_bytes.saturating_sub(prev.sectors_read);
+                        let dw = write_bytes.saturating_sub(prev.sectors_written);
+                        crate::models::process::ProcessIoData {
+                            read_bytes_per_sec: dr as f64 / elapsed,
+                            write_bytes_per_sec: dw as f64 / elapsed,
+                        }
+                    } else {
+                        crate::models::process::ProcessIoData::default()
+                    }
+                } else {
+                    crate::models::process::ProcessIoData::default()
+                };
+
+                self.proc_prev.insert(pid, DiskIoSnapshot {
+                    timestamp: now,
+                    sectors_read: read_bytes,
+                    sectors_written: write_bytes,
+                });
+                result.insert(pid, rate);
+            }
+        }
+
+        self.proc_prev.retain(|pid, _| pids.contains(pid));
+        (result, false)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     pub fn process_io_rates(&mut self, _pids: &[u32]) -> (HashMap<u32, crate::models::process::ProcessIoData>, bool) {
         (HashMap::new(), false)
     }
