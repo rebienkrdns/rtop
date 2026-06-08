@@ -240,6 +240,26 @@ impl AppState {
                 self.docker_client = snapshot.docker_client;
             }
 
+            // If the detailed process or container no longer exists, exit the detail view
+            if self.current_view == View::ProcessDetail {
+                if let Some(pid) = self.detail_process_pid {
+                    if !self.processes.iter().any(|p| p.pid == pid) {
+                        self.current_view = View::Main;
+                        self.detail_process_pid = None;
+                        self.process_history.clear();
+                    }
+                }
+            }
+            if self.current_view == View::ContainerDetail {
+                if let Some(ref cid) = self.detail_container_id {
+                    if !self.containers.iter().any(|c| &c.id == cid) {
+                        self.current_view = View::Main;
+                        self.detail_container_id = None;
+                        self.container_history.clear();
+                    }
+                }
+            }
+
             // By default keep selected_nic as None which means "all interfaces"
             // Only auto-select if the config had a specific NIC saved
             let _ = snapshot.suggested_nic; // unused but kept for future use
@@ -692,6 +712,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         (KeyCode::Esc, _) if state.current_view == View::ContainerDetail => {
                             state.current_view = View::Main;
                             state.detail_container_id = None;
+                            state.container_history.clear();
                         }
                         (KeyCode::Char('l'), _) if state.current_view == View::ContainerDetail => {
                             if let Some(c) = state.selected_container().cloned() {
@@ -725,6 +746,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         (KeyCode::Esc, _) if state.current_view == View::ProcessDetail => {
                             state.current_view = View::Main;
                             state.detail_process_pid = None;
+                            state.process_history.clear();
                         }
 
                         // ── Main view ─────────────────────────────────────────
@@ -828,13 +850,21 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         // Process table: navigate to detail on Enter — pin the PID so the detail
                         // view always tracks the same process even when the list re-sorts.
                         (KeyCode::Enter, _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
-                            state.detail_process_pid = state.selected_process().map(|p| p.pid);
+                            let new_pid = state.selected_process().map(|p| p.pid);
+                            if state.detail_process_pid != new_pid {
+                                state.process_history.clear();
+                            }
+                            state.detail_process_pid = new_pid;
                             state.current_view = View::ProcessDetail;
                         }
                         // Container table: navigate to detail on Enter
                         (KeyCode::Enter, _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
                             if !state.containers.is_empty() {
-                                state.detail_container_id = state.selected_container().map(|c| c.id.clone());
+                                let new_cid = state.selected_container().map(|c| c.id.clone());
+                                if state.detail_container_id != new_cid {
+                                    state.container_history.clear();
+                                }
+                                state.detail_container_id = new_cid;
                                 state.current_view = View::ContainerDetail;
                             }
                         }

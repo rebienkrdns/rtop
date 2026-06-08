@@ -24,14 +24,22 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let inner_height = inner.height;
+    let remaining_height = inner_height.saturating_sub(10);
+    let chart_height = if state.history_mode {
+        (remaining_height / 4).max(3)
+    } else {
+        3
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(8), // info fields
-            Constraint::Length(3), // CPU bar
-            Constraint::Length(3), // Memory bar
-            Constraint::Length(3), // Disk Read bar
-            Constraint::Length(3), // Disk Write bar
+            Constraint::Length(chart_height), // CPU bar
+            Constraint::Length(chart_height), // Memory bar
+            Constraint::Length(chart_height), // Disk Read bar
+            Constraint::Length(chart_height), // Disk Write bar
             Constraint::Length(2), // footer hint
             Constraint::Min(0),
         ])

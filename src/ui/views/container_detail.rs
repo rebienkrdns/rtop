@@ -24,14 +24,24 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let inner_height = inner.height;
+    let remaining_height = inner_height.saturating_sub(7); // basic info (5) + footer (2) = 7
+    let metadata_reserved = 6;
+    let charts_total_height = remaining_height.saturating_sub(metadata_reserved);
+    let chart_height = if state.history_mode {
+        (charts_total_height / 4).max(3)
+    } else {
+        3
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(5),  // info básica
-            Constraint::Length(3),  // CPU bar
-            Constraint::Length(3),  // Memory bar
-            Constraint::Length(3),  // Net bar
-            Constraint::Length(3),  // Disk bar
+            Constraint::Length(chart_height),  // CPU bar
+            Constraint::Length(chart_height),  // Memory bar
+            Constraint::Length(chart_height),  // Net bar
+            Constraint::Length(chart_height),  // Disk bar
             Constraint::Min(1),     // metadata (puertos, volúmenes, redes, env)
             Constraint::Length(2),  // footer
         ])
