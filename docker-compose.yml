@@ -1,0 +1,25 @@
+services:
+  dev:
+    image: rust:latest
+    working_dir: /app
+    volumes:
+      # Source code (sincronizado desde el host)
+      - .:/app
+      # Volumen separado para el directorio target (evita colisión macOS/Linux y mejora I/O)
+      - cargo-target:/app/target
+      # Caché global del registro de Cargo (evita re-descargar crates entre sesiones)
+      - cargo-cache:/usr/local/cargo/registry
+    stdin_open: true   # equivalente a -i
+    tty: true          # equivalente a -t, necesario para que ratatui renderice correctamente
+    # Instala stress-ng al arrancar y se mantiene vivo esperando conexiones
+    command: >
+      bash -c "
+        apt-get update -qq &&
+        apt-get install -y --no-install-recommends stress-ng &&
+        echo '✔ stress-ng instalado' &&
+        sleep infinity
+      "
+
+volumes:
+  cargo-target:
+  cargo-cache:
