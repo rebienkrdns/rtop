@@ -29,14 +29,15 @@ pub fn render_cpu_ram(
     }
     let theme = Theme::default_theme();
 
+    let spark_height = (area.height - 2) / 2;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // CPU label
-            Constraint::Length(1), // CPU sparkline
-            Constraint::Length(1), // RAM label
-            Constraint::Length(1), // RAM sparkline
-            Constraint::Min(0),    // rango
+            Constraint::Length(1),            // CPU label
+            Constraint::Length(spark_height), // CPU sparkline
+            Constraint::Length(1),            // RAM label
+            Constraint::Length(spark_height), // RAM sparkline
+            Constraint::Min(0),               // spacer/range
         ])
         .split(area);
 
@@ -101,13 +102,14 @@ pub fn render_disk_net(
     }
     let theme = Theme::default_theme();
 
+    let spark_height = (area.height - 2) / 2;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Disco label
-            Constraint::Length(1), // Disco sparkline (read)
-            Constraint::Length(1), // Red label
-            Constraint::Length(1), // Red sparkline (recv)
+            Constraint::Length(1),            // Disco label
+            Constraint::Length(spark_height), // Disco sparkline (read)
+            Constraint::Length(1),            // Red label
+            Constraint::Length(spark_height), // Red sparkline (recv)
             Constraint::Min(0),
         ])
         .split(area);
