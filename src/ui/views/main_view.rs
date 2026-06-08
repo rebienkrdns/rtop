@@ -181,7 +181,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             .border_style(Style::default().fg(theme.accent_dim));
         let col3_inner = col3_block.inner(metrics_cols[2]);
         f.render_widget(col3_block, metrics_cols[2]);
-        psi_widget::render(f, col3_inner, state.psi.as_ref(), true);
+        psi_widget::render(f, col3_inner, state);
     } else {
         let metrics_cols = Layout::default()
             .direction(Direction::Horizontal)
@@ -227,7 +227,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 ])
                 .split(col2_inner);
             history_chart::render_disk_net(f, col2_layout[0], &samples, state.history_range);
-            psi_widget::render(f, col2_layout[2], state.psi.as_ref(), false);
+            psi_widget::render(f, col2_layout[2], state);
         } else {
             let col2_layout = Layout::default()
                 .direction(Direction::Vertical)
@@ -239,7 +239,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 .split(col2_inner);
 
             network_widget::render(f, col2_layout[0], state);
-            psi_widget::render(f, col2_layout[2], state.psi.as_ref(), false);
+            psi_widget::render(f, col2_layout[2], state);
         }
     }
 
