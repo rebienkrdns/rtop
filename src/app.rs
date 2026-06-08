@@ -1098,6 +1098,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                 } else if let Ok(Event::Mouse(mouse)) = ev {
                     match mouse.kind {
                         crossterm::event::MouseEventKind::ScrollUp => {
+                            terminal.clear()?;
                             if state.show_nic_selector {
                                 if state.nic_cursor > 0 {
                                     state.nic_cursor -= 1;
@@ -1119,6 +1120,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             }
                         }
                         crossterm::event::MouseEventKind::ScrollDown => {
+                            terminal.clear()?;
                             if state.show_nic_selector {
                                 let max = state.available_nics.len();
                                 if state.nic_cursor < max {
