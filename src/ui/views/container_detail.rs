@@ -23,24 +23,16 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let ports_h = (container.ports.len().max(1) as u16) + 2;
-    let vols_h = (container.volumes.len().max(1) as u16) + 2;
-    let nets_h = (container.networks.len().max(1) as u16) + 2;
-    let env_h = (container.env_vars.len().max(1) as u16) + 2;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),        // info básica
-            Constraint::Length(3),        // CPU bar
-            Constraint::Length(3),        // Memory bar
-            Constraint::Length(3),        // Net bar
-            Constraint::Length(3),        // Disk bar
-            Constraint::Length(ports_h),  // puertos
-            Constraint::Length(vols_h),   // volúmenes
-            Constraint::Length(nets_h),   // redes
-            Constraint::Length(env_h),    // env vars
-            Constraint::Length(2),        // footer
-            Constraint::Min(0),
+            Constraint::Length(5),  // info básica
+            Constraint::Length(3),  // CPU bar
+            Constraint::Length(3),  // Memory bar
+            Constraint::Length(3),  // Net bar
+            Constraint::Length(3),  // Disk bar
+            Constraint::Min(1),     // metadata (puertos, volúmenes, redes, env)
+            Constraint::Length(2),  // footer
         ])
         .split(inner);
 
@@ -144,56 +136,68 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
         .ratio(disk_ratio);
     f.render_widget(disk_gauge, chunks[4]);
 
-    // Helper: render a labeled block with one item per line
-    fn render_labeled_block<'a>(
-        f: &mut Frame,
-        area: Rect,
-        title: &'a str,
-        items: &[String],
-        color: Color,
-        muted: Color,
-        title_color: Color,
-    ) {
-        let block = Block::default()
-            .title(Span::styled(format!(" {} ", title), Style::default().fg(title_color)))
+    // Metadata: puertos, volúmenes, redes, env vars — todo en un único bloque
+    {
+        let meta_block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(muted));
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-        let lines: Vec<Line> = if items.is_empty() {
-            vec![Line::from(Span::styled("—", Style::default().fg(Color::DarkGray)))]
+            .border_style(Style::default().fg(theme.muted));
+        let meta_inner = meta_block.inner(chunks[5]);
+        f.render_widget(meta_block, chunks[5]);
+
+        let mut lines: Vec<Line> = Vec::new();
+
+        let muted = theme.muted;
+
+        // Puertos
+        lines.push(Line::from(Span::styled("── Puertos ", Style::default().fg(muted))));
+        if container.ports.is_empty() {
+            lines.push(Line::from(vec![Span::raw("  "), Span::styled("—", Style::default().fg(Color::DarkGray))]));
         } else {
-            items.iter().map(|s| Line::from(Span::styled(s.as_str(), Style::default().fg(color)))).collect()
-        };
-        f.render_widget(Paragraph::new(lines), inner);
-    }
-
-    render_labeled_block(f, chunks[5], "Puertos", &container.ports, Color::Cyan, theme.muted, theme.muted);
-    render_labeled_block(f, chunks[6], "Volúmenes", &container.volumes, Color::Yellow, theme.muted, theme.muted);
-    render_labeled_block(f, chunks[7], "Redes", &container.networks, Color::Magenta, theme.muted, theme.muted);
-
-    // Environment variables (KEY= en verde, valor en blanco)
-    let env_block = Block::default()
-        .title(Span::styled(" Variables de entorno ", Style::default().fg(theme.muted)))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.muted));
-    let env_inner = env_block.inner(chunks[8]);
-    f.render_widget(env_block, chunks[8]);
-    let env_content: Vec<Line> = if container.env_vars.is_empty() {
-        vec![Line::from(Span::styled("—", Style::default().fg(Color::DarkGray)))]
-    } else {
-        container.env_vars.iter().map(|e| {
-            if let Some((key, val)) = e.split_once('=') {
-                Line::from(vec![
-                    Span::styled(format!("{}=", key), Style::default().fg(Color::Rgb(165, 213, 102))),
-                    Span::styled(val, Style::default().fg(Color::White)),
-                ])
-            } else {
-                Line::from(Span::styled(e.as_str(), Style::default().fg(Color::White)))
+            for p in &container.ports {
+                lines.push(Line::from(vec![Span::raw("  "), Span::styled(p.clone(), Style::default().fg(Color::Cyan))]));
             }
-        }).collect()
-    };
-    f.render_widget(Paragraph::new(env_content), env_inner);
+        }
+
+        // Volúmenes
+        lines.push(Line::from(Span::styled("── Volúmenes ", Style::default().fg(muted))));
+        if container.volumes.is_empty() {
+            lines.push(Line::from(vec![Span::raw("  "), Span::styled("—", Style::default().fg(Color::DarkGray))]));
+        } else {
+            for v in &container.volumes {
+                lines.push(Line::from(vec![Span::raw("  "), Span::styled(v.clone(), Style::default().fg(Color::Yellow))]));
+            }
+        }
+
+        // Redes
+        lines.push(Line::from(Span::styled("── Redes ", Style::default().fg(muted))));
+        if container.networks.is_empty() {
+            lines.push(Line::from(vec![Span::raw("  "), Span::styled("—", Style::default().fg(Color::DarkGray))]));
+        } else {
+            for n in &container.networks {
+                lines.push(Line::from(vec![Span::raw("  "), Span::styled(n.clone(), Style::default().fg(Color::Magenta))]));
+            }
+        }
+
+        // Variables de entorno
+        lines.push(Line::from(Span::styled("── Variables de entorno ", Style::default().fg(muted))));
+        if container.env_vars.is_empty() {
+            lines.push(Line::from(vec![Span::raw("  "), Span::styled("—", Style::default().fg(Color::DarkGray))]));
+        } else {
+            for e in &container.env_vars {
+                if let Some((key, val)) = e.split_once('=') {
+                    lines.push(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(format!("{}=", key), Style::default().fg(Color::Rgb(165, 213, 102))),
+                        Span::styled(val.to_string(), Style::default().fg(Color::White)),
+                    ]));
+                } else {
+                    lines.push(Line::from(vec![Span::raw("  "), Span::styled(e.clone(), Style::default().fg(Color::White))]));
+                }
+            }
+        }
+
+        f.render_widget(Paragraph::new(lines), meta_inner);
+    }
 
     // Footer
     let hint = Line::from(vec![
@@ -206,7 +210,7 @@ pub fn render(f: &mut Frame, area: Rect, container: &ContainerData, confirm: Opt
         Span::styled("[S] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
         Span::styled("Detener", Style::default().fg(theme.muted)),
     ]);
-    f.render_widget(Paragraph::new(hint), chunks[9]);
+    f.render_widget(Paragraph::new(hint), chunks[6]);
 
     // Confirmation overlay
     if let Some(action) = confirm {
