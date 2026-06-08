@@ -51,5 +51,8 @@ pub struct ProcessData {
     pub status: ProcessStatus,
     pub uptime_secs: u64,
     pub threads: u32,
+    pub exe_path: String,
+    pub cmd: String,
+    pub cwd: String,
 }
 

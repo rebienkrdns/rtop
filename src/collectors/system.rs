@@ -204,6 +204,16 @@ impl SystemCollector {
                 let uptime_secs = proc_val.run_time();
                 let threads = proc_val.tasks().map(|t| t.len() as u32).unwrap_or(1);
 
+                let exe_path = proc_val
+                    .exe()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "—".to_string());
+                let cmd = proc_val.cmd().join(" ");
+                let cwd = proc_val
+                    .cwd()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "—".to_string());
+
                 ProcessData {
                     pid,
                     name,
@@ -216,6 +226,9 @@ impl SystemCollector {
                     status,
                     uptime_secs,
                     threads,
+                    exe_path,
+                    cmd,
+                    cwd,
                 }
             })
             .collect();
