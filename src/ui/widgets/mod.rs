@@ -1,5 +1,6 @@
 pub mod cpu_bar;
 pub mod disk_bar;
+pub mod history_chart;
 pub mod memory_bar;
 pub mod process_table;
 pub mod container_table;

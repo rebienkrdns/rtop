@@ -12,7 +12,7 @@ use crate::app::AppState;
 use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
 use crate::ui::views::{disk_selector, nic_selector};
-use crate::ui::widgets::{container_table, cpu_bar, disk_bar, memory_bar, network_widget, process_table, psi_widget};
+use crate::ui::widgets::{container_table, cpu_bar, disk_bar, history_chart, memory_bar, network_widget, process_table, psi_widget};
 
 pub fn draw(f: &mut Frame, state: &AppState) {
     let theme = Theme::default_theme();
@@ -87,17 +87,22 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         let col1_inner = col1_block.inner(metrics_cols[0]);
         f.render_widget(col1_block, metrics_cols[0]);
 
-        let col1_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(2), // CPU
-                Constraint::Length(1), // spacer
-                Constraint::Length(2), // RAM
-                Constraint::Min(0),
-            ])
-            .split(col1_inner);
-        cpu_bar::render_with_loading(f, col1_layout[0], &state.cpu, state.data_loaded);
-        memory_bar::render_with_loading(f, col1_layout[2], &state.memory, state.data_loaded);
+        if state.history_mode {
+            let samples = state.metrics_history.tail_n(state.history_range.samples());
+            history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range);
+        } else {
+            let col1_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(2), // CPU
+                    Constraint::Length(1), // spacer
+                    Constraint::Length(2), // RAM
+                    Constraint::Min(0),
+                ])
+                .split(col1_inner);
+            cpu_bar::render_with_loading(f, col1_layout[0], &state.cpu, state.data_loaded);
+            memory_bar::render_with_loading(f, col1_layout[2], &state.memory, state.data_loaded);
+        }
 
         // Columna 2: Disco y Red (I/O)
         let col2_block = Block::default()
@@ -107,29 +112,34 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         let col2_inner = col2_block.inner(metrics_cols[1]);
         f.render_widget(col2_block, metrics_cols[1]);
 
-        let col2_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(4), // Disco (título + barra + I/O + margen/spacer)
-                Constraint::Length(1), // spacer
-                Constraint::Min(0),    // Red
-            ])
-            .split(col2_inner);
+        if state.history_mode {
+            let samples = state.metrics_history.tail_n(state.history_range.samples());
+            history_chart::render_disk_net(f, col2_inner, &samples, state.history_range);
+        } else {
+            let col2_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(4), // Disco (título + barra + I/O + margen/spacer)
+                    Constraint::Length(1), // spacer
+                    Constraint::Min(0),    // Red
+                ])
+                .split(col2_inner);
 
-        let selected_disk = state.selected_disk.as_deref().unwrap_or("");
-        let disk_to_render = state
-            .disks
-            .iter()
-            .find(|d| {
-                let short = crate::collectors::disk::device_short_name(&d.device);
-                short == selected_disk
-            })
-            .or_else(|| state.disks.first());
+            let selected_disk = state.selected_disk.as_deref().unwrap_or("");
+            let disk_to_render = state
+                .disks
+                .iter()
+                .find(|d| {
+                    let short = crate::collectors::disk::device_short_name(&d.device);
+                    short == selected_disk
+                })
+                .or_else(|| state.disks.first());
 
-        if let Some(disk) = disk_to_render {
-            disk_bar::render(f, col2_layout[0], disk);
+            if let Some(disk) = disk_to_render {
+                disk_bar::render(f, col2_layout[0], disk);
+            }
+            network_widget::render(f, col2_layout[2], state);
         }
-        network_widget::render(f, col2_layout[2], state);
 
         // Columna 3: Presión (PSI)
         let col3_block = Block::default()
@@ -155,7 +165,12 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             .border_style(Style::default().fg(theme.accent_dim));
         let col1_inner = col1_block.inner(metrics_cols[0]);
         f.render_widget(col1_block, metrics_cols[0]);
-        draw_metrics(f, col1_inner, state);
+        if state.history_mode {
+            let samples = state.metrics_history.tail_n(state.history_range.samples());
+            history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range);
+        } else {
+            draw_metrics(f, col1_inner, state);
+        }
 
         // Columna 2: Red y Presión (PSI)
         let col2_block = Block::default()
@@ -165,17 +180,27 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         let col2_inner = col2_block.inner(metrics_cols[1]);
         f.render_widget(col2_block, metrics_cols[1]);
 
-        let col2_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(4), // Red
-                Constraint::Length(1), // spacer
-                Constraint::Min(0),    // PSI
-            ])
-            .split(col2_inner);
+        if state.history_mode {
+            let samples = state.metrics_history.tail_n(state.history_range.samples());
+            let col2_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(0), Constraint::Length(1), Constraint::Min(0)])
+                .split(col2_inner);
+            history_chart::render_disk_net(f, col2_layout[0], &samples, state.history_range);
+            psi_widget::render(f, col2_layout[2], state.psi.as_ref(), false);
+        } else {
+            let col2_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(4), // Red
+                    Constraint::Length(1), // spacer
+                    Constraint::Min(0),    // PSI
+                ])
+                .split(col2_inner);
 
-        network_widget::render(f, col2_layout[0], state);
-        psi_widget::render(f, col2_layout[2], state.psi.as_ref(), false);
+            network_widget::render(f, col2_layout[0], state);
+            psi_widget::render(f, col2_layout[2], state.psi.as_ref(), false);
+        }
     }
 
     // — Barra de pestañas —
@@ -293,6 +318,8 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             Span::styled("DiskW  ", Style::default().fg(theme.muted)),
             Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled("Contenedores  ", Style::default().fg(theme.muted)),
+            Span::styled("[h] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Historial  ", Style::default().fg(theme.muted)),
             Span::styled("[F1] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled("Ayuda", Style::default().fg(theme.muted)),
         ])
@@ -306,6 +333,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             Span::styled("Disco  ", Style::default().fg(theme.muted)),
             Span::styled("[F3] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled("Red  ", Style::default().fg(theme.muted)),
+            Span::styled("[h] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Historial  ", Style::default().fg(theme.muted)),
+            Span::styled("[t] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Rango  ", Style::default().fg(theme.muted)),
             Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled("Cambiar  ", Style::default().fg(theme.muted)),
             Span::styled("[F1] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),

@@ -17,6 +17,7 @@ use crate::collectors::system::SystemCollector;
 use crate::config::{self, Config, INTERVALS, Tab};
 use crate::models::{ContainerData, ContainerSortColumn, CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessSortColumn, PsiData};
 use crate::ui;
+use crate::ui::history::{HistoryRange, MetricSample, MetricsHistory};
 use crate::ui::views::container_detail::ConfirmAction;
 use crate::ui::views::container_logs::LogsViewState;
 use crate::ui::widgets::process_table::ProcessTableState;
@@ -76,6 +77,7 @@ pub struct AppState {
 
     // View navigation
     pub current_view: View,
+    pub detail_process_pid: Option<u32>,
     #[allow(dead_code)]
     pub selected_process_idx: Option<usize>,
     #[allow(dead_code)]
@@ -89,7 +91,12 @@ pub struct AppState {
     pub refresh_tick: bool,
     pub show_help: bool,
     pub psi: Option<PsiData>,
- 
+
+    // Historial de métricas
+    pub metrics_history: MetricsHistory,
+    pub history_mode: bool,
+    pub history_range: HistoryRange,
+
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -129,6 +136,7 @@ impl AppState {
             container_sort_col: ContainerSortColumn::default(),
             container_sort_asc: true,
             current_view: View::Main,
+            detail_process_pid: None,
             selected_process_idx: None,
             selected_container_idx: None,
             container_cursor: 0,
@@ -139,6 +147,9 @@ impl AppState {
             refresh_tick: false,
             show_help: false,
             psi: None,
+            metrics_history: MetricsHistory::new(),
+            history_mode: false,
+            history_range: HistoryRange::OneMin,
             metrics_rx: rx,
             interval_tx,
         }
@@ -150,6 +161,27 @@ impl AppState {
             self.refresh_tick = !self.refresh_tick;
             self.cpu = snapshot.cpu;
             self.memory = snapshot.memory;
+
+            // Calcular valores de red y disco para la muestra de historial
+            let (net_recv, net_sent) = snapshot.network_by_nic.values()
+                .fold((0.0_f64, 0.0_f64), |(r, s), nd| (r + nd.recv_bytes_per_sec, s + nd.sent_bytes_per_sec));
+            let (disk_read, disk_write) = snapshot.disks.first()
+                .map(|d| (d.read_bytes_per_sec.unwrap_or(0.0), d.write_bytes_per_sec.unwrap_or(0.0)))
+                .unwrap_or((0.0, 0.0));
+            let mem_pct = if self.memory.total_bytes > 0 {
+                self.memory.used_bytes as f64 / self.memory.total_bytes as f64 * 100.0
+            } else {
+                0.0
+            };
+            self.metrics_history.push(MetricSample {
+                cpu_pct: self.cpu.global_usage_pct,
+                mem_pct,
+                load1: self.cpu.load_avg[0],
+                net_recv_bps: net_recv,
+                net_sent_bps: net_sent,
+                disk_read_bps: disk_read,
+                disk_write_bps: disk_write,
+            });
             self.selector_entries = DiskIoCollector::build_selector_entries(&snapshot.disks);
             self.disks = snapshot.disks;
             self.network_by_nic = snapshot.network_by_nic;
@@ -267,11 +299,12 @@ impl AppState {
     }
 
     pub fn filtered_process_count(&self) -> usize {
-        if self.process_table.filter.is_empty() {
-            return self.processes.len();
-        }
         let f = self.process_table.filter.to_lowercase();
-        self.processes.iter().filter(|p| p.name.to_lowercase().contains(&f)).count()
+        self.processes.iter().filter(|p| {
+            let name_ok = f.is_empty() || p.name.to_lowercase().contains(&f);
+            let status_ok = self.process_table.status_filter.matches(p.status);
+            name_ok && status_ok
+        }).count()
     }
 
     pub fn process_move_cursor(&mut self, delta: i32) {
@@ -349,11 +382,19 @@ impl AppState {
     }
 
     pub fn selected_process(&self) -> Option<&ProcessData> {
+        // If a PID was pinned (user pressed Enter), always track that specific process
+        if let Some(pid) = self.detail_process_pid {
+            return self.processes.iter().find(|p| p.pid == pid);
+        }
         // Get the filtered+sorted list the same way the table does, then index into it
         let filter_lower = self.process_table.filter.to_lowercase();
         let cursor = self.process_table.cursor;
         let mut filtered: Vec<&ProcessData> = self.processes.iter()
-            .filter(|p| filter_lower.is_empty() || p.name.to_lowercase().contains(&filter_lower))
+            .filter(|p| {
+                let name_ok = filter_lower.is_empty() || p.name.to_lowercase().contains(&filter_lower);
+                let status_ok = self.process_table.status_filter.matches(p.status);
+                name_ok && status_ok
+            })
             .collect();
         filtered.sort_by(|a, b| {
             let ord = match self.process_table.sort_col {
@@ -635,6 +676,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         // ── ProcessDetail view ────────────────────────────────
                         (KeyCode::Esc, _) if state.current_view == View::ProcessDetail => {
                             state.current_view = View::Main;
+                            state.detail_process_pid = None;
                         }
 
                         // ── Main view ─────────────────────────────────────────
@@ -705,6 +747,14 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         (KeyCode::Char(']'), _) if state.current_view == View::Main && !state.show_nic_selector && !state.show_disk_selector && !state.process_table.filter_active => {
                             state.step_interval(1);
                         }
+                        // Toggle historial de métricas
+                        (KeyCode::Char('h'), _) if state.current_view == View::Main && !state.process_table.filter_active => {
+                            state.history_mode = !state.history_mode;
+                        }
+                        // Ciclar rango de tiempo del historial
+                        (KeyCode::Char('t'), _) if state.current_view == View::Main && !state.process_table.filter_active => {
+                            state.history_range = state.history_range.next();
+                        }
                         // Process table: filter mode input
                         (KeyCode::Char(ch), _) if state.process_table.filter_active && state.active_tab == Tab::Processes => {
                             state.process_table.filter.push(ch);
@@ -727,8 +777,10 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             state.process_table.cursor = 0;
                             state.process_table.scroll = 0;
                         }
-                        // Process table: navigate to detail on Enter
+                        // Process table: navigate to detail on Enter — pin the PID so the detail
+                        // view always tracks the same process even when the list re-sorts.
                         (KeyCode::Enter, _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                            state.detail_process_pid = state.selected_process().map(|p| p.pid);
                             state.current_view = View::ProcessDetail;
                         }
                         // Container table: navigate to detail on Enter
@@ -753,6 +805,11 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         }
                         (KeyCode::Char('w'), _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
                             state.process_sort_by(ProcessSortColumn::DiskWrite);
+                        }
+                        (KeyCode::Char('f'), _) if state.current_view == View::Main && state.active_tab == Tab::Processes && !state.process_table.filter_active => {
+                            state.process_table.status_filter = state.process_table.status_filter.next();
+                            state.process_table.cursor = 0;
+                            state.process_table.scroll = 0;
                         }
                         // Container table: sort keys
                         (KeyCode::Char('c'), _) if state.current_view == View::Main && state.active_tab == Tab::Containers => {
