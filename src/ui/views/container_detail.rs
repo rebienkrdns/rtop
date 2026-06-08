@@ -17,30 +17,50 @@ fn prepare_sparkline_data<T>(
     width: usize,
     f: impl Fn(&T) -> u64,
 ) -> Vec<u64> {
-    let display_samples = limit.min(width);
-    let mut data: Vec<u64> = history
+    let s_len = history.len().min(limit);
+    if s_len == 0 {
+        return vec![0; width];
+    }
+
+    let skip = history.len().saturating_sub(s_len);
+    let values: Vec<u64> = history
         .iter()
-        .skip(history.len().saturating_sub(display_samples))
+        .skip(skip)
         .map(f)
         .collect();
-    if data.len() < width {
-        let mut padded = vec![0; width - data.len()];
-        padded.extend(data);
-        data = padded;
+
+    let t_size = width;
+    let mut interpolated = Vec::with_capacity(t_size);
+    if t_size == 1 {
+        interpolated.push(values.last().copied().unwrap_or(0));
+    } else if s_len == 1 {
+        let val = values[0];
+        interpolated.resize(t_size, val);
+    } else {
+        for i in 0..t_size {
+            let frac = (t_size - 1 - i) as f64 / (t_size - 1) as f64;
+            let idx = frac * (s_len - 1) as f64;
+            let left = idx.floor() as usize;
+            let right = idx.ceil() as usize;
+            let weight = idx - left as f64;
+            let val = (1.0 - weight) * values[left] as f64 + weight * values[right] as f64;
+            interpolated.push(val.round() as u64);
+        }
     }
-    data
+    interpolated
 }
 
 fn calculate_max<T>(
     history: &std::collections::VecDeque<T>,
     limit: usize,
-    width: usize,
+    _width: usize,
     f: impl Fn(&T) -> f64,
 ) -> f64 {
-    let display_samples = limit.min(width);
+    let s_len = history.len().min(limit);
+    let skip = history.len().saturating_sub(s_len);
     history
         .iter()
-        .skip(history.len().saturating_sub(display_samples))
+        .skip(skip)
         .map(f)
         .fold(0.0_f64, f64::max)
 }
@@ -191,11 +211,15 @@ pub fn render(
             width,
             |s| s.cpu_pct as u64,
         );
-        let cpu_spark = Sparkline::default().data(&cpu_data).max(100).style(
-            Style::default()
-                .fg(Theme::color_for_pct(cpu_pct))
-                .bg(Color::DarkGray),
-        );
+        let cpu_spark = Sparkline::default()
+            .data(&cpu_data)
+            .max(100)
+            .direction(ratatui::widgets::RenderDirection::RightToLeft)
+            .style(
+                Style::default()
+                    .fg(Theme::color_for_pct(cpu_pct))
+                    .bg(Color::DarkGray),
+            );
         f.render_widget(cpu_spark, inner_area);
     } else {
         let cpu_gauge = Gauge::default()
@@ -240,11 +264,15 @@ pub fn render(
             width,
             |s| s.mem_pct as u64,
         );
-        let mem_spark = Sparkline::default().data(&mem_data).max(100).style(
-            Style::default()
-                .fg(Theme::color_for_pct(mem_pct))
-                .bg(Color::DarkGray),
-        );
+        let mem_spark = Sparkline::default()
+            .data(&mem_data)
+            .max(100)
+            .direction(ratatui::widgets::RenderDirection::RightToLeft)
+            .style(
+                Style::default()
+                    .fg(Theme::color_for_pct(mem_pct))
+                    .bg(Color::DarkGray),
+            );
         f.render_widget(mem_spark, inner_area);
     } else {
         let mem_gauge = Gauge::default()
@@ -300,6 +328,7 @@ pub fn render(
         let net_spark = Sparkline::default()
             .data(&net_data)
             .max(net_max as u64)
+            .direction(ratatui::widgets::RenderDirection::RightToLeft)
             .style(Style::default().fg(Color::Cyan).bg(Color::DarkGray));
         f.render_widget(net_spark, inner_area);
     } else {
@@ -359,6 +388,7 @@ pub fn render(
         let disk_spark = Sparkline::default()
             .data(&disk_data)
             .max(disk_max as u64)
+            .direction(ratatui::widgets::RenderDirection::RightToLeft)
             .style(Style::default().fg(Color::Yellow).bg(Color::DarkGray));
         f.render_widget(disk_spark, inner_area);
     } else {

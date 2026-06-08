@@ -31,7 +31,7 @@ fn sparkline_data(
         interpolated.resize(t_size, val);
     } else {
         for i in 0..t_size {
-            let frac = i as f64 / (t_size - 1) as f64;
+            let frac = (t_size - 1 - i) as f64 / (t_size - 1) as f64;
             let idx = frac * (s_len - 1) as f64;
             let left = idx.floor() as usize;
             let right = idx.ceil() as usize;
@@ -41,7 +41,6 @@ fn sparkline_data(
         }
     }
 
-    interpolated.reverse();
     interpolated
 }
 
