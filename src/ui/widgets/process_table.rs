@@ -19,11 +19,18 @@ pub enum ProcessStatusFilter {
 }
 
 impl ProcessStatusFilter {
-    pub fn label(self) -> &'static str {
-        match self {
-            ProcessStatusFilter::Running => "ejecutando",
-            ProcessStatusFilter::Sleeping => "durmiendo",
-            ProcessStatusFilter::All => "todos",
+    pub fn label(self, lang: crate::localization::Language) -> &'static str {
+        match lang {
+            crate::localization::Language::Spanish => match self {
+                ProcessStatusFilter::Running => "ejecutando",
+                ProcessStatusFilter::Sleeping => "durmiendo",
+                ProcessStatusFilter::All => "todos",
+            },
+            crate::localization::Language::English => match self {
+                ProcessStatusFilter::Running => "running",
+                ProcessStatusFilter::Sleeping => "sleeping",
+                ProcessStatusFilter::All => "all",
+            },
         }
     }
 
@@ -84,8 +91,9 @@ fn col_header(label: &str, active: bool, asc: bool) -> String {
     }
 }
 
-pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &ProcessTableState) {
+pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &ProcessTableState, lang: crate::localization::Language) {
     let theme = Theme::default_theme();
+    let t = |key: &'static str| crate::localization::translate(key, lang);
 
     // Split: filter bar (1 line) + table
     let chunks = Layout::default()
@@ -94,25 +102,25 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
         .split(area);
 
     // Filter bar — shows hint text and active status filter chip
-    let status_label = state.status_filter.label();
+    let status_label = state.status_filter.label(lang);
     let filter_line = if state.filter_active {
         Line::from(vec![
-            Span::styled("Filtrar: /", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{}: /", t("Filter")), Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled(state.filter.as_str(), Style::default().fg(Color::White)),
             Span::styled("█", Style::default().fg(theme.accent)),
         ])
     } else if !state.filter.is_empty() {
         Line::from(vec![
-            Span::styled("Filtro: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", t("Filter")), Style::default().fg(theme.muted)),
             Span::styled(state.filter.as_str(), Style::default().fg(Color::White)),
-            Span::styled("  ESC limpiar  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("  {}  ", t("Clean filter")), Style::default().fg(theme.muted)),
             Span::styled("  [f] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled(status_label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
         ])
     } else {
         Line::from(vec![
             Span::styled("/ ", Style::default().fg(theme.accent)),
-            Span::styled("filtrar  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", t("PressSlashToFilter")), Style::default().fg(theme.muted)),
             Span::styled("c", Style::default().fg(theme.accent)),
             Span::styled(" CPU  ", Style::default().fg(theme.muted)),
             Span::styled("m", Style::default().fg(theme.accent)),
@@ -120,7 +128,7 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
             Span::styled("r", Style::default().fg(theme.accent)),
             Span::styled(" DiskR  ", Style::default().fg(theme.muted)),
             Span::styled("w", Style::default().fg(theme.accent)),
-            Span::styled(" DiskW  ↑↓ navegar  Enter detalle  ", Style::default().fg(theme.muted)),
+            Span::styled(format!(" DiskW  ↑↓ {}  Enter {}  ", t("Navigate"), t("EnterDetail")), Style::default().fg(theme.muted)),
             Span::styled("[f] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled(status_label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
         ])
@@ -171,7 +179,7 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
 
     let header_cells = vec![
         Cell::from(Line::from(Span::styled("PID", header_style)).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Span::styled("Proceso", header_style)),
+        Cell::from(Span::styled(t("Process"), header_style)),
         Cell::from(Line::from(Span::styled(
             col_header("CPU%", is_cpu, state.sort_asc),
             if is_cpu { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
@@ -181,14 +189,14 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
             if is_mem { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
         )).alignment(ratatui::layout::Alignment::Right)),
         Cell::from(Line::from(Span::styled(
-            col_header("Disco R", is_dr, state.sort_asc),
+            col_header(t("Disk R"), is_dr, state.sort_asc),
             if is_dr { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
         )).alignment(ratatui::layout::Alignment::Right)),
         Cell::from(Line::from(Span::styled(
-            col_header("Disco W", is_dw, state.sort_asc),
+            col_header(t("Disk W"), is_dw, state.sort_asc),
             if is_dw { Style::default().fg(theme.accent).add_modifier(Modifier::BOLD) } else { header_style }
         )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Span::styled("Estado", header_style)),
+        Cell::from(Span::styled(t("State"), header_style)),
     ];
     let header_row = Row::new(header_cells).height(1);
 
@@ -264,7 +272,7 @@ pub fn render(f: &mut Frame, area: Rect, processes: &[ProcessData], state: &Proc
 
         let status_cell = Cell::from(Line::from(vec![
             Span::styled(
-                p.status.to_string_es(),
+                p.status.to_localized_str(lang),
                 row_style.fg(status_color)
             )
         ]));

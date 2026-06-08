@@ -5,9 +5,9 @@ edition = "2021"
 default-run = "rtop"
 description = "A modern TUI system resource monitor with Docker and disk I/O tracking"
 readme = "README.md"
-homepage = "https://github.com/usuario/rtop"
-repository = "https://github.com/usuario/rtop"
-license = "MIT OR Apache-2.0"
+homepage = "https://github.com/rebienkrdns/rtop"
+repository = "https://github.com/rebienkrdns/rtop"
+license = "MIT"
 keywords = ["system", "monitor", "tui", "docker", "resources"]
 categories = ["command-line-utilities", "visualization"]
 

@@ -6,7 +6,9 @@ use ratatui::{
     Frame,
 };
 
-pub fn render(f: &mut Frame, area: Rect) {
+use crate::app::AppState;
+
+pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
     // Centro el modal: 60% ancho, ~80% alto
     let popup = centered_rect(62, 82, area);
 
@@ -14,7 +16,7 @@ pub fn render(f: &mut Frame, area: Rect) {
 
     let block = Block::default()
         .title(Span::styled(
-            " Ayuda — Atajos de teclado  [F1 / Esc para cerrar] ",
+            state.t("Help Shortcuts"),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -27,53 +29,53 @@ pub fn render(f: &mut Frame, area: Rect) {
 
     let sections: Vec<(&str, Vec<(&str, &str)>)> = vec![
         (
-            "Navegación general",
+            state.t("General Navigation"),
             vec![
-                ("[q]",   "Salir de rtop"),
-                ("[Ctrl+C]", "Salir (siempre)"),
-                ("[Tab]", "Cambiar pestaña (Procesos ↔ Contenedores)"),
-                ("[F1]",  "Mostrar / cerrar esta ayuda"),
-                ("[Esc]", "Cerrar modal / salir de vista de detalle"),
+                ("[q]",   state.t("Quit rtop")),
+                ("[Ctrl+C]", state.t("Quit always")),
+                ("[Tab]", state.t("Change tab")),
+                ("[F1]",  state.t("Show hide help")),
+                ("[Esc]", state.t("Close modal exit detail")),
             ],
         ),
         (
-            "Sistema",
+            state.t("System"),
             vec![
-                ("[[]]",   "Disminuir intervalo de refresco"),
-                ("[]]]",   "Aumentar intervalo de refresco"),
-                ("[F2]",   "Selector de disco"),
-                ("[F3]",   "Selector de interfaz de red"),
+                ("[[]]",   state.t("Decrease refresh interval")),
+                ("[]]]",   state.t("Increase refresh interval")),
+                ("[F2]",   state.t("Select disk")),
+                ("[F3]",   state.t("Select network interface")),
             ],
         ),
         (
-            "Procesos",
+            state.t("Processes"),
             vec![
-                ("[↑ / ↓]", "Navegar lista"),
-                ("[Enter]", "Ver detalle del proceso"),
-                ("[/]",     "Activar filtro por nombre"),
-                ("[Esc]",   "Limpiar filtro"),
-                ("[c]",     "Ordenar por CPU"),
-                ("[m]",     "Ordenar por Memoria"),
-                ("[r]",     "Ordenar por Lectura de disco"),
-                ("[w]",     "Ordenar por Escritura de disco"),
+                ("[↑ / ↓]", state.t("Navigate list")),
+                ("[Enter]", state.t("View process detail")),
+                ("[/]",     state.t("Toggle filter by name")),
+                ("[Esc]",   state.t("Clear filter")),
+                ("[c]",     state.t("Sort by CPU")),
+                ("[m]",     state.t("Sort by Memory")),
+                ("[r]",     state.t("Sort by disk read")),
+                ("[w]",     state.t("Sort by disk write")),
             ],
         ),
         (
-            "Contenedores",
+            state.t("Containers"),
             vec![
-                ("[↑ / ↓]", "Navegar lista"),
-                ("[Enter]", "Ver detalle del contenedor"),
-                ("[l]",     "Ver logs del contenedor"),
-                ("[r]",     "Reiniciar contenedor"),
-                ("[s]",     "Parar contenedor"),
+                ("[↑ / ↓]", state.t("Navigate list")),
+                ("[Enter]", state.t("View container detail")),
+                ("[l]",     state.t("View container logs")),
+                ("[r]",     state.t("Restart container")),
+                ("[s]",     state.t("Stop container")),
             ],
         ),
         (
-            "Logs de contenedor",
+            state.t("Container logs"),
             vec![
-                ("[↑ / ↓]", "Desplazar logs"),
-                ("[f]",     "Activar / desactivar seguimiento automático"),
-                ("[Esc]",   "Volver al detalle del contenedor"),
+                ("[↑ / ↓]", state.t("Scroll logs")),
+                ("[f]",     state.t("Toggle auto-scroll")),
+                ("[Esc]",   state.t("Back to container detail")),
             ],
         ),
     ];
@@ -134,7 +136,7 @@ pub fn render(f: &mut Frame, area: Rect) {
 
     // Pie
     let footer_line = Line::from(vec![Span::styled(
-        "  Versión rtop 0.1",
+        format!("  {}", state.t("Version")),
         Style::default().fg(Color::DarkGray),
     )])
     .alignment(Alignment::Center);

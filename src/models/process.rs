@@ -26,13 +26,22 @@ pub enum ProcessStatus {
 
 #[allow(dead_code)]
 impl ProcessStatus {
-    pub fn to_string_es(self) -> &'static str {
-        match self {
-            ProcessStatus::Running => "ejecutando",
-            ProcessStatus::Sleeping => "durmiendo",
-            ProcessStatus::Stopped => "parado",
-            ProcessStatus::Zombie => "zombi",
-            ProcessStatus::Other => "otro",
+    pub fn to_localized_str(self, lang: crate::localization::Language) -> &'static str {
+        match lang {
+            crate::localization::Language::Spanish => match self {
+                ProcessStatus::Running => "ejecutando",
+                ProcessStatus::Sleeping => "durmiendo",
+                ProcessStatus::Stopped => "parado",
+                ProcessStatus::Zombie => "zombi",
+                ProcessStatus::Other => "otro",
+            },
+            crate::localization::Language::English => match self {
+                ProcessStatus::Running => "running",
+                ProcessStatus::Sleeping => "sleeping",
+                ProcessStatus::Stopped => "stopped",
+                ProcessStatus::Zombie => "zombie",
+                ProcessStatus::Other => "other",
+            },
         }
     }
 }

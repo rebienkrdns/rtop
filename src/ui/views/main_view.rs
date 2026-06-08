@@ -235,7 +235,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 .border_style(Style::default().fg(theme.accent_dim));
             let inner = block.inner(content_area);
             f.render_widget(block, content_area);
-            process_table::render(f, inner, &state.processes, &state.process_table);
+            process_table::render(f, inner, &state.processes, &state.process_table, state.lang);
         }
         Tab::Containers => {
             let title_str = if state.container_state.available {
@@ -243,28 +243,17 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 let total_used: u64 = state.containers.iter().map(|c| c.memory_bytes).sum();
                 let has_unlimited = state.containers.iter().any(|c| c.memory_limit_bytes >= host_mem || c.memory_limit_bytes == 0);
                 let (total_limit, has_limit) = if has_unlimited {
-                    (host_mem, host_mem > 0)
+                    (0, false)
                 } else {
-                    let sum_limits: u64 = state.containers.iter().map(|c| c.memory_limit_bytes).sum();
-                    (sum_limits, sum_limits > 0)
+                    (state.containers.iter().map(|c| c.memory_limit_bytes).sum(), true)
                 };
                 if has_limit {
-                    let pct = if total_limit > 0 {
-                        (total_used as f64 / total_limit as f64) * 100.0
-                    } else {
-                        0.0
-                    };
-                    format!(
-                        " Contenedores (Docker) · Mem. Global: {} / {} ({:.1}%) ",
-                        ByteSize(total_used),
-                        ByteSize(total_limit),
-                        pct
-                    )
+                    format!(" Contenedores: {} activos · Mem: {} / {} ", state.containers.len(), ByteSize(total_used), ByteSize(total_limit))
                 } else {
-                    format!(" Contenedores (Docker) · Mem. Global: {} ", ByteSize(total_used))
+                    format!(" Contenedores: {} activos · Mem: {} (límite: host) ", state.containers.len(), ByteSize(total_used))
                 }
             } else {
-                " Contenedores (Docker no detectado) ".to_string()
+                " Contenedores ".to_string()
             };
 
             let block = Block::default()
@@ -281,6 +270,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     state.container_cursor,
                     state.container_sort_col,
                     state.container_sort_asc,
+                    state.lang,
                 );
             } else {
                 let msg = state

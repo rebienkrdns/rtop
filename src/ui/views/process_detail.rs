@@ -16,7 +16,7 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
 
     let block = Block::default()
         .title(Span::styled(
-            format!(" Detalle de proceso: {} (PID {}) ", process.name, process.pid),
+            format!(" {} {} (PID {}) ", state.t("ProcessDetailHeader"), process.name, process.pid),
             Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
@@ -52,31 +52,31 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             Span::styled("PID:        ", Style::default().fg(theme.muted)),
             Span::styled(process.pid.to_string(), Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
             Span::raw("    "),
-            Span::styled("Usuario: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("UserLabel")), Style::default().fg(theme.muted)),
             Span::styled(process.user.clone(), Style::default().fg(theme.text)),
             Span::raw("    "),
-            Span::styled("Estado: ", Style::default().fg(theme.muted)),
-            Span::styled(process.status.to_string_es(), Style::default().fg(theme.ok)),
+            Span::styled(format!("{}: ", state.t("StatusLabel")), Style::default().fg(theme.muted)),
+            Span::styled(process.status.to_localized_str(state.lang), Style::default().fg(theme.ok)),
             Span::raw("    "),
-            Span::styled("Threads: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("ThreadsLabel")), Style::default().fg(theme.muted)),
             Span::styled(process.threads.to_string(), Style::default().fg(theme.text)),
             Span::raw("    "),
-            Span::styled("Uptime: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("UptimeLabel")), Style::default().fg(theme.muted)),
             Span::styled(uptime_str, Style::default().fg(theme.text)),
             Span::raw("    "),
             Span::styled("RAM: ", Style::default().fg(theme.muted)),
             Span::styled(ByteSize(process.memory_bytes).to_string(), Style::default().fg(theme.text)),
         ]),
         Line::from(vec![
-            Span::styled("Ruta (Exe): ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("PathLabel")), Style::default().fg(theme.muted)),
             Span::styled(process.exe_path.clone(), Style::default().fg(theme.accent)),
         ]),
         Line::from(vec![
-            Span::styled("Directorio: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("DirectoryLabel")), Style::default().fg(theme.muted)),
             Span::styled(process.cwd.clone(), Style::default().fg(theme.text)),
         ]),
         Line::from(vec![
-            Span::styled("Comando:    ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}:    ", state.t("CommandLabel")), Style::default().fg(theme.muted)),
             Span::styled(process.cmd.clone(), Style::default().fg(theme.warn)),
         ]),
     ];
@@ -94,7 +94,7 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .collect();
         let cpu_block = Block::default()
             .title(Span::styled(
-                format!(" CPU Historial ({}) · Último: {:.1}% ", state.history_range.label(), cpu_pct),
+                format!(" {} ({}) · {}: {:.1}% ", state.t("CPUHistory"), state.history_range.label(), state.t("LastLabel"), cpu_pct),
                 Style::default().fg(theme.accent),
             ))
             .borders(Borders::ALL)
@@ -126,7 +126,7 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .collect();
         let mem_block = Block::default()
             .title(Span::styled(
-                format!(" Memoria Historial ({}) · Último: {} ({:.1}%) ", state.history_range.label(), ByteSize(process.memory_bytes), mem_pct),
+                format!(" {} ({}) · {}: {} ({:.1}%) ", state.t("MemHistory"), state.history_range.label(), state.t("LastLabel"), ByteSize(process.memory_bytes), mem_pct),
                 Style::default().fg(theme.accent),
             ))
             .borders(Borders::ALL)
@@ -141,7 +141,7 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     } else {
         let mem_gauge = Gauge::default()
             .block(Block::default().title(Span::styled(
-                format!(" Memoria  {} ({:.1}%) ", ByteSize(process.memory_bytes), mem_pct),
+                format!(" {}  {} ({:.1}%) ", state.t("MemLabel"), ByteSize(process.memory_bytes), mem_pct),
                 Style::default().fg(theme.accent),
             )).borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim)))
             .gauge_style(Style::default().fg(Theme::color_for_pct(mem_pct)).bg(Color::Rgb(51, 52, 61)))
@@ -162,9 +162,9 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .fold(0.0_f64, f64::max)
             .max(1.0);
         let read_label = if read_rate > 0.0 {
-            format!(" Disco Lectura Historial ({}) · Último: {}/s ", state.history_range.label(), ByteSize(read_rate as u64))
+            format!(" {} ({}) · {}: {}/s ", state.t("DiskReadHistory"), state.history_range.label(), state.t("LastLabel"), ByteSize(read_rate as u64))
         } else {
-            format!(" Disco Lectura Historial ({}) · Último: — ", state.history_range.label())
+            format!(" {} ({}) · {}: — ", state.t("DiskReadHistory"), state.history_range.label(), state.t("LastLabel"))
         };
         let read_block = Block::default()
             .title(Span::styled(read_label, Style::default().fg(theme.accent)))
@@ -179,9 +179,9 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
         f.render_widget(read_spark, inner_area);
     } else {
         let read_label = if read_rate > 0.0 {
-            format!(" Disco Lectura  {}/s ", ByteSize(read_rate as u64))
+            format!(" {}  {}/s ", state.t("DiskReadLabel"), ByteSize(read_rate as u64))
         } else {
-            " Disco Lectura  — ".to_string()
+            format!(" {}  — ", state.t("DiskReadLabel"))
         };
         let read_ratio = (read_rate / 100_000_000.0).clamp(0.0, 1.0);
         let read_gauge = Gauge::default()
@@ -205,9 +205,9 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .fold(0.0_f64, f64::max)
             .max(1.0);
         let write_label = if write_rate > 0.0 {
-            format!(" Disco Escritura Historial ({}) · Último: {}/s ", state.history_range.label(), ByteSize(write_rate as u64))
+            format!(" {} ({}) · {}: {}/s ", state.t("DiskWriteHistory"), state.history_range.label(), state.t("LastLabel"), ByteSize(write_rate as u64))
         } else {
-            format!(" Disco Escritura Historial ({}) · Último: — ", state.history_range.label())
+            format!(" {} ({}) · {}: — ", state.t("DiskWriteHistory"), state.history_range.label(), state.t("LastLabel"))
         };
         let write_block = Block::default()
             .title(Span::styled(write_label, Style::default().fg(theme.accent)))
@@ -222,9 +222,9 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
         f.render_widget(write_spark, inner_area);
     } else {
         let write_label = if write_rate > 0.0 {
-            format!(" Disco Escritura  {}/s ", ByteSize(write_rate as u64))
+            format!(" {}  {}/s ", state.t("DiskWriteLabel"), ByteSize(write_rate as u64))
         } else {
-            " Disco Escritura  — ".to_string()
+            format!(" {}  — ", state.t("DiskWriteLabel"))
         };
         let write_ratio = (write_rate / 100_000_000.0).clamp(0.0, 1.0);
         let write_gauge = Gauge::default()
@@ -238,11 +238,11 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     // Footer hint
     let hint = Line::from(vec![
         Span::styled(" [ESC] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled("Volver  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", state.t("Back")), Style::default().fg(theme.muted)),
         Span::styled("[H] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled("Historial  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
         Span::styled("[T] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("Rango ({})", state.history_range.label()), Style::default().fg(theme.muted)),
+        Span::styled(format!("{} ({})", state.t("Range"), state.history_range.label()), Style::default().fg(theme.muted)),
     ]);
     f.render_widget(Paragraph::new(hint), chunks[5]);
 }

@@ -3,6 +3,7 @@ mod collectors;
 mod config;
 mod models;
 mod ui;
+mod localization;
 
 use std::io::Stdout;
 
@@ -31,6 +32,7 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    let lang = localization::Language::detect();
     if args.len() > 1 {
         match args[1].as_str() {
             "-v" | "--version" | "-V" => {
@@ -38,18 +40,33 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
             "-h" | "--help" => {
-                println!("rtop - Un monitor de recursos del sistema moderno en Rust");
-                println!();
-                println!("Uso: rtop [OPCIONES]");
-                println!();
-                println!("Opciones:");
-                println!("  -h, --help     Muestra este mensaje de ayuda");
-                println!("  -v, --version  Muestra la versión");
+                if lang == localization::Language::Spanish {
+                    println!("rtop - Un monitor de recursos del sistema moderno en Rust");
+                    println!();
+                    println!("Uso: rtop [OPCIONES]");
+                    println!();
+                    println!("Opciones:");
+                    println!("  -h, --help     Muestra este mensaje de ayuda");
+                    println!("  -v, --version  Muestra la versión");
+                } else {
+                    println!("rtop - A modern TUI system resource monitor in Rust");
+                    println!();
+                    println!("Usage: rtop [OPTIONS]");
+                    println!();
+                    println!("Options:");
+                    println!("  -h, --help     Show this help message");
+                    println!("  -v, --version  Show the version");
+                }
                 return Ok(());
             }
             _ => {
-                eprintln!("Error: Argumento no reconocido '{}'", args[1]);
-                eprintln!("Usa 'rtop --help' para ver las opciones.");
+                if lang == localization::Language::Spanish {
+                    eprintln!("Error: Argumento no reconocido '{}'", args[1]);
+                    eprintln!("Usa 'rtop --help' para ver las opciones.");
+                } else {
+                    eprintln!("Error: Unrecognized argument '{}'", args[1]);
+                    eprintln!("Use 'rtop --help' to view options.");
+                }
                 std::process::exit(1);
             }
         }

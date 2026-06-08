@@ -41,12 +41,14 @@ pub fn render_with_cursor(
     cursor: usize,
     sort_col: ContainerSortColumn,
     sort_asc: bool,
+    lang: crate::localization::Language,
 ) {
     let theme = Theme::default_theme();
+    let t = |key: &'static str| crate::localization::translate(key, lang);
 
     if containers.is_empty() {
         let msg = Paragraph::new(Line::from(Span::styled(
-            "  Sin contenedores activos",
+            format!("  {}", t("NoContainers")),
             Style::default().fg(Color::DarkGray),
         )));
         f.render_widget(msg, area);
@@ -93,7 +95,7 @@ pub fn render_with_cursor(
     let header_cells = vec![
         Cell::from(Span::styled("ID", header_style)),
         Cell::from(Span::styled(
-            col_header("Contenedor", sort_col == ContainerSortColumn::Name, sort_asc),
+            col_header(t("Process"), sort_col == ContainerSortColumn::Name, sort_asc),
             if sort_col == ContainerSortColumn::Name {
                 Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
             } else {
@@ -117,7 +119,7 @@ pub fn render_with_cursor(
             },
         )).alignment(ratatui::layout::Alignment::Right)),
         Cell::from(Line::from(Span::styled(
-            col_header(if is_wide { "Red ↓ (Tot)" } else { "Red ↓" }, is_net_rx, sort_asc),
+            col_header(&if is_wide { format!("{} ↓ (Tot)", t("Network")) } else { format!("{} ↓", t("Network")) }, is_net_rx, sort_asc),
             if is_net_rx {
                 Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
             } else {
@@ -125,7 +127,7 @@ pub fn render_with_cursor(
             },
         )).alignment(ratatui::layout::Alignment::Right)),
         Cell::from(Line::from(Span::styled(
-            col_header(if is_wide { "Red ↑ (Tot)" } else { "Red ↑" }, is_net_tx, sort_asc),
+            col_header(&if is_wide { format!("{} ↑ (Tot)", t("Network")) } else { format!("{} ↑", t("Network")) }, is_net_tx, sort_asc),
             if is_net_tx {
                 Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
             } else {
@@ -133,7 +135,7 @@ pub fn render_with_cursor(
             },
         )).alignment(ratatui::layout::Alignment::Right)),
         Cell::from(Line::from(Span::styled(
-            col_header(if is_wide { "Disk R (Tot)" } else { "Disk R" }, is_disk_r, sort_asc),
+            col_header(&if is_wide { format!("{} R (Tot)", t("Disk")) } else { format!("{} R", t("Disk")) }, is_disk_r, sort_asc),
             if is_disk_r {
                 Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
             } else {
@@ -141,14 +143,14 @@ pub fn render_with_cursor(
             },
         )).alignment(ratatui::layout::Alignment::Right)),
         Cell::from(Line::from(Span::styled(
-            col_header(if is_wide { "Disk W (Tot)" } else { "Disk W" }, is_disk_w, sort_asc),
+            col_header(&if is_wide { format!("{} W (Tot)", t("Disk")) } else { format!("{} W", t("Disk")) }, is_disk_w, sort_asc),
             if is_disk_w {
                 Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
             } else {
                 header_style
             },
         )).alignment(ratatui::layout::Alignment::Right)),
-        Cell::from(Span::styled("Estado", header_style)),
+        Cell::from(Span::styled(t("State"), header_style)),
     ];
     let header_row = Row::new(header_cells).height(1);
 
@@ -237,7 +239,7 @@ pub fn render_with_cursor(
         // Estado cell (circular indicator + status)
         let status_indicator = "● ";
         let scolor = if selected { sel_fg } else { status_color(&c.status) };
-        let status_text = c.status.as_str();
+        let status_text = t(c.status.as_str());
 
         let status_cell = Cell::from(Line::from(vec![
             Span::styled(status_indicator, row_style.fg(scolor)),

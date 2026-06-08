@@ -99,6 +99,7 @@ pub struct AppState {
     pub history_range: HistoryRange,
     pub process_history: std::collections::VecDeque<ProcessHistorySample>,
     pub container_history: std::collections::VecDeque<ContainerHistorySample>,
+    pub lang: crate::localization::Language,
 
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
@@ -114,6 +115,7 @@ impl AppState {
         let hostname = System::host_name().unwrap_or_else(|| "unknown".to_string());
         let selected_disk = cfg.selected_disk.clone();
         let selected_nic = cfg.selected_nic.clone();
+        let lang = crate::localization::Language::detect();
         Self {
             hostname,
             cpu: CpuData::default(),
@@ -156,6 +158,7 @@ impl AppState {
             history_range: HistoryRange::OneMin,
             process_history: std::collections::VecDeque::new(),
             container_history: std::collections::VecDeque::new(),
+            lang,
             metrics_rx: rx,
             interval_tx,
         }
@@ -277,6 +280,10 @@ impl AppState {
         }
     }
 
+    pub fn t(&self, key: &'static str) -> &'static str {
+        crate::localization::translate(key, self.lang)
+    }
+
     pub fn current_network(&self) -> Option<&NetworkData> {
         self.selected_nic
             .as_ref()
@@ -297,7 +304,7 @@ impl AppState {
             .collect();
 
         let mut total = NetworkData {
-            interface: "todas".to_string(),
+            interface: self.t("AllNICs").to_string(),
             recv_bytes_per_sec: 0.0,
             sent_bytes_per_sec: 0.0,
             total_recv_bytes: 0,

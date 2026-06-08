@@ -19,7 +19,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     if area.width < 80 || area.height < 24 {
         let msg = Paragraph::new(Line::from(vec![
             Span::styled(
-                "⚠  Terminal muy pequeña (mínimo 80×24)",
+                state.t("TerminalTooSmall"),
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -33,7 +33,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
     // 10.5 — Modal de ayuda (se muestra sobre cualquier vista)
     if state.show_help {
-        views::help_modal::render(f, area);
+        views::help_modal::render(f, area, state);
         return;
     }
 
