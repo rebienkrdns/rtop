@@ -10,22 +10,52 @@ use ratatui::{
 use crate::ui::history::{HistoryRange, MetricSample};
 use crate::ui::theme::Theme;
 
-fn sparkline_data(samples: &[&MetricSample], width: usize, f: impl Fn(&MetricSample) -> f64) -> Vec<u64> {
-    let display_samples = samples.len().min(width);
-    let start = samples.len().saturating_sub(display_samples);
-    let mut data: Vec<u64> = samples[start..].iter().map(|s| f(s) as u64).collect();
-    if data.len() < width {
-        let mut padded = vec![0; width - data.len()];
-        padded.extend(data);
-        data = padded;
+fn sparkline_data(
+    samples: &[&MetricSample],
+    width: usize,
+    range: HistoryRange,
+    f: impl Fn(&MetricSample) -> f64,
+) -> Vec<u64> {
+    let max_samples = range.samples();
+    let s_len = samples.len();
+    if s_len == 0 {
+        return vec![0; width];
     }
-    data
+
+    let values: Vec<f64> = samples.iter().map(|s| f(s)).collect();
+    let t_size = ((s_len as f64 * width as f64) / max_samples as f64).round() as usize;
+    let t_size = t_size.clamp(1, width);
+
+    let mut interpolated = Vec::with_capacity(t_size);
+    if t_size == 1 {
+        interpolated.push(values.last().copied().unwrap_or(0.0) as u64);
+    } else if s_len == 1 {
+        let val = values[0] as u64;
+        interpolated.resize(t_size, val);
+    } else {
+        for i in 0..t_size {
+            let frac = i as f64 / (t_size - 1) as f64;
+            let idx = frac * (s_len - 1) as f64;
+            let left = idx.floor() as usize;
+            let right = idx.ceil() as usize;
+            let weight = idx - left as f64;
+            let val = (1.0 - weight) * values[left] + weight * values[right];
+            interpolated.push(val as u64);
+        }
+    }
+
+    interpolated.reverse();
+
+    if interpolated.len() < width {
+        let pad_len = width - interpolated.len();
+        interpolated.extend(vec![0; pad_len]);
+    }
+
+    interpolated
 }
 
-fn max_bps(samples: &[&MetricSample], width: usize, f: impl Fn(&MetricSample) -> f64) -> f64 {
-    let display_samples = samples.len().min(width);
-    let start = samples.len().saturating_sub(display_samples);
-    samples[start..]
+fn max_bps(samples: &[&MetricSample], f: impl Fn(&MetricSample) -> f64) -> f64 {
+    samples
         .iter()
         .map(|s| f(s))
         .fold(0.0_f64, f64::max)
@@ -66,7 +96,7 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
 
     // CPU sparkline
     let width = chunks[1].width as usize;
-    let cpu_data = sparkline_data(samples, width, |s| s.cpu_pct);
+    let cpu_data = sparkline_data(samples, width, range, |s| s.cpu_pct);
     let cpu_color = Theme::color_for_pct(cpu_last);
     f.render_widget(
         Sparkline::default()
@@ -91,7 +121,7 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
 
     // RAM sparkline
     let width = chunks[3].width as usize;
-    let ram_data = sparkline_data(samples, width, |s| s.mem_pct);
+    let ram_data = sparkline_data(samples, width, range, |s| s.mem_pct);
     let ram_color = Theme::color_for_pct(mem_last);
     f.render_widget(
         Sparkline::default()
@@ -103,7 +133,7 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
     );
 }
 
-pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], _range: HistoryRange) {
+pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange) {
     if area.height < 4 {
         return;
     }
@@ -144,8 +174,8 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], _ra
 
     // Disco sparkline (lectura)
     let width = chunks[1].width as usize;
-    let disk_max = max_bps(samples, width, |s| s.disk_read_bps.max(s.disk_write_bps)).max(1.0);
-    let disk_data = sparkline_data(samples, width, |s| s.disk_read_bps);
+    let disk_max = max_bps(samples, |s| s.disk_read_bps.max(s.disk_write_bps)).max(1.0);
+    let disk_data = sparkline_data(samples, width, range, |s| s.disk_read_bps);
     f.render_widget(
         Sparkline::default()
             .data(&disk_data)
@@ -177,8 +207,8 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], _ra
 
     // Red sparkline (entrada)
     let width = chunks[3].width as usize;
-    let net_max = max_bps(samples, width, |s| s.net_recv_bps.max(s.net_sent_bps)).max(1.0);
-    let net_data = sparkline_data(samples, width, |s| s.net_recv_bps);
+    let net_max = max_bps(samples, |s| s.net_recv_bps.max(s.net_sent_bps)).max(1.0);
+    let net_data = sparkline_data(samples, width, range, |s| s.net_recv_bps);
     f.render_widget(
         Sparkline::default()
             .data(&net_data)
@@ -215,14 +245,9 @@ pub fn render_load(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: 
     );
 
     let width = chunks[1].width as usize;
-    let load_max = samples
-        .iter()
-        .skip(samples.len().saturating_sub(width))
-        .map(|s| s.load1)
-        .fold(0.0_f64, f64::max)
-        .max(1.0);
+    let load_max = max_bps(samples, |s| s.load1).max(1.0);
 
-    let load_data = sparkline_data(samples, width, |s| s.load1 * 10.0); // x10 para mejor resolución
+    let load_data = sparkline_data(samples, width, range, |s| s.load1 * 10.0); // x10 para mejor resolución
     f.render_widget(
         Sparkline::default()
             .data(&load_data)
