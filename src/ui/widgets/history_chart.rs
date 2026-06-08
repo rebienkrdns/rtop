@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Paragraph},
+    widgets::{Block, Clear, Paragraph},
     Frame,
 };
 use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
@@ -70,6 +70,7 @@ fn render_history_canvas_dual(
                 }
             }
         });
+    f.render_widget(Clear, area);
     f.render_widget(canvas, area);
 }
 
@@ -273,29 +274,74 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
+    fn make_sample(cpu: f64) -> MetricSample {
+        MetricSample {
+            cpu_pct: cpu,
+            mem_pct: 50.0,
+            load1: 1.0,
+            net_recv_bps: 0.0,
+            net_sent_bps: 0.0,
+            disk_read_bps: 0.0,
+            disk_write_bps: 0.0,
+        }
+    }
+
+    /// With 30 samples in a 60-sample range, data should be in the RIGHT half.
+    /// Empty space (older time) should be on the LEFT.
+    #[test]
+    fn test_partial_history_data_on_right() {
+        let backend = TestBackend::new(100, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        // 30 samples: low CPU throughout
+        let low = make_sample(10.0);
+        let high = make_sample(90.0);
+        // alternate low/high to have visible data across all positions
+        let owned: Vec<MetricSample> = (0..30).map(|i| if i % 2 == 0 { make_sample(10.0) } else { make_sample(90.0) }).collect();
+        let _ = (low, high);
+        let refs: Vec<&MetricSample> = owned.iter().collect();
+
+        terminal.draw(|f| {
+            let area = f.size();
+            render_cpu_ram(f, area, &refs, HistoryRange::OneMin);
+        }).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        for y in 0..10 {
+            let mut line = String::new();
+            for x in 0..100 {
+                line.push_str(buffer.get(x, y).symbol());
+            }
+            println!("Row {y}: {line}");
+        }
+
+        // Find leftmost non-space char in the canvas area (rows 1-4, skipping label row 0)
+        let mut leftmost: Option<u16> = None;
+        let mut rightmost: Option<u16> = None;
+        for y in 1..5u16 {
+            for x in 0..100u16 {
+                if buffer.get(x, y).symbol() != " " {
+                    if leftmost.is_none() { leftmost = Some(x); }
+                    rightmost = Some(x);
+                }
+            }
+        }
+        println!("Canvas content range x: {:?} to {:?}", leftmost, rightmost);
+        // With 30/60 samples, data should start in the right half (x >= 47 in 100-char panel)
+        assert!(
+            leftmost.unwrap_or(0) >= 47,
+            "With 30 of 60 samples, oldest data should be in right half (x>=47), got {:?}",
+            leftmost
+        );
+    }
+
     #[test]
     fn test_sparkline_rendering_direction() {
         let backend = TestBackend::new(40, 5);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        let s1 = MetricSample {
-            cpu_pct: 10.0,
-            mem_pct: 10.0,
-            load1: 1.0,
-            net_recv_bps: 0.0,
-            net_sent_bps: 0.0,
-            disk_read_bps: 0.0,
-            disk_write_bps: 0.0,
-        };
-        let s2 = MetricSample {
-            cpu_pct: 80.0,
-            mem_pct: 10.0,
-            load1: 1.0,
-            net_recv_bps: 0.0,
-            net_sent_bps: 0.0,
-            disk_read_bps: 0.0,
-            disk_write_bps: 0.0,
-        };
+        let s1 = make_sample(10.0);
+        let s2 = make_sample(80.0);
         let samples = vec![&s1, &s2]; // oldest to newest
 
         terminal.draw(|f| {
@@ -311,6 +357,23 @@ mod tests {
             }
             println!("Row {}: {}", y, line);
         }
+
+        // Row 1 is the CPU canvas row (2 samples draw a line near the top).
+        // With 2 samples and 60-sample range, the line should be near x=38..39 (right edge).
+        // Find the leftmost non-space character in row 1 only.
+        let mut leftmost_in_canvas: Option<u16> = None;
+        for x in 0..40u16 {
+            if buffer.get(x, 1).symbol() != " " {
+                leftmost_in_canvas = Some(x);
+                break;
+            }
+        }
+        println!("Canvas row 1 leftmost non-space: {:?}", leftmost_in_canvas);
+        assert!(
+            leftmost_in_canvas.unwrap_or(0) >= 35,
+            "With 2 samples in 60-sample range, data should be near right edge (x>=35), got {:?}",
+            leftmost_in_canvas
+        );
     }
 }
 
