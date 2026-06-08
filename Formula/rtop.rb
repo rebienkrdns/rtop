@@ -16,10 +16,10 @@ class Rtop < Formula
 
   on_linux do
     if Hardware::CPU.intel?
-      url "https://github.com/rebienkrdns/rtop/releases/download/v0.1.0/rtop-x86_64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/rebienkrdns/rtop/releases/download/v0.1.0/rtop-x86_64-unknown-linux-musl.tar.gz"
       sha256 "0000000000000000000000000000000000000000000000000000000000000000" # Placeholder, update with actual sha256 on release
     elsif Hardware::CPU.arm?
-      url "https://github.com/rebienkrdns/rtop/releases/download/v0.1.0/rtop-aarch64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/rebienkrdns/rtop/releases/download/v0.1.0/rtop-aarch64-unknown-linux-musl.tar.gz"
       sha256 "0000000000000000000000000000000000000000000000000000000000000000" # Placeholder, update with actual sha256 on release
     end
   end

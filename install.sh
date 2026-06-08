@@ -9,7 +9,7 @@ GITHUB_URL="https://github.com/$REPO"
 OS="$(uname -s)"
 case "$OS" in
     Linux)
-        OS_TYPE="unknown-linux-gnu"
+        OS_TYPE="unknown-linux-musl"
         ;;
     Darwin)
         OS_TYPE="apple-darwin"
