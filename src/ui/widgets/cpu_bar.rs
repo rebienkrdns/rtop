@@ -26,9 +26,20 @@ pub fn render_with_loading(f: &mut Frame, area: Rect, cpu: &CpuData, data_loaded
     } else {
         "[cargando…]".to_string()
     };
+    let load_str = if data_loaded {
+        format!(
+            "  load: {:.2} {:.2} {:.2}",
+            cpu.load_avg[0], cpu.load_avg[1], cpu.load_avg[2]
+        )
+    } else {
+        String::new()
+    };
     let label = Line::from(vec![
         Span::styled("CPU", Style::default().fg(theme.accent)),
-        Span::styled(format!("  {}  {} cores", pct_str, cpu.core_count), Style::default().fg(theme.text)),
+        Span::styled(
+            format!("  {}  {} cores{}", pct_str, cpu.core_count, load_str),
+            Style::default().fg(theme.text),
+        ),
     ]);
     f.render_widget(Paragraph::new(label), label_area);
 

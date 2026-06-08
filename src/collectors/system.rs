@@ -57,10 +57,12 @@ impl SystemCollector {
         let per_core: Vec<f64> =
             self.sys.cpus().iter().map(|c| c.cpu_usage() as f64).collect();
         let core_count = per_core.len();
+        let la = sysinfo::System::load_average();
         CpuData {
             global_usage_pct: self.sys.global_cpu_info().cpu_usage() as f64,
             per_core,
             core_count,
+            load_avg: [la.one, la.five, la.fifteen],
         }
     }
 
