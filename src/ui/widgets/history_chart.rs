@@ -14,17 +14,15 @@ use ratatui::symbols::Marker;
 use crate::ui::history::{HistoryRange, MetricSample};
 use crate::ui::theme::Theme;
 
-type MetricExtractor = fn(&MetricSample) -> f64;
-type MetricLine = (Color, MetricExtractor);
-
-fn render_history_canvas_dual(
+pub fn render_history_canvas_dual<T>(
     f: &mut Frame,
     area: Rect,
-    samples: &[&MetricSample],
+    samples: &[&T],
     range: HistoryRange,
     max_val: f64,
-    line1: MetricLine,
-    line2: Option<MetricLine>,
+    color1: Color,
+    extract1: fn(&T) -> f64,
+    line2: Option<(Color, fn(&T) -> f64)>,
 ) {
     let max_samples = range.samples() as f64;
     let s_len = samples.len();
@@ -44,27 +42,21 @@ fn render_history_canvas_dual(
                     }
                     let x1_clamped = x1.max(0.0);
 
-                    // Line 1
-                    let y1_1 = line1.1(samples[i]);
-                    let y2_1 = line1.1(samples[i + 1]);
                     ctx.draw(&CanvasLine {
                         x1: x1_clamped,
-                        y1: y1_1,
+                        y1: extract1(samples[i]),
                         x2,
-                        y2: y2_1,
-                        color: line1.0,
+                        y2: extract1(samples[i + 1]),
+                        color: color1,
                     });
 
-                    // Line 2
-                    if let Some(ref l2) = line2 {
-                        let y1_2 = l2.1(samples[i]);
-                        let y2_2 = l2.1(samples[i + 1]);
+                    if let Some((c2, e2)) = line2 {
                         ctx.draw(&CanvasLine {
                             x1: x1_clamped,
-                            y1: y1_2,
+                            y1: e2(samples[i]),
                             x2,
-                            y2: y2_2,
-                            color: l2.0,
+                            y2: e2(samples[i + 1]),
+                            color: c2,
                         });
                     }
                 }
@@ -122,7 +114,8 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         samples,
         range,
         100.0,
-        (cpu_color, |s| s.cpu_pct),
+        cpu_color,
+        |s: &MetricSample| s.cpu_pct,
         None,
     );
 
@@ -146,7 +139,8 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         samples,
         range,
         100.0,
-        (ram_color, |s| s.mem_pct),
+        ram_color,
+        |s: &MetricSample| s.mem_pct,
         None,
     );
 }
@@ -198,8 +192,9 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
         samples,
         range,
         disk_max,
-        (theme.disk_fill, |s| s.disk_read_bps),
-        Some((Color::Rgb(244, 143, 177), |s| s.disk_write_bps)),
+        theme.disk_fill,
+        |s: &MetricSample| s.disk_read_bps,
+        Some((Color::Rgb(244, 143, 177), |s: &MetricSample| s.disk_write_bps)),
     );
 
     // Red label
@@ -226,8 +221,9 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
         samples,
         range,
         net_max,
-        (theme.ok, |s| s.net_recv_bps),
-        Some((theme.accent, |s| s.net_sent_bps)),
+        theme.ok,
+        |s: &MetricSample| s.net_recv_bps,
+        Some((theme.accent, |s: &MetricSample| s.net_sent_bps)),
     );
 }
 
@@ -263,7 +259,8 @@ pub fn render_load(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: 
         samples,
         range,
         load_max,
-        (theme.accent_dim, |s| s.load1),
+        theme.accent_dim,
+        |s: &MetricSample| s.load1,
         None,
     );
 }

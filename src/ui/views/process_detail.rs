@@ -3,75 +3,33 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph, Sparkline},
+    widgets::{Block, Borders, Gauge, Paragraph},
     Frame,
 };
 
 use crate::app::AppState;
 use crate::models::ProcessData;
+use crate::ui::history::ProcessHistorySample;
 use crate::ui::theme::Theme;
+use crate::ui::widgets::history_chart::render_history_canvas_dual;
 
-fn prepare_sparkline_data<T>(
-    history: &std::collections::VecDeque<T>,
+fn samples_from_history(
+    history: &std::collections::VecDeque<ProcessHistorySample>,
     limit: usize,
-    width: usize,
-    f: impl Fn(&T) -> u64,
-) -> Vec<u64> {
+) -> Vec<&ProcessHistorySample> {
     let s_len = history.len().min(limit);
-    if s_len == 0 {
-        return vec![0; width];
-    }
-
     let skip = history.len().saturating_sub(s_len);
-    let values: Vec<u64> = history
-        .iter()
-        .skip(skip)
-        .map(f)
-        .collect();
-
-    let t_size = ((s_len as f64 * width as f64) / limit as f64).round() as usize;
-    let t_size = t_size.clamp(1, width);
-
-    let mut interpolated = Vec::with_capacity(t_size);
-    if t_size == 1 {
-        interpolated.push(values.last().copied().unwrap_or(0));
-    } else if s_len == 1 {
-        let val = values[0];
-        interpolated.resize(t_size, val);
-    } else {
-        for i in 0..t_size {
-            let frac = (t_size - 1 - i) as f64 / (t_size - 1) as f64;
-            let idx = frac * (s_len - 1) as f64;
-            let left = idx.floor() as usize;
-            let right = idx.ceil() as usize;
-            let weight = idx - left as f64;
-            let val = (1.0 - weight) * values[left] as f64 + weight * values[right] as f64;
-            interpolated.push(val.round() as u64);
-        }
-    }
-
-    if interpolated.len() < width {
-        let pad_len = width - interpolated.len();
-        interpolated.extend(vec![0; pad_len]);
-    }
-
-    interpolated
+    history.iter().skip(skip).collect()
 }
 
-
-fn calculate_max<T>(
-    history: &std::collections::VecDeque<T>,
+fn max_bps_proc(
+    history: &std::collections::VecDeque<ProcessHistorySample>,
     limit: usize,
-    _width: usize,
-    f: impl Fn(&T) -> f64,
+    f: impl Fn(&ProcessHistorySample) -> f64,
 ) -> f64 {
     let s_len = history.len().min(limit);
     let skip = history.len().saturating_sub(s_len);
-    history
-        .iter()
-        .skip(skip)
-        .map(f)
-        .fold(0.0_f64, f64::max)
+    history.iter().skip(skip).map(f).fold(0.0_f64, f64::max)
 }
 
 pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState) {
@@ -185,9 +143,16 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
         chunks[0],
     );
 
-    // CPU bar / history
     let cpu_pct = process.cpu_pct.clamp(0.0, 100.0);
+    let mem_pct = process.memory_pct.clamp(0.0, 100.0);
+    let read_rate = process.disk_read_per_sec.unwrap_or(0.0);
+    let write_rate = process.disk_write_per_sec.unwrap_or(0.0);
+    let limit = state.history_range.samples();
+
     if state.history_mode {
+        let samps = samples_from_history(&state.process_history, limit);
+
+        // CPU History
         let cpu_block = Block::default()
             .title(Span::styled(
                 format!(
@@ -203,46 +168,18 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .border_style(Style::default().fg(theme.accent_dim));
         let inner_area = cpu_block.inner(chunks[1]);
         f.render_widget(cpu_block, chunks[1]);
-        let width = inner_area.width as usize;
-        let cpu_data = prepare_sparkline_data(
-            &state.process_history,
-            state.history_range.samples(),
-            width,
-            |s| s.cpu_pct as u64,
+        render_history_canvas_dual(
+            f,
+            inner_area,
+            &samps,
+            state.history_range,
+            100.0,
+            Theme::color_for_pct(cpu_pct),
+            |s: &ProcessHistorySample| s.cpu_pct,
+            None,
         );
-        let cpu_spark = Sparkline::default()
-            .data(&cpu_data)
-            .max(100)
-            .direction(ratatui::widgets::RenderDirection::RightToLeft)
-            .style(
-                Style::default()
-                    .fg(Theme::color_for_pct(cpu_pct))
-                    .bg(Color::Rgb(51, 52, 61)),
-            );
-        f.render_widget(cpu_spark, inner_area);
-    } else {
-        let cpu_gauge = Gauge::default()
-            .block(
-                Block::default()
-                    .title(Span::styled(
-                        format!(" CPU  {:.1}% ", cpu_pct),
-                        Style::default().fg(theme.accent),
-                    ))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme.accent_dim)),
-            )
-            .gauge_style(
-                Style::default()
-                    .fg(Theme::color_for_pct(cpu_pct))
-                    .bg(Color::Rgb(51, 52, 61)),
-            )
-            .ratio(cpu_pct / 100.0);
-        f.render_widget(cpu_gauge, chunks[1]);
-    }
 
-    // Memory bar / history
-    let mem_pct = process.memory_pct.clamp(0.0, 100.0);
-    if state.history_mode {
+        // Memory History
         let mem_block = Block::default()
             .title(Span::styled(
                 format!(
@@ -259,51 +196,18 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .border_style(Style::default().fg(theme.accent_dim));
         let inner_area = mem_block.inner(chunks[2]);
         f.render_widget(mem_block, chunks[2]);
-        let width = inner_area.width as usize;
-        let mem_data = prepare_sparkline_data(
-            &state.process_history,
-            state.history_range.samples(),
-            width,
-            |s| s.mem_pct as u64,
+        render_history_canvas_dual(
+            f,
+            inner_area,
+            &samps,
+            state.history_range,
+            100.0,
+            Theme::color_for_pct(mem_pct),
+            |s: &ProcessHistorySample| s.mem_pct,
+            None,
         );
-        let mem_spark = Sparkline::default()
-            .data(&mem_data)
-            .max(100)
-            .direction(ratatui::widgets::RenderDirection::RightToLeft)
-            .style(
-                Style::default()
-                    .fg(Theme::color_for_pct(mem_pct))
-                    .bg(Color::Rgb(51, 52, 61)),
-            );
-        f.render_widget(mem_spark, inner_area);
-    } else {
-        let mem_gauge = Gauge::default()
-            .block(
-                Block::default()
-                    .title(Span::styled(
-                        format!(
-                            " {}  {} ({:.1}%) ",
-                            state.t("MemLabel"),
-                            ByteSize(process.memory_bytes),
-                            mem_pct
-                        ),
-                        Style::default().fg(theme.accent),
-                    ))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme.accent_dim)),
-            )
-            .gauge_style(
-                Style::default()
-                    .fg(Theme::color_for_pct(mem_pct))
-                    .bg(Color::Rgb(51, 52, 61)),
-            )
-            .ratio(mem_pct / 100.0);
-        f.render_widget(mem_gauge, chunks[2]);
-    }
 
-    // Disk Read bar / history
-    let read_rate = process.disk_read_per_sec.unwrap_or(0.0);
-    if state.history_mode {
+        // Disk Read History
         let read_label = if read_rate > 0.0 {
             format!(
                 " {} ({}) · {}: {}/s ",
@@ -326,59 +230,19 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .border_style(Style::default().fg(theme.accent_dim));
         let inner_area = read_block.inner(chunks[3]);
         f.render_widget(read_block, chunks[3]);
-        let width = inner_area.width as usize;
-        let read_data = prepare_sparkline_data(
-            &state.process_history,
-            state.history_range.samples(),
-            width,
-            |s| s.disk_read_bps as u64,
+        let read_max = max_bps_proc(&state.process_history, limit, |s| s.disk_read_bps).max(1.0);
+        render_history_canvas_dual(
+            f,
+            inner_area,
+            &samps,
+            state.history_range,
+            read_max,
+            theme.accent_dim,
+            |s: &ProcessHistorySample| s.disk_read_bps,
+            None,
         );
-        let read_max = calculate_max(
-            &state.process_history,
-            state.history_range.samples(),
-            width,
-            |s| s.disk_read_bps,
-        ).max(1.0);
-        let read_spark = Sparkline::default()
-            .data(&read_data)
-            .max(read_max as u64)
-            .direction(ratatui::widgets::RenderDirection::RightToLeft)
-            .style(
-                Style::default()
-                    .fg(theme.accent_dim)
-                    .bg(Color::Rgb(51, 52, 61)),
-            );
-        f.render_widget(read_spark, inner_area);
-    } else {
-        let read_label = if read_rate > 0.0 {
-            format!(
-                " {}  {}/s ",
-                state.t("DiskReadLabel"),
-                ByteSize(read_rate as u64)
-            )
-        } else {
-            format!(" {}  — ", state.t("DiskReadLabel"))
-        };
-        let read_ratio = (read_rate / 100_000_000.0).clamp(0.0, 1.0);
-        let read_gauge = Gauge::default()
-            .block(
-                Block::default()
-                    .title(Span::styled(read_label, Style::default().fg(theme.accent)))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme.accent_dim)),
-            )
-            .gauge_style(
-                Style::default()
-                    .fg(theme.accent_dim)
-                    .bg(Color::Rgb(51, 52, 61)),
-            )
-            .ratio(read_ratio);
-        f.render_widget(read_gauge, chunks[3]);
-    }
 
-    // Disk Write bar / history
-    let write_rate = process.disk_write_per_sec.unwrap_or(0.0);
-    if state.history_mode {
+        // Disk Write History
         let write_label = if write_rate > 0.0 {
             format!(
                 " {} ({}) · {}: {}/s ",
@@ -401,26 +265,87 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .border_style(Style::default().fg(theme.accent_dim));
         let inner_area = write_block.inner(chunks[4]);
         f.render_widget(write_block, chunks[4]);
-        let width = inner_area.width as usize;
-        let write_data = prepare_sparkline_data(
-            &state.process_history,
-            state.history_range.samples(),
-            width,
-            |s| s.disk_write_bps as u64,
+        let write_max = max_bps_proc(&state.process_history, limit, |s| s.disk_write_bps).max(1.0);
+        render_history_canvas_dual(
+            f,
+            inner_area,
+            &samps,
+            state.history_range,
+            write_max,
+            theme.ok,
+            |s: &ProcessHistorySample| s.disk_write_bps,
+            None,
         );
-        let write_max = calculate_max(
-            &state.process_history,
-            state.history_range.samples(),
-            width,
-            |s| s.disk_write_bps,
-        ).max(1.0);
-        let write_spark = Sparkline::default()
-            .data(&write_data)
-            .max(write_max as u64)
-            .direction(ratatui::widgets::RenderDirection::RightToLeft)
-            .style(Style::default().fg(theme.ok).bg(Color::Rgb(51, 52, 61)));
-        f.render_widget(write_spark, inner_area);
     } else {
+        // CPU Gauge
+        let cpu_gauge = Gauge::default()
+            .block(
+                Block::default()
+                    .title(Span::styled(
+                        format!(" CPU  {:.1}% ", cpu_pct),
+                        Style::default().fg(theme.accent),
+                    ))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme.accent_dim)),
+            )
+            .gauge_style(
+                Style::default()
+                    .fg(Theme::color_for_pct(cpu_pct))
+                    .bg(Color::Rgb(51, 52, 61)),
+            )
+            .ratio(cpu_pct / 100.0);
+        f.render_widget(cpu_gauge, chunks[1]);
+
+        // Memory Gauge
+        let mem_gauge = Gauge::default()
+            .block(
+                Block::default()
+                    .title(Span::styled(
+                        format!(
+                            " {}  {} ({:.1}%) ",
+                            state.t("MemLabel"),
+                            ByteSize(process.memory_bytes),
+                            mem_pct
+                        ),
+                        Style::default().fg(theme.accent),
+                    ))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme.accent_dim)),
+            )
+            .gauge_style(
+                Style::default()
+                    .fg(Theme::color_for_pct(mem_pct))
+                    .bg(Color::Rgb(51, 52, 61)),
+            )
+            .ratio(mem_pct / 100.0);
+        f.render_widget(mem_gauge, chunks[2]);
+
+        // Disk Read Gauge
+        let read_label = if read_rate > 0.0 {
+            format!(
+                " {}  {}/s ",
+                state.t("DiskReadLabel"),
+                ByteSize(read_rate as u64)
+            )
+        } else {
+            format!(" {}  — ", state.t("DiskReadLabel"))
+        };
+        let read_gauge = Gauge::default()
+            .block(
+                Block::default()
+                    .title(Span::styled(read_label, Style::default().fg(theme.accent)))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme.accent_dim)),
+            )
+            .gauge_style(
+                Style::default()
+                    .fg(theme.accent_dim)
+                    .bg(Color::Rgb(51, 52, 61)),
+            )
+            .ratio((read_rate / 100_000_000.0).clamp(0.0, 1.0));
+        f.render_widget(read_gauge, chunks[3]);
+
+        // Disk Write Gauge
         let write_label = if write_rate > 0.0 {
             format!(
                 " {}  {}/s ",
@@ -430,7 +355,6 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
         } else {
             format!(" {}  — ", state.t("DiskWriteLabel"))
         };
-        let write_ratio = (write_rate / 100_000_000.0).clamp(0.0, 1.0);
         let write_gauge = Gauge::default()
             .block(
                 Block::default()
@@ -439,7 +363,7 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
                     .border_style(Style::default().fg(theme.accent_dim)),
             )
             .gauge_style(Style::default().fg(theme.ok).bg(Color::Rgb(51, 52, 61)))
-            .ratio(write_ratio);
+            .ratio((write_rate / 100_000_000.0).clamp(0.0, 1.0));
         f.render_widget(write_gauge, chunks[4]);
     }
 

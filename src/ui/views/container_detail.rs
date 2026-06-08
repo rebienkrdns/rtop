@@ -3,75 +3,33 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph, Sparkline},
+    widgets::{Block, Borders, Gauge, Paragraph},
     Frame,
 };
 
 use crate::app::AppState;
 use crate::models::{ContainerData, ContainerStatus};
+use crate::ui::history::ContainerHistorySample;
 use crate::ui::theme::Theme;
+use crate::ui::widgets::history_chart::render_history_canvas_dual;
 
-fn prepare_sparkline_data<T>(
-    history: &std::collections::VecDeque<T>,
+fn samples_from_history(
+    history: &std::collections::VecDeque<ContainerHistorySample>,
     limit: usize,
-    width: usize,
-    f: impl Fn(&T) -> u64,
-) -> Vec<u64> {
+) -> Vec<&ContainerHistorySample> {
     let s_len = history.len().min(limit);
-    if s_len == 0 {
-        return vec![0; width];
-    }
-
     let skip = history.len().saturating_sub(s_len);
-    let values: Vec<u64> = history
-        .iter()
-        .skip(skip)
-        .map(f)
-        .collect();
-
-    let t_size = ((s_len as f64 * width as f64) / limit as f64).round() as usize;
-    let t_size = t_size.clamp(1, width);
-
-    let mut interpolated = Vec::with_capacity(t_size);
-    if t_size == 1 {
-        interpolated.push(values.last().copied().unwrap_or(0));
-    } else if s_len == 1 {
-        let val = values[0];
-        interpolated.resize(t_size, val);
-    } else {
-        for i in 0..t_size {
-            let frac = (t_size - 1 - i) as f64 / (t_size - 1) as f64;
-            let idx = frac * (s_len - 1) as f64;
-            let left = idx.floor() as usize;
-            let right = idx.ceil() as usize;
-            let weight = idx - left as f64;
-            let val = (1.0 - weight) * values[left] as f64 + weight * values[right] as f64;
-            interpolated.push(val.round() as u64);
-        }
-    }
-
-    if interpolated.len() < width {
-        let pad_len = width - interpolated.len();
-        interpolated.extend(vec![0; pad_len]);
-    }
-
-    interpolated
+    history.iter().skip(skip).collect()
 }
 
-
-fn calculate_max<T>(
-    history: &std::collections::VecDeque<T>,
+fn max_bps_cont(
+    history: &std::collections::VecDeque<ContainerHistorySample>,
     limit: usize,
-    _width: usize,
-    f: impl Fn(&T) -> f64,
+    f: impl Fn(&ContainerHistorySample) -> f64,
 ) -> f64 {
     let s_len = history.len().min(limit);
     let skip = history.len().saturating_sub(s_len);
-    history
-        .iter()
-        .skip(skip)
-        .map(f)
-        .fold(0.0_f64, f64::max)
+    history.iter().skip(skip).map(f).fold(0.0_f64, f64::max)
 }
 
 pub fn render(
@@ -199,6 +157,8 @@ pub fn render(
 
     // CPU bar / history
     let cpu_pct = container.cpu_pct.clamp(0.0, 100.0);
+    let limit = state.history_range.samples();
+    let samps = samples_from_history(&state.container_history, limit);
     if state.history_mode {
         let cpu_block = Block::default()
             .title(Span::styled(
@@ -213,23 +173,16 @@ pub fn render(
             .border_style(Style::default().fg(theme.muted));
         let inner_area = cpu_block.inner(chunks[1]);
         f.render_widget(cpu_block, chunks[1]);
-        let width = inner_area.width as usize;
-        let cpu_data = prepare_sparkline_data(
-            &state.container_history,
-            state.history_range.samples(),
-            width,
-            |s| s.cpu_pct as u64,
+        render_history_canvas_dual(
+            f,
+            inner_area,
+            &samps,
+            state.history_range,
+            100.0,
+            Theme::color_for_pct(cpu_pct),
+            |s: &ContainerHistorySample| s.cpu_pct,
+            None,
         );
-        let cpu_spark = Sparkline::default()
-            .data(&cpu_data)
-            .max(100)
-            .direction(ratatui::widgets::RenderDirection::RightToLeft)
-            .style(
-                Style::default()
-                    .fg(Theme::color_for_pct(cpu_pct))
-                    .bg(Color::DarkGray),
-            );
-        f.render_widget(cpu_spark, inner_area);
     } else {
         let cpu_gauge = Gauge::default()
             .block(
@@ -266,23 +219,16 @@ pub fn render(
             .border_style(Style::default().fg(theme.muted));
         let inner_area = mem_block.inner(chunks[2]);
         f.render_widget(mem_block, chunks[2]);
-        let width = inner_area.width as usize;
-        let mem_data = prepare_sparkline_data(
-            &state.container_history,
-            state.history_range.samples(),
-            width,
-            |s| s.mem_pct as u64,
+        render_history_canvas_dual(
+            f,
+            inner_area,
+            &samps,
+            state.history_range,
+            100.0,
+            Theme::color_for_pct(mem_pct),
+            |s: &ContainerHistorySample| s.mem_pct,
+            None,
         );
-        let mem_spark = Sparkline::default()
-            .data(&mem_data)
-            .max(100)
-            .direction(ratatui::widgets::RenderDirection::RightToLeft)
-            .style(
-                Style::default()
-                    .fg(Theme::color_for_pct(mem_pct))
-                    .bg(Color::DarkGray),
-            );
-        f.render_widget(mem_spark, inner_area);
     } else {
         let mem_gauge = Gauge::default()
             .block(
@@ -321,25 +267,19 @@ pub fn render(
             .border_style(Style::default().fg(theme.muted));
         let inner_area = net_block.inner(chunks[3]);
         f.render_widget(net_block, chunks[3]);
-        let width = inner_area.width as usize;
-        let net_data = prepare_sparkline_data(
-            &state.container_history,
-            state.history_range.samples(),
-            width,
-            |s| s.net_recv_bps.max(s.net_sent_bps) as u64,
+        let net_max = max_bps_cont(&state.container_history, limit, |s| {
+            s.net_recv_bps.max(s.net_sent_bps)
+        }).max(1.0);
+        render_history_canvas_dual(
+            f,
+            inner_area,
+            &samps,
+            state.history_range,
+            net_max,
+            Color::Cyan,
+            |s: &ContainerHistorySample| s.net_recv_bps,
+            Some((Color::Rgb(100, 220, 255), |s: &ContainerHistorySample| s.net_sent_bps)),
         );
-        let net_max = calculate_max(
-            &state.container_history,
-            state.history_range.samples(),
-            width,
-            |s| s.net_recv_bps.max(s.net_sent_bps),
-        ).max(1.0);
-        let net_spark = Sparkline::default()
-            .data(&net_data)
-            .max(net_max as u64)
-            .direction(ratatui::widgets::RenderDirection::RightToLeft)
-            .style(Style::default().fg(Color::Cyan).bg(Color::DarkGray));
-        f.render_widget(net_spark, inner_area);
     } else {
         let net_ratio = (net_recv.max(net_sent) / 10_000_000.0).clamp(0.0, 1.0);
         let net_gauge = Gauge::default()
@@ -381,25 +321,19 @@ pub fn render(
             .border_style(Style::default().fg(theme.muted));
         let inner_area = disk_block.inner(chunks[4]);
         f.render_widget(disk_block, chunks[4]);
-        let width = inner_area.width as usize;
-        let disk_data = prepare_sparkline_data(
-            &state.container_history,
-            state.history_range.samples(),
-            width,
-            |s| s.disk_read_bps.max(s.disk_write_bps) as u64,
+        let disk_max = max_bps_cont(&state.container_history, limit, |s| {
+            s.disk_read_bps.max(s.disk_write_bps)
+        }).max(1.0);
+        render_history_canvas_dual(
+            f,
+            inner_area,
+            &samps,
+            state.history_range,
+            disk_max,
+            Color::Yellow,
+            |s: &ContainerHistorySample| s.disk_read_bps,
+            Some((Color::Rgb(255, 200, 80), |s: &ContainerHistorySample| s.disk_write_bps)),
         );
-        let disk_max = calculate_max(
-            &state.container_history,
-            state.history_range.samples(),
-            width,
-            |s| s.disk_read_bps.max(s.disk_write_bps),
-        ).max(1.0);
-        let disk_spark = Sparkline::default()
-            .data(&disk_data)
-            .max(disk_max as u64)
-            .direction(ratatui::widgets::RenderDirection::RightToLeft)
-            .style(Style::default().fg(Color::Yellow).bg(Color::DarkGray));
-        f.render_widget(disk_spark, inner_area);
     } else {
         let disk_ratio = (disk_r.max(disk_w) / 100_000_000.0).clamp(0.0, 1.0);
         let disk_gauge = Gauge::default()
