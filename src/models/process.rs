@@ -5,6 +5,7 @@ pub enum ProcessSortColumn {
     Memory,
     DiskRead,
     DiskWrite,
+    Name,
 }
 
 #[derive(Clone, Default)]

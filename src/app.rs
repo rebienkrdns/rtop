@@ -517,6 +517,7 @@ impl AppState {
                     let bw = b.disk_write_per_sec.unwrap_or(0.0);
                     aw.partial_cmp(&bw).unwrap_or(std::cmp::Ordering::Equal)
                 }
+                ProcessSortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             };
             if self.process_table.sort_asc {
                 ord
@@ -700,7 +701,8 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
 
         match event::poll(Duration::from_millis(250)) {
             Ok(true) => {
-                if let Ok(Event::Key(key)) = event::read() {
+                let ev = event::read();
+                if let Ok(Event::Key(key)) = ev {
                     match (key.code, key.modifiers) {
                         // ── Global exits ──────────────────────────────────────
                         (KeyCode::Char('q'), _)
@@ -979,7 +981,6 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         {
                             state.process_table.filter_active = true;
                         }
-                        // Process table: sort keys
                         (KeyCode::Char('c'), _)
                             if state.current_view == View::Main
                                 && state.active_tab == Tab::Processes
@@ -993,6 +994,13 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 && !state.process_table.filter_active =>
                         {
                             state.process_sort_by(ProcessSortColumn::Memory);
+                        }
+                        (KeyCode::Char('n'), _)
+                            if state.current_view == View::Main
+                                && state.active_tab == Tab::Processes
+                                && !state.process_table.filter_active =>
+                        {
+                            state.process_sort_by(ProcessSortColumn::Name);
                         }
                         (KeyCode::Char('r'), _)
                             if state.current_view == View::Main
@@ -1084,6 +1092,54 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 && state.active_tab == Tab::Containers =>
                         {
                             state.container_move_cursor(1);
+                        }
+                        _ => {}
+                    }
+                } else if let Ok(Event::Mouse(mouse)) = ev {
+                    match mouse.kind {
+                        crossterm::event::MouseEventKind::ScrollUp => {
+                            if state.show_nic_selector {
+                                if state.nic_cursor > 0 {
+                                    state.nic_cursor -= 1;
+                                }
+                            } else if state.show_disk_selector {
+                                if state.disk_selector_cursor > 0 {
+                                    state.disk_selector_cursor -= 1;
+                                }
+                            } else if state.current_view == View::Main {
+                                match state.active_tab {
+                                    Tab::Processes => state.process_move_cursor(-1),
+                                    Tab::Containers => state.container_move_cursor(-1),
+                                    _ => {}
+                                }
+                            } else if state.current_view == View::ContainerLogs {
+                                if let Some(ref mut ls) = state.logs_state {
+                                    ls.scroll_up();
+                                }
+                            }
+                        }
+                        crossterm::event::MouseEventKind::ScrollDown => {
+                            if state.show_nic_selector {
+                                let max = state.available_nics.len();
+                                if state.nic_cursor < max {
+                                    state.nic_cursor += 1;
+                                }
+                            } else if state.show_disk_selector {
+                                let max = state.selector_entries.len().saturating_sub(1);
+                                if state.disk_selector_cursor < max {
+                                    state.disk_selector_cursor += 1;
+                                }
+                            } else if state.current_view == View::Main {
+                                match state.active_tab {
+                                    Tab::Processes => state.process_move_cursor(1),
+                                    Tab::Containers => state.container_move_cursor(1),
+                                    _ => {}
+                                }
+                            } else if state.current_view == View::ContainerLogs {
+                                if let Some(ref mut ls) = state.logs_state {
+                                    ls.scroll_down(20);
+                                }
+                            }
                         }
                         _ => {}
                     }

@@ -212,6 +212,7 @@ pub fn render(
                 let bw = b.disk_write_per_sec.unwrap_or(0.0);
                 aw.partial_cmp(&bw).unwrap_or(std::cmp::Ordering::Equal)
             }
+            ProcessSortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
         };
         if state.sort_asc {
             ord
@@ -224,6 +225,7 @@ pub fn render(
     let is_mem = state.sort_col == ProcessSortColumn::Memory;
     let is_dr = state.sort_col == ProcessSortColumn::DiskRead;
     let is_dw = state.sort_col == ProcessSortColumn::DiskWrite;
+    let is_name = state.sort_col == ProcessSortColumn::Name;
 
     let header_style = Style::default()
         .fg(theme.accent)
@@ -234,7 +236,16 @@ pub fn render(
             Line::from(Span::styled("PID", header_style))
                 .alignment(ratatui::layout::Alignment::Right),
         ),
-        Cell::from(Span::styled(t("Process"), header_style)),
+        Cell::from(Span::styled(
+            col_header(t("Process"), is_name, state.sort_asc),
+            if is_name {
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                header_style
+            },
+        )),
         Cell::from(
             Line::from(Span::styled(
                 col_header("CPU%", is_cpu, state.sort_asc),

@@ -56,6 +56,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 ("[Esc]", state.t("Clear filter")),
                 ("[c]", state.t("Sort by CPU")),
                 ("[m]", state.t("Sort by Memory")),
+                ("[n]", state.t("Sort by Name")),
                 ("[r]", state.t("Sort by disk read")),
                 ("[w]", state.t("Sort by disk write")),
             ],
