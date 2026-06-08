@@ -12,9 +12,9 @@ use crate::ui::theme::Theme;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProcessStatusFilter {
-    #[default]
     Running,
     Sleeping,
+    #[default]
     All,
 }
 
@@ -70,7 +70,7 @@ impl Default for ProcessTableState {
             sort_asc: false,
             cursor: 0,
             scroll: 0,
-            status_filter: ProcessStatusFilter::Running,
+            status_filter: ProcessStatusFilter::All,
         }
     }
 }
