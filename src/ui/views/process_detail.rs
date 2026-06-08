@@ -11,6 +11,40 @@ use crate::app::AppState;
 use crate::models::ProcessData;
 use crate::ui::theme::Theme;
 
+fn prepare_sparkline_data<T>(
+    history: &std::collections::VecDeque<T>,
+    limit: usize,
+    width: usize,
+    f: impl Fn(&T) -> u64,
+) -> Vec<u64> {
+    let display_samples = limit.min(width);
+    let mut data: Vec<u64> = history
+        .iter()
+        .skip(history.len().saturating_sub(display_samples))
+        .map(f)
+        .collect();
+    if data.len() < width {
+        let mut padded = vec![0; width - data.len()];
+        padded.extend(data);
+        data = padded;
+    }
+    data
+}
+
+fn calculate_max<T>(
+    history: &std::collections::VecDeque<T>,
+    limit: usize,
+    width: usize,
+    f: impl Fn(&T) -> f64,
+) -> f64 {
+    let display_samples = limit.min(width);
+    history
+        .iter()
+        .skip(history.len().saturating_sub(display_samples))
+        .map(f)
+        .fold(0.0_f64, f64::max)
+}
+
 pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState) {
     let theme = Theme::default_theme();
 
@@ -125,17 +159,6 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     // CPU bar / history
     let cpu_pct = process.cpu_pct.clamp(0.0, 100.0);
     if state.history_mode {
-        let cpu_data: Vec<u64> = state
-            .process_history
-            .iter()
-            .skip(
-                state
-                    .process_history
-                    .len()
-                    .saturating_sub(state.history_range.samples()),
-            )
-            .map(|s| s.cpu_pct as u64)
-            .collect();
         let cpu_block = Block::default()
             .title(Span::styled(
                 format!(
@@ -151,6 +174,13 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .border_style(Style::default().fg(theme.accent_dim));
         let inner_area = cpu_block.inner(chunks[1]);
         f.render_widget(cpu_block, chunks[1]);
+        let width = inner_area.width as usize;
+        let cpu_data = prepare_sparkline_data(
+            &state.process_history,
+            state.history_range.samples(),
+            width,
+            |s| s.cpu_pct as u64,
+        );
         let cpu_spark = Sparkline::default().data(&cpu_data).max(100).style(
             Style::default()
                 .fg(Theme::color_for_pct(cpu_pct))
@@ -180,17 +210,6 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     // Memory bar / history
     let mem_pct = process.memory_pct.clamp(0.0, 100.0);
     if state.history_mode {
-        let mem_data: Vec<u64> = state
-            .process_history
-            .iter()
-            .skip(
-                state
-                    .process_history
-                    .len()
-                    .saturating_sub(state.history_range.samples()),
-            )
-            .map(|s| s.mem_pct as u64)
-            .collect();
         let mem_block = Block::default()
             .title(Span::styled(
                 format!(
@@ -207,6 +226,13 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .border_style(Style::default().fg(theme.accent_dim));
         let inner_area = mem_block.inner(chunks[2]);
         f.render_widget(mem_block, chunks[2]);
+        let width = inner_area.width as usize;
+        let mem_data = prepare_sparkline_data(
+            &state.process_history,
+            state.history_range.samples(),
+            width,
+            |s| s.mem_pct as u64,
+        );
         let mem_spark = Sparkline::default().data(&mem_data).max(100).style(
             Style::default()
                 .fg(Theme::color_for_pct(mem_pct))
@@ -241,29 +267,6 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     // Disk Read bar / history
     let read_rate = process.disk_read_per_sec.unwrap_or(0.0);
     if state.history_mode {
-        let read_data: Vec<u64> = state
-            .process_history
-            .iter()
-            .skip(
-                state
-                    .process_history
-                    .len()
-                    .saturating_sub(state.history_range.samples()),
-            )
-            .map(|s| s.disk_read_bps as u64)
-            .collect();
-        let read_max = state
-            .process_history
-            .iter()
-            .skip(
-                state
-                    .process_history
-                    .len()
-                    .saturating_sub(state.history_range.samples()),
-            )
-            .map(|s| s.disk_read_bps)
-            .fold(0.0_f64, f64::max)
-            .max(1.0);
         let read_label = if read_rate > 0.0 {
             format!(
                 " {} ({}) · {}: {}/s ",
@@ -286,6 +289,19 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .border_style(Style::default().fg(theme.accent_dim));
         let inner_area = read_block.inner(chunks[3]);
         f.render_widget(read_block, chunks[3]);
+        let width = inner_area.width as usize;
+        let read_data = prepare_sparkline_data(
+            &state.process_history,
+            state.history_range.samples(),
+            width,
+            |s| s.disk_read_bps as u64,
+        );
+        let read_max = calculate_max(
+            &state.process_history,
+            state.history_range.samples(),
+            width,
+            |s| s.disk_read_bps,
+        ).max(1.0);
         let read_spark = Sparkline::default()
             .data(&read_data)
             .max(read_max as u64)
@@ -325,29 +341,6 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     // Disk Write bar / history
     let write_rate = process.disk_write_per_sec.unwrap_or(0.0);
     if state.history_mode {
-        let write_data: Vec<u64> = state
-            .process_history
-            .iter()
-            .skip(
-                state
-                    .process_history
-                    .len()
-                    .saturating_sub(state.history_range.samples()),
-            )
-            .map(|s| s.disk_write_bps as u64)
-            .collect();
-        let write_max = state
-            .process_history
-            .iter()
-            .skip(
-                state
-                    .process_history
-                    .len()
-                    .saturating_sub(state.history_range.samples()),
-            )
-            .map(|s| s.disk_write_bps)
-            .fold(0.0_f64, f64::max)
-            .max(1.0);
         let write_label = if write_rate > 0.0 {
             format!(
                 " {} ({}) · {}: {}/s ",
@@ -370,6 +363,19 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             .border_style(Style::default().fg(theme.accent_dim));
         let inner_area = write_block.inner(chunks[4]);
         f.render_widget(write_block, chunks[4]);
+        let width = inner_area.width as usize;
+        let write_data = prepare_sparkline_data(
+            &state.process_history,
+            state.history_range.samples(),
+            width,
+            |s| s.disk_write_bps as u64,
+        );
+        let write_max = calculate_max(
+            &state.process_history,
+            state.history_range.samples(),
+            width,
+            |s| s.disk_write_bps,
+        ).max(1.0);
         let write_spark = Sparkline::default()
             .data(&write_data)
             .max(write_max as u64)
