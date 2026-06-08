@@ -12,10 +12,10 @@ use crate::ui::theme::Theme;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProcessStatusFilter {
-    Running,
-    Sleeping,
     #[default]
     All,
+    Running,
+    Sleeping,
 }
 
 impl ProcessStatusFilter {
