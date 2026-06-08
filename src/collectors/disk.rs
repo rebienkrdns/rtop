@@ -63,6 +63,7 @@ impl DiskIoCollector {
     }
 
     #[cfg(not(target_os = "macos"))]
+    #[allow(dead_code)]
     pub fn io_rates_from_disks(&mut self, _disks: &[Disk]) -> HashMap<String, DiskIoRate> {
         HashMap::new()
     }

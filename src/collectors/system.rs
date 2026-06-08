@@ -112,8 +112,7 @@ impl SystemCollector {
                 }
             }
 
-            let rates = self.disk_io.io_rates_batch(&disk_shorts);
-            rates
+            self.disk_io.io_rates_batch(&disk_shorts)
         };
 
         #[allow(unused_mut)]
