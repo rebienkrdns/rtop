@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Sparkline},
+    widgets::{Paragraph, RenderDirection, Sparkline},
     Frame,
 };
 
@@ -72,6 +72,7 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         Sparkline::default()
             .data(&cpu_data)
             .max(100)
+            .direction(RenderDirection::RightToLeft)
             .style(Style::default().fg(cpu_color).bg(Color::Rgb(51, 52, 61))),
         chunks[1],
     );
@@ -96,6 +97,7 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         Sparkline::default()
             .data(&ram_data)
             .max(100)
+            .direction(RenderDirection::RightToLeft)
             .style(Style::default().fg(ram_color).bg(Color::Rgb(51, 52, 61))),
         chunks[3],
     );
@@ -148,6 +150,7 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], _ra
         Sparkline::default()
             .data(&disk_data)
             .max(disk_max as u64)
+            .direction(RenderDirection::RightToLeft)
             .style(
                 Style::default()
                     .fg(theme.disk_fill)
@@ -180,6 +183,7 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], _ra
         Sparkline::default()
             .data(&net_data)
             .max(net_max as u64)
+            .direction(RenderDirection::RightToLeft)
             .style(Style::default().fg(theme.ok).bg(Color::Rgb(51, 52, 61))),
         chunks[3],
     );
@@ -223,6 +227,7 @@ pub fn render_load(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: 
         Sparkline::default()
             .data(&load_data)
             .max((load_max * 10.0) as u64)
+            .direction(RenderDirection::RightToLeft)
             .style(
                 Style::default()
                     .fg(theme.accent_dim)
