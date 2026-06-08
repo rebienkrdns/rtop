@@ -3,55 +3,75 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, RenderDirection, Sparkline},
+    widgets::{Block, Paragraph},
     Frame,
 };
+use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
+use ratatui::symbols::Marker;
+
+
 
 use crate::ui::history::{HistoryRange, MetricSample};
 use crate::ui::theme::Theme;
 
-fn sparkline_data(
+type MetricExtractor = fn(&MetricSample) -> f64;
+type MetricLine = (Color, MetricExtractor);
+
+fn render_history_canvas_dual(
+    f: &mut Frame,
+    area: Rect,
     samples: &[&MetricSample],
-    width: usize,
     range: HistoryRange,
-    f: impl Fn(&MetricSample) -> f64,
-) -> Vec<u64> {
-    let max_samples = range.samples();
+    max_val: f64,
+    line1: MetricLine,
+    line2: Option<MetricLine>,
+) {
+    let max_samples = range.samples() as f64;
     let s_len = samples.len();
-    if s_len == 0 {
-        return vec![0; width];
-    }
 
-    let values: Vec<f64> = samples.iter().map(|s| f(s)).collect();
-    let t_size = ((s_len as f64 * width as f64) / max_samples as f64).round() as usize;
-    let t_size = t_size.clamp(1, width);
+    let canvas = Canvas::default()
+        .block(Block::default().style(Style::default().bg(Color::Rgb(51, 52, 61))))
+        .x_bounds([0.0, max_samples])
+        .y_bounds([0.0, max_val])
+        .marker(Marker::Braille)
+        .paint(|ctx| {
+            if s_len > 1 {
+                for i in 0..(s_len - 1) {
+                    let x1 = max_samples - (s_len - 1 - i) as f64;
+                    let x2 = max_samples - (s_len - 1 - (i + 1)) as f64;
+                    if x2 < 0.0 {
+                        continue;
+                    }
+                    let x1_clamped = x1.max(0.0);
 
-    let mut interpolated = Vec::with_capacity(t_size);
-    if t_size == 1 {
-        interpolated.push(values.last().copied().unwrap_or(0.0) as u64);
-    } else if s_len == 1 {
-        let val = values[0] as u64;
-        interpolated.resize(t_size, val);
-    } else {
-        for i in 0..t_size {
-            let frac = (t_size - 1 - i) as f64 / (t_size - 1) as f64;
-            let idx = frac * (s_len - 1) as f64;
-            let left = idx.floor() as usize;
-            let right = idx.ceil() as usize;
-            let weight = idx - left as f64;
-            let val = (1.0 - weight) * values[left] + weight * values[right];
-            interpolated.push(val as u64);
-        }
-    }
+                    // Line 1
+                    let y1_1 = line1.1(samples[i]);
+                    let y2_1 = line1.1(samples[i + 1]);
+                    ctx.draw(&CanvasLine {
+                        x1: x1_clamped,
+                        y1: y1_1,
+                        x2,
+                        y2: y2_1,
+                        color: line1.0,
+                    });
 
-    if interpolated.len() < width {
-        let pad_len = width - interpolated.len();
-        interpolated.extend(vec![0; pad_len]);
-    }
-
-    interpolated
+                    // Line 2
+                    if let Some(ref l2) = line2 {
+                        let y1_2 = l2.1(samples[i]);
+                        let y2_2 = l2.1(samples[i + 1]);
+                        ctx.draw(&CanvasLine {
+                            x1: x1_clamped,
+                            y1: y1_2,
+                            x2,
+                            y2: y2_2,
+                            color: l2.0,
+                        });
+                    }
+                }
+            }
+        });
+    f.render_widget(canvas, area);
 }
-
 
 fn max_bps(samples: &[&MetricSample], f: impl Fn(&MetricSample) -> f64) -> f64 {
     samples
@@ -71,9 +91,9 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),            // CPU label
-            Constraint::Length(spark_height), // CPU sparkline
+            Constraint::Length(spark_height), // CPU canvas
             Constraint::Length(1),            // RAM label
-            Constraint::Length(spark_height), // RAM sparkline
+            Constraint::Length(spark_height), // RAM canvas
             Constraint::Min(0),               // spacer/range
         ])
         .split(area);
@@ -93,17 +113,16 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         chunks[0],
     );
 
-    // CPU sparkline
-    let width = chunks[1].width as usize;
-    let cpu_data = sparkline_data(samples, width, range, |s| s.cpu_pct);
+    // CPU Canvas
     let cpu_color = Theme::color_for_pct(cpu_last);
-    f.render_widget(
-        Sparkline::default()
-            .data(&cpu_data)
-            .max(100)
-            .direction(RenderDirection::RightToLeft)
-            .style(Style::default().fg(cpu_color).bg(Color::Rgb(51, 52, 61))),
+    render_history_canvas_dual(
+        f,
         chunks[1],
+        samples,
+        range,
+        100.0,
+        (cpu_color, |s| s.cpu_pct),
+        None,
     );
 
     // RAM label
@@ -118,18 +137,16 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         chunks[2],
     );
 
-    // RAM sparkline
-    let width = chunks[3].width as usize;
-    let ram_data = sparkline_data(samples, width, range, |s| s.mem_pct);
-
+    // RAM Canvas
     let ram_color = Theme::color_for_pct(mem_last);
-    f.render_widget(
-        Sparkline::default()
-            .data(&ram_data)
-            .max(100)
-            .direction(RenderDirection::RightToLeft)
-            .style(Style::default().fg(ram_color).bg(Color::Rgb(51, 52, 61))),
+    render_history_canvas_dual(
+        f,
         chunks[3],
+        samples,
+        range,
+        100.0,
+        (ram_color, |s| s.mem_pct),
+        None,
     );
 }
 
@@ -144,9 +161,9 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),            // Disco label
-            Constraint::Length(spark_height), // Disco sparkline (read)
+            Constraint::Length(spark_height), // Disco canvas
             Constraint::Length(1),            // Red label
-            Constraint::Length(spark_height), // Red sparkline (recv)
+            Constraint::Length(spark_height), // Red canvas
             Constraint::Min(0),
         ])
         .split(area);
@@ -172,21 +189,16 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
         chunks[0],
     );
 
-    // Disco sparkline (lectura)
-    let width = chunks[1].width as usize;
+    // Disco Canvas (read as primary, write as secondary)
     let disk_max = max_bps(samples, |s| s.disk_read_bps.max(s.disk_write_bps)).max(1.0);
-    let disk_data = sparkline_data(samples, width, range, |s| s.disk_read_bps);
-    f.render_widget(
-        Sparkline::default()
-            .data(&disk_data)
-            .max(disk_max as u64)
-            .direction(RenderDirection::RightToLeft)
-            .style(
-                Style::default()
-                    .fg(theme.disk_fill)
-                    .bg(Color::Rgb(51, 52, 61)),
-            ),
+    render_history_canvas_dual(
+        f,
         chunks[1],
+        samples,
+        range,
+        disk_max,
+        (theme.disk_fill, |s| s.disk_read_bps),
+        Some((Color::Rgb(244, 143, 177), |s| s.disk_write_bps)),
     );
 
     // Red label
@@ -205,18 +217,16 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
         chunks[2],
     );
 
-    // Red sparkline (entrada)
-    let width = chunks[3].width as usize;
+    // Red Canvas (recv as primary, sent as secondary)
     let net_max = max_bps(samples, |s| s.net_recv_bps.max(s.net_sent_bps)).max(1.0);
-    let net_data = sparkline_data(samples, width, range, |s| s.net_recv_bps);
-
-    f.render_widget(
-        Sparkline::default()
-            .data(&net_data)
-            .max(net_max as u64)
-            .direction(RenderDirection::RightToLeft)
-            .style(Style::default().fg(theme.ok).bg(Color::Rgb(51, 52, 61))),
+    render_history_canvas_dual(
+        f,
         chunks[3],
+        samples,
+        range,
+        net_max,
+        (theme.ok, |s| s.net_recv_bps),
+        Some((theme.accent, |s| s.net_sent_bps)),
     );
 }
 
@@ -245,22 +255,15 @@ pub fn render_load(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: 
         chunks[0],
     );
 
-    let width = chunks[1].width as usize;
     let load_max = max_bps(samples, |s| s.load1).max(1.0);
-
-    let load_data = sparkline_data(samples, width, range, |s| s.load1 * 10.0); // x10 para mejor resolución
-
-    f.render_widget(
-        Sparkline::default()
-            .data(&load_data)
-            .max((load_max * 10.0) as u64)
-            .direction(RenderDirection::RightToLeft)
-            .style(
-                Style::default()
-                    .fg(theme.accent_dim)
-                    .bg(Color::Rgb(51, 52, 61)),
-            ),
+    render_history_canvas_dual(
+        f,
         chunks[1],
+        samples,
+        range,
+        load_max,
+        (theme.accent_dim, |s| s.load1),
+        None,
     );
 }
 
