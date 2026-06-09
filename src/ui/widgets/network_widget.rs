@@ -1,13 +1,9 @@
 use bytesize::ByteSize;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    symbols::Marker,
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        canvas::{Canvas, Line as CanvasLine},
-        Block, Paragraph,
-    },
+    widgets::{Gauge, Paragraph},
     Frame,
 };
 
@@ -32,180 +28,136 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             f.render_widget(msg, area);
         }
         Some(data) => {
-            let recv_str = format_bps(data.recv_bytes_per_sec);
-            let sent_str = format_bps(data.sent_bytes_per_sec);
-
             let is_total = state.selected_nic.is_none();
             let label = if is_total {
-                "Todas (sumatoria)"
+                "Todas (sumatoria)".to_string()
             } else {
-                data.interface.as_str()
+                data.interface.clone()
             };
 
-            let ip = if !is_total {
-                state
-                    .available_nics
-                    .iter()
-                    .find(|nic| nic.name == data.interface)
-                    .and_then(|nic| nic.ip_address.as_ref())
-            } else {
-                None
+            // Resolve current usage %
+            let usage_pct = state
+                .network_usage_pct_history
+                .back()
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, 100.0);
+
+            let usage_color = Theme::color_for_pct(usage_pct);
+
+            let has_rate_row = area.height >= 3;
+            let has_total_row = area.height >= 4;
+
+            let constraints: Vec<Constraint> = {
+                let mut c = vec![
+                    Constraint::Length(1), // header: "Red  <iface>"  X%
+                    Constraint::Length(1), // gauge bar
+                ];
+                if has_rate_row {
+                    c.push(Constraint::Length(1)); // ↓ entrada  ↑ salida  [F3]
+                }
+                if has_total_row {
+                    c.push(Constraint::Length(1)); // totales acumulados
+                }
+                c
             };
 
-            // Layout: left text | right canvas (if wide enough) | hint
-            let has_canvas = area.width >= 60 && area.height >= 3;
-            let canvas_width = if has_canvas {
-                (area.width / 3).clamp(20, 50)
-            } else {
-                0
-            };
-
-            let horizontal = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Min(0),
-                    Constraint::Length(canvas_width),
-                    Constraint::Length(16),
-                ])
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(constraints)
                 .split(area);
 
-            // Left: text data
-            let mut left_lines = Vec::new();
+            // Row 0: header
+            let header_cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(0), Constraint::Length(8)])
+                .split(chunks[0]);
 
-            let mut interface_spans = vec![
-                Span::styled("Interfaz: ", Style::default().fg(theme.muted)),
-                Span::styled(
-                    label,
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("Red  ", Style::default().fg(theme.muted)),
+                    Span::styled(
+                        label,
+                        Style::default()
+                            .fg(theme.accent)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ])),
+                header_cols[0],
+            );
+            f.render_widget(
+                Paragraph::new(format!("{:.0}%", usage_pct))
+                    .style(
+                        Style::default()
+                            .fg(usage_color)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                    .alignment(Alignment::Right),
+                header_cols[1],
+            );
+
+            // Row 1: gauge bar (same style as disk)
+            let gauge = Gauge::default()
+                .gauge_style(
                     Style::default()
-                        .fg(theme.accent)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ];
-            if let Some(ip_addr) = ip {
-                interface_spans.push(Span::raw("  "));
-                interface_spans.push(Span::styled(
-                    format!("[ IP: {} ]", ip_addr),
-                    Style::default().fg(theme.muted),
-                ));
-            }
-            left_lines.push(Line::from(interface_spans));
+                        .fg(usage_color)
+                        .bg(ratatui::style::Color::Rgb(51, 52, 61)),
+                )
+                .ratio(usage_pct / 100.0)
+                .label("");
+            f.render_widget(gauge, chunks[1]);
 
-            if area.height >= 5 {
-                left_lines.push(Line::from(vec![Span::styled(
-                    "─".repeat(horizontal[0].width as usize),
-                    Style::default().fg(theme.muted),
-                )]));
-            }
+            // Row 2: rates + F3 hint
+            if has_rate_row {
+                let recv_str = format_bps(data.recv_bytes_per_sec);
+                let sent_str = format_bps(data.sent_bytes_per_sec);
 
-            let recv_total_str = format!("{}", ByteSize(data.total_recv_bytes));
-            left_lines.push(Line::from(vec![
-                Span::styled(
-                    "↓ ",
-                    Style::default().fg(theme.ok).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("Entrada: ", Style::default().fg(theme.muted)),
-                Span::styled(
-                    format!("{:<10}", recv_str),
-                    Style::default().fg(theme.ok).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("   "),
-                Span::styled(
-                    format!("(Total Recibido: {})", recv_total_str),
-                    Style::default().fg(theme.muted),
-                ),
-            ]));
-
-            let sent_total_str = format!("{}", ByteSize(data.total_sent_bytes));
-            left_lines.push(Line::from(vec![
-                Span::styled(
-                    "↑ ",
-                    Style::default()
-                        .fg(theme.accent_dim)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("Salida:  ", Style::default().fg(theme.muted)),
-                Span::styled(
-                    format!("{:<10}", sent_str),
-                    Style::default()
-                        .fg(theme.accent_dim)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("   "),
-                Span::styled(
-                    format!("(Total Enviado: {})", sent_total_str),
-                    Style::default().fg(theme.muted),
-                ),
-            ]));
-
-            f.render_widget(Paragraph::new(left_lines), horizontal[0]);
-
-            // Center: Braille usage % canvas
-            if has_canvas && canvas_width > 0 {
-                let current_pct = state
-                    .network_usage_pct_history
-                    .back()
-                    .copied()
-                    .unwrap_or(0.0);
-                let graph_color = if current_pct >= 80.0 {
-                    Color::Red
-                } else if current_pct >= 50.0 {
-                    Color::Yellow
-                } else {
-                    theme.ok
-                };
-
-                let history: Vec<f64> = state.network_usage_pct_history.iter().copied().collect();
-                let n_samples = history.len();
-                let max_x = canvas_width as f64 * 2.0; // Braille gives 2 dots per char column
-
-                let canvas = Canvas::default()
-                    .block(Block::default())
-                    .x_bounds([0.0, max_x])
-                    .y_bounds([0.0, 100.0])
-                    .marker(Marker::Braille)
-                    .paint(move |ctx| {
-                        if n_samples > 1 {
-                            for i in 0..(n_samples - 1) {
-                                // Align newest sample to right edge
-                                let x2 = max_x - (n_samples - 1 - (i + 1)) as f64;
-                                let x1 = max_x - (n_samples - 1 - i) as f64;
-                                if x2 < 0.0 {
-                                    continue;
-                                }
-                                ctx.draw(&CanvasLine {
-                                    x1: x1.max(0.0),
-                                    y1: history[i],
-                                    x2,
-                                    y2: history[i + 1],
-                                    color: graph_color,
-                                });
-                            }
-                        }
-                    });
-
-                // Render canvas in a sub-area, leaving row 0 for the % label
-                let canvas_split = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(1), Constraint::Min(1)])
-                    .split(horizontal[1]);
+                let rate_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Min(0), Constraint::Length(14)])
+                    .split(chunks[2]);
 
                 f.render_widget(
-                    Paragraph::new(Line::from(vec![Span::styled(
-                        format!("Uso: {:.1}%", current_pct),
-                        Style::default().fg(graph_color).add_modifier(Modifier::DIM),
-                    )])),
-                    canvas_split[0],
+                    Paragraph::new(Line::from(vec![
+                        Span::styled(
+                            "↓ Entrada ",
+                            Style::default().fg(theme.ok).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(recv_str, Style::default().fg(theme.ok)),
+                        Span::raw("     "),
+                        Span::styled(
+                            "↑ Salida ",
+                            Style::default()
+                                .fg(theme.accent_dim)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(sent_str, Style::default().fg(theme.accent_dim)),
+                    ])),
+                    rate_cols[0],
                 );
-                f.render_widget(canvas, canvas_split[1]);
+                f.render_widget(
+                    Paragraph::new("[ F3 cambiar ]")
+                        .style(Style::default().fg(theme.muted))
+                        .alignment(Alignment::Right),
+                    rate_cols[1],
+                );
             }
 
-            // Right: hint
-            let hint = Paragraph::new(Line::from(vec![Span::styled(
-                "[ F3 cambiar ]",
-                Style::default().fg(theme.muted),
-            )]))
-            .alignment(Alignment::Right);
-            f.render_widget(hint, horizontal[2]);
+            // Row 3: cumulative totals
+            if has_total_row {
+                let recv_total = format!("{}", ByteSize(data.total_recv_bytes));
+                let sent_total = format!("{}", ByteSize(data.total_sent_bytes));
+                f.render_widget(
+                    Paragraph::new(Line::from(vec![
+                        Span::styled("Total recibido: ", Style::default().fg(theme.muted)),
+                        Span::styled(recv_total, Style::default().fg(theme.ok)),
+                        Span::raw("     "),
+                        Span::styled("Total enviado: ", Style::default().fg(theme.muted)),
+                        Span::styled(sent_total, Style::default().fg(theme.accent_dim)),
+                    ])),
+                    chunks[3],
+                );
+            }
         }
     }
 }
