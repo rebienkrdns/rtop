@@ -119,6 +119,7 @@ pub struct AppState {
     pub lang: crate::localization::Language,
 
     pub db_monitor: Option<crate::collectors::database::DbMonitorData>,
+    pub db_history: std::collections::VecDeque<crate::collectors::database::DbMetrics>,
     db_tx: mpsc::Sender<crate::collectors::database::DbMonitorData>,
     db_rx: mpsc::Receiver<crate::collectors::database::DbMonitorData>,
     current_db_monitored_pid: Option<u32>,
@@ -192,6 +193,7 @@ impl AppState {
             container_history: std::collections::VecDeque::new(),
             lang,
             db_monitor: None,
+            db_history: std::collections::VecDeque::new(),
             db_tx: {
                 let (tx, _) = mpsc::channel(8);
                 tx
@@ -374,10 +376,18 @@ impl AppState {
             while let Ok(db_data) = self.db_rx.try_recv() {
                 if let Some(pid) = db_data.pid {
                     if Some(pid) == self.detail_process_pid {
+                        self.db_history.push_back(db_data.metrics.clone());
+                        if self.db_history.len() > 60 {
+                            self.db_history.pop_front();
+                        }
                         self.db_monitor = Some(db_data);
                     }
                 } else if let Some(ref cid) = db_data.container_id {
                     if Some(cid.clone()) == self.detail_container_id {
+                        self.db_history.push_back(db_data.metrics.clone());
+                        if self.db_history.len() > 60 {
+                            self.db_history.pop_front();
+                        }
                         self.db_monitor = Some(db_data);
                     }
                 }
@@ -392,6 +402,7 @@ impl AppState {
                                 self.current_db_monitored_pid = Some(pid);
                                 self.current_db_monitored_cid = None;
                                 self.db_monitor = Some(crate::collectors::database::DbMonitorData::new(pid, db_type));
+                                self.db_history.clear();
                                 
                                 // Create new channels specifically for this connection task
                                 let (tx, rx) = mpsc::channel(8);
@@ -412,12 +423,14 @@ impl AppState {
                             }
                         } else {
                             self.db_monitor = None;
+                            self.db_history.clear();
                             self.current_db_monitored_pid = None;
                             self.current_db_monitored_cid = None;
                         }
                     }
                 } else {
                     self.db_monitor = None;
+                    self.db_history.clear();
                     self.current_db_monitored_pid = None;
                     self.current_db_monitored_cid = None;
                 }
@@ -429,6 +442,7 @@ impl AppState {
                                 self.current_db_monitored_cid = Some(cid.clone());
                                 self.current_db_monitored_pid = None;
                                 self.db_monitor = Some(crate::collectors::database::DbMonitorData::new_container(cid.clone(), db_type));
+                                self.db_history.clear();
                                 
                                 // Create new channels specifically for this connection task
                                 let (tx, rx) = mpsc::channel(8);
@@ -449,17 +463,20 @@ impl AppState {
                             }
                         } else {
                             self.db_monitor = None;
+                            self.db_history.clear();
                             self.current_db_monitored_pid = None;
                             self.current_db_monitored_cid = None;
                         }
                     }
                 } else {
                     self.db_monitor = None;
+                    self.db_history.clear();
                     self.current_db_monitored_pid = None;
                     self.current_db_monitored_cid = None;
                 }
             } else {
                 self.db_monitor = None;
+                self.db_history.clear();
                 self.current_db_monitored_pid = None;
                 self.current_db_monitored_cid = None;
             }

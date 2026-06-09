@@ -278,6 +278,7 @@ pub async fn poll_database_container(container: ContainerData) -> DbMonitorData 
         user_override = Some("root".to_string());
     }
 
+
     data.status = poll_db_at_port(db_type, port, user_override, pass_override, dbname_override, &mut data.metrics).await;
     data
 }
@@ -441,4 +442,153 @@ mod tests {
         assert_eq!(parse_innodb_hit_rate(status), 99.0);
         assert_eq!(parse_innodb_hit_rate(""), 99.8);
     }
+
+    #[tokio::test]
+    async fn test_poll_database_container_env_parsing() {
+        let container = ContainerData {
+            id: "123456789012".to_string(),
+            name: "mariadb-test".to_string(),
+            image: "mariadb:latest".to_string(),
+            status: crate::models::ContainerStatus::Running,
+            uptime_secs: None,
+            cpu_pct: 0.0,
+            memory_bytes: 0,
+            memory_limit_bytes: 0,
+            memory_pct: 0.0,
+            net_recv_per_sec: 0.0,
+            net_recv_total: 0,
+            net_sent_per_sec: 0.0,
+            net_sent_total: 0,
+            disk_read_per_sec: 0.0,
+            disk_read_total: 0,
+            disk_write_per_sec: 0.0,
+            disk_write_total: 0,
+            ports: vec!["0.0.0.0:3306->3306/tcp".to_string()],
+            volumes: vec![],
+            networks: vec![],
+            env_vars: vec![
+                "MYSQL_DATABASE=v".to_string(),
+                "MYSQL_ROOT_PASSWORD=root_pass".to_string(),
+            ],
+            compose_project: None,
+            database_type: Some(DatabaseType::MySqlMariaDb),
+        };
+
+        // Let's test the env vars extraction directly
+        let mut user_override = None;
+        let mut pass_override = None;
+        let mut dbname_override = None;
+
+        for env in &container.env_vars {
+            if let Some((k, v)) = env.split_once('=') {
+                let k = k.trim();
+                let v = v.trim().to_string();
+                match container.database_type.unwrap() {
+                    DatabaseType::PostgreSQL => {}
+                    DatabaseType::MySqlMariaDb => {
+                        if k == "MYSQL_USER" {
+                            user_override = Some(v);
+                        } else if k == "MYSQL_PASSWORD" || k == "MYSQL_ROOT_PASSWORD" || k == "MYSQL_PWD" {
+                            pass_override = Some(v);
+                        } else if k == "MYSQL_DATABASE" {
+                            dbname_override = Some(v);
+                        }
+                    }
+                }
+            }
+        }
+
+        assert_eq!(user_override, None); // default to root later
+        assert_eq!(pass_override, Some("root_pass".to_string()));
+        assert_eq!(dbname_override, Some("v".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_poll_database_container_real_conn() {
+        let container = ContainerData {
+            id: "7882987fb6b5".to_string(),
+            name: "backend-mariadb-1".to_string(),
+            image: "mariadb:12.2.2".to_string(),
+            status: crate::models::ContainerStatus::Running,
+            uptime_secs: None,
+            cpu_pct: 0.0,
+            memory_bytes: 0,
+            memory_limit_bytes: 0,
+            memory_pct: 0.0,
+            net_recv_per_sec: 0.0,
+            net_recv_total: 0,
+            net_sent_per_sec: 0.0,
+            net_sent_total: 0,
+            disk_read_per_sec: 0.0,
+            disk_read_total: 0,
+            disk_write_per_sec: 0.0,
+            disk_write_total: 0,
+            ports: vec![":3306->3306/tcp".to_string()],
+            volumes: vec![],
+            networks: vec![],
+            env_vars: vec![
+                "MYSQL_DATABASE=v".to_string(),
+                "MYSQL_ROOT_PASSWORD=root".to_string(),
+            ],
+            compose_project: None,
+            database_type: Some(DatabaseType::MySqlMariaDb),
+        };
+
+        let res = poll_database_container(container).await;
+        println!("REAL POLL RESULT: {:?}", res.status);
+    }
+
+    #[tokio::test]
+    async fn test_postgres_connect_error() {
+        let mut config = tokio_postgres::Config::new();
+        config.host("127.0.0.1");
+        config.port(5432);
+        config.user("vox");
+        config.password("voxpasswordsecret");
+        config.dbname("Vocellia");
+        
+        match config.connect(tokio_postgres::NoTls).await {
+            Ok((_client, _connection)) => println!("POSTGRES CONNECT RES: Connected successfully"),
+            Err(e) => println!("POSTGRES CONNECT RES: Error: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_poll_database_container_postgres_real_conn() {
+        let container = ContainerData {
+            id: "a2b2bba19c56".to_string(),
+            name: "vocellia-postgres-1".to_string(),
+            image: "postgres:16-alpine".to_string(),
+            status: crate::models::ContainerStatus::Running,
+            uptime_secs: None,
+            cpu_pct: 0.0,
+            memory_bytes: 0,
+            memory_limit_bytes: 0,
+            memory_pct: 0.0,
+            net_recv_per_sec: 0.0,
+            net_recv_total: 0,
+            net_sent_per_sec: 0.0,
+            net_sent_total: 0,
+            disk_read_per_sec: 0.0,
+            disk_read_total: 0,
+            disk_write_per_sec: 0.0,
+            disk_write_total: 0,
+            ports: vec![":5432->5432/tcp".to_string()],
+            volumes: vec![],
+            networks: vec![],
+            env_vars: vec![
+                "POSTGRES_USER=vox".to_string(),
+                "POSTGRES_PASSWORD=voxpasswordsecret".to_string(),
+                "POSTGRES_DB=Vocellia".to_string(),
+            ],
+            compose_project: None,
+            database_type: Some(DatabaseType::PostgreSQL),
+        };
+
+        let res = poll_database_container(container).await;
+        println!("POSTGRES REAL POLL RESULT: {:?}", res.status);
+    }
 }
+
+
+

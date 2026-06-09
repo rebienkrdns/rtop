@@ -498,67 +498,66 @@ pub fn render_db_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Them
                 crate::models::DatabaseType::MySqlMariaDb => "MySQL / MariaDB",
             };
             
-            let mut lines = vec![
+            let db_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(7), // Info details
+                    Constraint::Min(0),    // Charts area
+                ])
+                .split(inner_rect);
+
+            let mut info_lines = vec![
                 Line::from(vec![
                     Span::styled("  Engine:   ", Style::default().fg(theme.muted)),
                     Span::styled(db_type_str, Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
                     Span::raw("   "),
                     Span::styled("● Active", Style::default().fg(theme.ok)),
                 ]),
-                Line::from(""),
             ];
 
             match monitor_data.db_type {
                 crate::models::DatabaseType::PostgreSQL => {
-                    lines.push(Line::from(vec![
+                    info_lines.push(Line::from(vec![
                         Span::styled("  Connections:  ", Style::default().fg(theme.muted)),
-                        Span::styled(format!("{} active", monitor_data.metrics.connections_active), Style::default().fg(theme.text)),
+                        Span::styled(format!("{} active", monitor_data.metrics.connections_active), Style::default().fg(theme.warn)),
                         Span::raw(", "),
                         Span::styled(format!("{} idle", monitor_data.metrics.connections_idle), Style::default().fg(theme.muted)),
-                    ]));
-                    lines.push(Line::from(vec![
-                        Span::styled("  Waiting Locks:", Style::default().fg(theme.muted)),
+                        Span::raw("   "),
+                        Span::styled("Waiting Locks: ", Style::default().fg(theme.muted)),
                         Span::styled(
-                            format!(" {}", monitor_data.metrics.locks_count),
+                            format!("{}", monitor_data.metrics.locks_count),
                             if monitor_data.metrics.locks_count > 0 { Style::default().fg(theme.crit) } else { Style::default().fg(theme.ok) }
                         ),
                     ]));
                     
                     let hit_ratio = monitor_data.metrics.cache_hit_ratio;
-                    lines.push(Line::from(vec![
+                    info_lines.push(Line::from(vec![
                         Span::styled("  Cache Hit Ratio: ", Style::default().fg(theme.muted)),
                         Span::styled(format!("{:.2}%", hit_ratio), Style::default().fg(if hit_ratio >= 99.0 { theme.ok } else if hit_ratio >= 95.0 { theme.warn } else { theme.crit })),
                     ]));
                     
-                    lines.push(Line::from(""));
-                    lines.push(Line::from(Span::styled("  Long-Running Queries (>5s):", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))));
-                    if monitor_data.metrics.long_running_queries.is_empty() {
-                        lines.push(Line::from(Span::styled("    No queries match criteria", Style::default().fg(theme.muted))));
+                    info_lines.push(Line::from(""));
+                    if !monitor_data.metrics.long_running_queries.is_empty() {
+                        let (_, query, dur) = &monitor_data.metrics.long_running_queries[0];
+                        let truncated = if query.len() > 45 { format!("{}...", &query[0..42]) } else { query.clone() };
+                        info_lines.push(Line::from(vec![
+                            Span::styled("  Long Query: ", Style::default().fg(theme.accent)),
+                            Span::styled(truncated, Style::default().fg(theme.warn)),
+                            Span::styled(format!(" ({})", dur), Style::default().fg(theme.muted)),
+                        ]));
                     } else {
-                        for (pid, query, dur) in &monitor_data.metrics.long_running_queries {
-                            let truncated_query = if query.len() > 30 {
-                                format!("{}...", &query[0..27])
-                            } else {
-                                query.clone()
-                            };
-                            lines.push(Line::from(vec![
-                                Span::styled(format!("    PID {}: ", pid), Style::default().fg(theme.muted)),
-                                Span::styled(truncated_query, Style::default().fg(theme.warn)),
-                                Span::raw(format!(" ({})", dur)),
-                            ]));
-                        }
+                        info_lines.push(Line::from(Span::styled("  No long-running queries (>5s)", Style::default().fg(theme.muted))));
                     }
                 }
                 crate::models::DatabaseType::MySqlMariaDb => {
-                    lines.push(Line::from(vec![
+                    info_lines.push(Line::from(vec![
                         Span::styled("  Threads:  ", Style::default().fg(theme.muted)),
-                        Span::styled(format!("{} running", monitor_data.metrics.threads_running), Style::default().fg(theme.text)),
+                        Span::styled(format!("{} running", monitor_data.metrics.threads_running), Style::default().fg(theme.warn)),
                         Span::raw(", "),
-                        Span::styled(format!("{} connected", monitor_data.metrics.threads_connected), Style::default().fg(theme.muted)),
-                    ]));
-                    lines.push(Line::from(vec![
-                        Span::styled("  Slow Queries:", Style::default().fg(theme.muted)),
-                        Span::styled(format!(" {}", monitor_data.metrics.slow_queries), Style::default().fg(theme.text)),
+                        Span::styled(format!("{} connected", monitor_data.metrics.threads_connected), Style::default().fg(theme.text)),
+                        Span::raw("   "),
+                        Span::styled("Slow Queries: ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("{}", monitor_data.metrics.slow_queries), Style::default().fg(if monitor_data.metrics.slow_queries > 0 { theme.crit } else { theme.ok })),
                     ]));
 
                     let read = monitor_data.metrics.read_queries;
@@ -567,29 +566,199 @@ pub fn render_db_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Them
                     let read_pct = if total > 0 { (read as f64 / total as f64) * 100.0 } else { 0.0 };
                     let write_pct = if total > 0 { (write as f64 / total as f64) * 100.0 } else { 0.0 };
                     
-                    lines.push(Line::from(vec![
+                    info_lines.push(Line::from(vec![
                         Span::styled("  Workload: ", Style::default().fg(theme.muted)),
                         Span::styled(format!("{:.1}% Read", read_pct), Style::default().fg(theme.ok)),
                         Span::raw(" / "),
-                        Span::styled(format!("{:.1}% Write", write_pct), Style::default().fg(theme.warn)),
+                        Span::styled(format!("{:.1}% Write", write_pct), Style::default().fg(theme.accent)),
                     ]));
 
-                    lines.push(Line::from(""));
-                    lines.push(Line::from(vec![
+                    info_lines.push(Line::from(vec![
                         Span::styled("  Buffer Pool Hit Rate: ", Style::default().fg(theme.muted)),
                         Span::styled(format!("{:.2}%", monitor_data.metrics.buffer_pool_hit_rate), Style::default().fg(theme.ok)),
-                    ]));
-                    lines.push(Line::from(vec![
-                        Span::styled("  Buffer Pool Util:     ", Style::default().fg(theme.muted)),
+                        Span::raw("   "),
+                        Span::styled("Buffer Pool Util: ", Style::default().fg(theme.muted)),
                         Span::styled(format!("{:.2}%", monitor_data.metrics.buffer_pool_util_pct), Style::default().fg(theme.accent)),
                     ]));
                 }
             }
-            
-            let paragraph = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
-            f.render_widget(paragraph, inner_rect);
+
+            f.render_widget(Paragraph::new(info_lines), db_chunks[0]);
+
+            // Charts Area: split horizontally
+            let chart_cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ])
+                .split(db_chunks[1]);
+
+            match monitor_data.db_type {
+                crate::models::DatabaseType::PostgreSQL => {
+                    // Left Chart: Connections (Active vs Idle)
+                    let active_last = monitor_data.metrics.connections_active;
+                    let idle_last = monitor_data.metrics.connections_idle;
+                    let max_conn = state.db_history.iter()
+                        .map(|m| (m.connections_active + m.connections_idle) as f64)
+                        .fold(10.0, f64::max);
+
+                    let left_block = Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme.accent_dim))
+                        .title(Span::styled(
+                            format!(" Connections · Last: {}A/{}I ", active_last, idle_last),
+                            Style::default().fg(theme.accent)
+                        ));
+                    let left_inner = left_block.inner(chart_cols[0]);
+                    f.render_widget(left_block, chart_cols[0]);
+
+                    render_db_chart(
+                        f,
+                        left_inner,
+                        &state.db_history,
+                        max_conn,
+                        theme.warn,
+                        |m| m.connections_active as f64,
+                        Some((theme.accent, |m| m.connections_idle as f64)),
+                    );
+
+                    // Right Chart: Cache Hit Ratio
+                    let hit_last = monitor_data.metrics.cache_hit_ratio;
+                    let right_block = Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme.accent_dim))
+                        .title(Span::styled(
+                            format!(" Cache Hit Ratio · Last: {:.2}% ", hit_last),
+                            Style::default().fg(theme.accent)
+                        ));
+                    let right_inner = right_block.inner(chart_cols[1]);
+                    f.render_widget(right_block, chart_cols[1]);
+
+                    render_db_chart(
+                        f,
+                        right_inner,
+                        &state.db_history,
+                        100.0,
+                        theme.ok,
+                        |m| m.cache_hit_ratio,
+                        None,
+                    );
+                }
+                crate::models::DatabaseType::MySqlMariaDb => {
+                    // Left Chart: Threads (Running / Connected)
+                    let running_last = monitor_data.metrics.threads_running;
+                    let conn_last = monitor_data.metrics.threads_connected;
+                    let max_threads = state.db_history.iter()
+                        .map(|m| m.threads_connected as f64)
+                        .fold(10.0, f64::max);
+
+                    let left_block = Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme.accent_dim))
+                        .title(Span::styled(
+                            format!(" Threads · Last: {}R/{}C ", running_last, conn_last),
+                            Style::default().fg(theme.accent)
+                        ));
+                    let left_inner = left_block.inner(chart_cols[0]);
+                    f.render_widget(left_block, chart_cols[0]);
+
+                    render_db_chart(
+                        f,
+                        left_inner,
+                        &state.db_history,
+                        max_threads,
+                        theme.warn,
+                        |m| m.threads_running as f64,
+                        Some((theme.accent, |m| m.threads_connected as f64)),
+                    );
+
+                    // Right Chart: Buffer Pool (Hit Rate & Util)
+                    let pool_hit_last = monitor_data.metrics.buffer_pool_hit_rate;
+                    let pool_util_last = monitor_data.metrics.buffer_pool_util_pct;
+                    let right_block = Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme.accent_dim))
+                        .title(Span::styled(
+                            format!(" Buffer Pool · Last: {:.1}%H/{:.1}%U ", pool_hit_last, pool_util_last),
+                            Style::default().fg(theme.accent)
+                        ));
+                    let right_inner = right_block.inner(chart_cols[1]);
+                    f.render_widget(right_block, chart_cols[1]);
+
+                    render_db_chart(
+                        f,
+                        right_inner,
+                        &state.db_history,
+                        100.0,
+                        theme.ok,
+                        |m| m.buffer_pool_hit_rate,
+                        Some((theme.accent, |m| m.buffer_pool_util_pct)),
+                    );
+                }
+            }
         }
     }
+}
+
+#[allow(clippy::type_complexity)]
+fn render_db_chart(
+    f: &mut Frame,
+    area: Rect,
+    history: &std::collections::VecDeque<crate::collectors::database::DbMetrics>,
+    max_val: f64,
+    color1: Color,
+    extract1: fn(&crate::collectors::database::DbMetrics) -> f64,
+    line2: Option<(Color, fn(&crate::collectors::database::DbMetrics) -> f64)>,
+) {
+    use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
+    use ratatui::symbols::Marker;
+    use ratatui::widgets::Clear;
+
+    if area.height < 3 || area.width < 5 {
+        return;
+    }
+
+    let max_samples = 60.0;
+    let s_len = history.len();
+
+    let canvas = Canvas::default()
+        .block(Block::default().style(Style::default().bg(Color::Rgb(30, 31, 38))))
+        .x_bounds([0.0, max_samples])
+        .y_bounds([0.0, max_val])
+        .marker(Marker::Braille)
+        .paint(|ctx| {
+            if s_len > 1 {
+                for i in 0..(s_len - 1) {
+                    let x1 = max_samples - (s_len - 1 - i) as f64;
+                    let x2 = max_samples - (s_len - 1 - (i + 1)) as f64;
+                    if x2 < 0.0 {
+                        continue;
+                    }
+                    let x1_clamped = x1.max(0.0);
+
+                    ctx.draw(&CanvasLine {
+                        x1: x1_clamped,
+                        y1: extract1(&history[i]),
+                        x2,
+                        y2: extract1(&history[i + 1]),
+                        color: color1,
+                    });
+
+                    if let Some((c2, e2)) = line2 {
+                        ctx.draw(&CanvasLine {
+                            x1: x1_clamped,
+                            y1: e2(&history[i]),
+                            x2,
+                            y2: e2(&history[i + 1]),
+                            color: c2,
+                        });
+                    }
+                }
+            }
+        });
+    f.render_widget(Clear, area);
+    f.render_widget(canvas, area);
 }
 
 fn format_uptime(secs: u64) -> String {
