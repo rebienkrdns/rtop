@@ -107,13 +107,24 @@ pub fn extract_container_host_port(ports: &[String], db_type: DatabaseType) -> u
     }
 }
 
-pub async fn poll_db_at_port(db_type: DatabaseType, port: u16, metrics: &mut DbMetrics) -> DbConnectionStatus {
+pub async fn poll_db_at_port(
+    db_type: DatabaseType,
+    port: u16,
+    user_override: Option<String>,
+    pass_override: Option<String>,
+    dbname_override: Option<String>,
+    metrics: &mut DbMetrics,
+) -> DbConnectionStatus {
     match db_type {
         DatabaseType::PostgreSQL => {
-            let user = std::env::var("PGUSER")
-                .or_else(|_| std::env::var("USER"))
-                .unwrap_or_else(|_| "postgres".to_string());
-            let password = std::env::var("PGPASSWORD").ok();
+            let user = user_override
+                .or_else(|| std::env::var("PGUSER").ok())
+                .or_else(|| std::env::var("USER").ok())
+                .unwrap_or_else(|| "postgres".to_string());
+            let password = pass_override
+                .or_else(|| std::env::var("PGPASSWORD").ok());
+            let dbname = dbname_override
+                .or_else(|| std::env::var("PGDATABASE").ok());
             
             let mut config = tokio_postgres::Config::new();
             config.host("127.0.0.1");
@@ -121,6 +132,9 @@ pub async fn poll_db_at_port(db_type: DatabaseType, port: u16, metrics: &mut DbM
             config.user(&user);
             if let Some(ref pwd) = password {
                 config.password(pwd);
+            }
+            if let Some(ref db) = dbname {
+                config.dbname(db);
             }
             config.connect_timeout(Duration::from_millis(1500));
 
@@ -155,9 +169,13 @@ pub async fn poll_db_at_port(db_type: DatabaseType, port: u16, metrics: &mut DbM
             }
         }
         DatabaseType::MySqlMariaDb => {
-            let user = std::env::var("MYSQL_USER")
-                .unwrap_or_else(|_| "root".to_string());
-            let password = std::env::var("MYSQL_PWD").ok();
+            let user = user_override
+                .or_else(|| std::env::var("MYSQL_USER").ok())
+                .unwrap_or_else(|| "root".to_string());
+            let password = pass_override
+                .or_else(|| std::env::var("MYSQL_PWD").ok());
+            let dbname = dbname_override
+                .or_else(|| std::env::var("MYSQL_DATABASE").ok());
 
             let mut opts = mysql_async::OptsBuilder::default();
             opts = opts.ip_or_hostname("127.0.0.1")
@@ -165,6 +183,9 @@ pub async fn poll_db_at_port(db_type: DatabaseType, port: u16, metrics: &mut DbM
                 .user(Some(&user));
             if let Some(ref pwd) = password {
                 opts = opts.pass(Some(pwd));
+            }
+            if let Some(ref db) = dbname {
+                opts = opts.db_name(Some(db));
             }
             
             let pool = mysql_async::Pool::new(opts);
@@ -206,7 +227,7 @@ pub async fn poll_database(process: ProcessData) -> DbMonitorData {
     data.status = DbConnectionStatus::Connecting;
 
     let port = extract_port(&process.cmd, db_type);
-    data.status = poll_db_at_port(db_type, port, &mut data.metrics).await;
+    data.status = poll_db_at_port(db_type, port, None, None, None, &mut data.metrics).await;
     data
 }
 
@@ -220,7 +241,44 @@ pub async fn poll_database_container(container: ContainerData) -> DbMonitorData 
     data.status = DbConnectionStatus::Connecting;
 
     let port = extract_container_host_port(&container.ports, db_type);
-    data.status = poll_db_at_port(db_type, port, &mut data.metrics).await;
+    
+    // Extract credentials from container environment variables
+    let mut user_override = None;
+    let mut pass_override = None;
+    let mut dbname_override = None;
+
+    for env in &container.env_vars {
+        if let Some((k, v)) = env.split_once('=') {
+            let k = k.trim();
+            let v = v.trim().to_string();
+            match db_type {
+                DatabaseType::PostgreSQL => {
+                    if k == "POSTGRES_USER" {
+                        user_override = Some(v);
+                    } else if k == "POSTGRES_PASSWORD" {
+                        pass_override = Some(v);
+                    } else if k == "POSTGRES_DB" {
+                        dbname_override = Some(v);
+                    }
+                }
+                DatabaseType::MySqlMariaDb => {
+                    if k == "MYSQL_USER" {
+                        user_override = Some(v);
+                    } else if k == "MYSQL_PASSWORD" || k == "MYSQL_ROOT_PASSWORD" || k == "MYSQL_PWD" {
+                        pass_override = Some(v);
+                    } else if k == "MYSQL_DATABASE" {
+                        dbname_override = Some(v);
+                    }
+                }
+            }
+        }
+    }
+
+    if db_type == DatabaseType::MySqlMariaDb && user_override.is_none() {
+        user_override = Some("root".to_string());
+    }
+
+    data.status = poll_db_at_port(db_type, port, user_override, pass_override, dbname_override, &mut data.metrics).await;
     data
 }
 
