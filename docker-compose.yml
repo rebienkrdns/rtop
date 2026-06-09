@@ -20,6 +20,48 @@ services:
         sleep infinity
       "
 
+  # ---------------------------------------------------------------------------
+  # Simuladores de carga PSI — se invocan de forma independiente con:
+  #   docker compose run --rm stress-cpu
+  #   docker compose run --rm stress-mem
+  #   docker compose run --rm stress-io
+  # Cada servicio corre en el mismo namespace de kernel que `dev`, por lo que
+  # los valores de /proc/pressure/* subirán y serán visibles en rtop.
+  # ---------------------------------------------------------------------------
+
+  stress-cpu:
+    image: rust:latest
+    profiles: [stress]
+    command: >
+      bash -c "
+        apt-get update -qq &&
+        apt-get install -y --no-install-recommends stress-ng &&
+        echo '▶ CPU stress activo — Ctrl+C para detener' &&
+        stress-ng --cpu 0 --cpu-load 90 --metrics-brief
+      "
+
+  stress-mem:
+    image: rust:latest
+    profiles: [stress]
+    command: >
+      bash -c "
+        apt-get update -qq &&
+        apt-get install -y --no-install-recommends stress-ng &&
+        echo '▶ Memory stress activo — Ctrl+C para detener' &&
+        stress-ng --vm 4 --vm-bytes 256M --vm-hang 0 --metrics-brief
+      "
+
+  stress-io:
+    image: rust:latest
+    profiles: [stress]
+    command: >
+      bash -c "
+        apt-get update -qq &&
+        apt-get install -y --no-install-recommends stress-ng &&
+        echo '▶ I/O stress activo — Ctrl+C para detener' &&
+        stress-ng --iomix 4 --iomix-bytes 512M --metrics-brief
+      "
+
 volumes:
   cargo-target:
   cargo-cache:

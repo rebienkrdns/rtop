@@ -65,24 +65,53 @@ full avg10=0.00 avg60=0.00 avg300=0.00 total=0
 > dentro de la VM Linux que Docker gestiona. Si no aparecen, asegúrate de tener
 > Docker Desktop ≥ 4.6 con el kernel de VM actualizado.
 
-### 4. Generar carga para probar los gráficos PSI
+### 4. Simuladores de carga PSI (servicios independientes)
 
-`stress-ng` se instala automáticamente al arrancar el contenedor:
+El `docker-compose.yml` incluye tres servicios dedicados, cada uno diseñado para
+elevar exactamente **un** tipo de métrica PSI. Se arrancan de forma independiente
+desde el host (sin necesidad de entrar al contenedor):
+
+#### Estrés de CPU → sube `PSI cpu`
+```bash
+docker compose run --rm stress-cpu
+```
+Lanza `stress-ng --cpu 0 --cpu-load 90` (todos los núcleos al 90 %).
+Mientras corre, observa `some`/`full` en `/proc/pressure/cpu` subir en `rtop`.
+
+#### Estrés de Memoria → sube `PSI memory`
+```bash
+docker compose run --rm stress-mem
+```
+Lanza 4 workers de VM con 256 MB cada uno (`--vm-hang 0` para forzar stalls).
+Observa `/proc/pressure/memory` en `rtop`.
+
+#### Estrés de I/O → sube `PSI io`
+```bash
+docker compose run --rm stress-io
+```
+Lanza 4 workers de I/O mixto con 512 MB (`--iomix`).
+Observa `/proc/pressure/io` en `rtop`.
+
+> **Flujo de simulación recomendado:**
+> 1. Terminal A: `docker compose exec -it dev bash` → `cargo run` (rtop en vivo)
+> 2. Terminal B: `docker compose run --rm stress-cpu` (o `stress-mem` / `stress-io`)
+> 3. Observa en rtop cómo suben los gráficos PSI correspondientes en tiempo real.
+> 4. Ctrl+C en Terminal B para detener la carga; los valores PSI vuelven a bajar.
+
+#### Estrés manual desde dentro del contenedor (alternativa)
+
+Si prefieres lanzar `stress-ng` directamente desde la shell de `dev`:
 
 ```bash
-# Estresar CPU durante 60 s (4 workers)
-stress-ng --cpu 4 --timeout 60s
+# CPU
+stress-ng --cpu 4 --cpu-load 90 --timeout 60s
 
-# Estresar memoria
-stress-ng --vm 2 --vm-bytes 512M --timeout 60s
+# Memoria
+stress-ng --vm 4 --vm-bytes 256M --timeout 60s
 
-# Estresar I/O
-stress-ng --io 4 --timeout 60s
+# I/O
+stress-ng --iomix 4 --iomix-bytes 512M --timeout 60s
 ```
-
-Mientras corre `stress-ng` en una sesión, abre otra sesión con
-`docker compose exec -it dev bash` y ejecuta `cargo run` para observar
-los gráficos PSI en tiempo real.
 
 ## Detener el entorno
 
