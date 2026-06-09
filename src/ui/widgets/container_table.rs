@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use bytesize::ByteSize;
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Cell, Paragraph, Row, Table},
@@ -51,14 +51,33 @@ pub fn render_with_cursor(
     let theme = Theme::default_theme();
     let t = |key: &'static str| crate::localization::translate(key, lang);
 
+    // Split: counter bar (1 line) + table
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(area);
+
+    let container_area = chunks[1];
+
     if containers.is_empty() {
         let msg = Paragraph::new(Line::from(Span::styled(
             format!("  {}", t("NoContainers")),
             Style::default().fg(Color::DarkGray),
         )));
-        f.render_widget(msg, area);
+        f.render_widget(msg, container_area);
         return;
     }
+
+    // Render container count (right-aligned) in the counter bar
+    let count_text = format!(" {} {} ", containers.len(), t("containers"));
+    let count_widget = Paragraph::new(Line::from(Span::styled(
+        count_text,
+        Style::default()
+            .fg(theme.muted)
+            .add_modifier(Modifier::BOLD),
+    )))
+    .alignment(ratatui::layout::Alignment::Right);
+    f.render_widget(count_widget, chunks[0]);
 
     let is_wide = f.size().width >= 120;
 
@@ -426,5 +445,5 @@ pub fn render_with_cursor(
         .header(header_row)
         .column_spacing(2);
 
-    f.render_widget(table, area);
+    f.render_widget(table, container_area);
 }
