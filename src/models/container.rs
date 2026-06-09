@@ -59,4 +59,6 @@ pub struct ContainerData {
     pub networks: Vec<String>,
     pub env_vars: Vec<String>,
     pub compose_project: Option<String>,
+    pub database_type: Option<super::DatabaseType>,
 }
+

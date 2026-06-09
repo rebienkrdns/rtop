@@ -181,6 +181,16 @@ impl ContainerCollector {
                 .as_ref()
                 .and_then(|labels| labels.get("com.docker.compose.project").cloned());
 
+            let name_lower = name.to_lowercase();
+            let image_lower = image.to_lowercase();
+            let database_type = if name_lower.contains("postgres") || image_lower.contains("postgres") {
+                Some(crate::models::DatabaseType::PostgreSQL)
+            } else if name_lower.contains("mysql") || image_lower.contains("mysql") || name_lower.contains("mariadb") || image_lower.contains("mariadb") {
+                Some(crate::models::DatabaseType::MySqlMariaDb)
+            } else {
+                None
+            };
+
             result.push(ContainerData {
                 id: full_id.chars().take(12).collect(),
                 name,
@@ -208,6 +218,7 @@ impl ContainerCollector {
                 networks: extract_networks(&inspect_opt),
                 env_vars: extract_env_vars(&inspect_opt),
                 compose_project,
+                database_type,
             });
         }
 

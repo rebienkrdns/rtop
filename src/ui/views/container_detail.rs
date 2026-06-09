@@ -53,7 +53,17 @@ pub fn render(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let inner_height = inner.height;
+    let (left_area, db_area) = if container.database_type.is_some() {
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(inner);
+        (cols[0], Some(cols[1]))
+    } else {
+        (inner, None)
+    };
+
+    let inner_height = left_area.height;
     let remaining_height = inner_height.saturating_sub(7); // basic info (5) + footer (2) = 7
     let metadata_reserved = 6;
     let charts_total_height = remaining_height.saturating_sub(metadata_reserved);
@@ -74,7 +84,7 @@ pub fn render(
             Constraint::Min(1),               // metadata (puertos, volúmenes, redes, env)
             Constraint::Length(2),            // footer
         ])
-        .split(inner);
+        .split(left_area);
 
     // Info fields
     let uptime_str = container
@@ -508,6 +518,10 @@ pub fn render(
         ),
     ]);
     f.render_widget(Paragraph::new(hint), chunks[6]);
+
+    if let Some(db_rect) = db_area {
+        crate::ui::views::process_detail::render_db_panel(f, db_rect, state, &theme);
+    }
 
     // Confirmation overlay
     if let Some(action) = confirm {

@@ -122,6 +122,8 @@ pub struct AppState {
     db_tx: mpsc::Sender<crate::collectors::database::DbMonitorData>,
     db_rx: mpsc::Receiver<crate::collectors::database::DbMonitorData>,
     current_db_monitored_pid: Option<u32>,
+    current_db_monitored_cid: Option<String>,
+
 
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
@@ -199,6 +201,7 @@ impl AppState {
                 rx
             },
             current_db_monitored_pid: None,
+            current_db_monitored_cid: None,
             metrics_rx: rx,
             interval_tx,
         }
@@ -369,8 +372,14 @@ impl AppState {
 
             // Receive any DB monitor updates
             while let Ok(db_data) = self.db_rx.try_recv() {
-                if Some(db_data.pid) == self.detail_process_pid {
-                    self.db_monitor = Some(db_data);
+                if let Some(pid) = db_data.pid {
+                    if Some(pid) == self.detail_process_pid {
+                        self.db_monitor = Some(db_data);
+                    }
+                } else if let Some(ref cid) = db_data.container_id {
+                    if Some(cid.clone()) == self.detail_container_id {
+                        self.db_monitor = Some(db_data);
+                    }
                 }
             }
 
@@ -381,6 +390,7 @@ impl AppState {
                         if let Some(db_type) = proc.database_type {
                             if self.current_db_monitored_pid != Some(pid) {
                                 self.current_db_monitored_pid = Some(pid);
+                                self.current_db_monitored_cid = None;
                                 self.db_monitor = Some(crate::collectors::database::DbMonitorData::new(pid, db_type));
                                 
                                 // Create new channels specifically for this connection task
@@ -403,15 +413,55 @@ impl AppState {
                         } else {
                             self.db_monitor = None;
                             self.current_db_monitored_pid = None;
+                            self.current_db_monitored_cid = None;
                         }
                     }
                 } else {
                     self.db_monitor = None;
                     self.current_db_monitored_pid = None;
+                    self.current_db_monitored_cid = None;
+                }
+            } else if self.current_view == View::ContainerDetail {
+                if let Some(ref cid) = self.detail_container_id {
+                    if let Some(container) = self.containers.iter().find(|c| &c.id == cid) {
+                        if let Some(db_type) = container.database_type {
+                            if self.current_db_monitored_cid.as_ref() != Some(cid) {
+                                self.current_db_monitored_cid = Some(cid.clone());
+                                self.current_db_monitored_pid = None;
+                                self.db_monitor = Some(crate::collectors::database::DbMonitorData::new_container(cid.clone(), db_type));
+                                
+                                // Create new channels specifically for this connection task
+                                let (tx, rx) = mpsc::channel(8);
+                                self.db_rx = rx; // replace our receiver
+                                self.db_tx = tx.clone();
+
+                                let container_clone = container.clone();
+                                tokio::spawn(async move {
+                                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(2));
+                                    loop {
+                                        let data = crate::collectors::database::poll_database_container(container_clone.clone()).await;
+                                        if tx.send(data).await.is_err() {
+                                            break;
+                                        }
+                                        ticker.tick().await;
+                                    }
+                                });
+                            }
+                        } else {
+                            self.db_monitor = None;
+                            self.current_db_monitored_pid = None;
+                            self.current_db_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.db_monitor = None;
+                    self.current_db_monitored_pid = None;
+                    self.current_db_monitored_cid = None;
                 }
             } else {
                 self.db_monitor = None;
                 self.current_db_monitored_pid = None;
+                self.current_db_monitored_cid = None;
             }
 
             // If the detailed process or container no longer exists, exit the detail view

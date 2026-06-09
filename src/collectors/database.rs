@@ -1,6 +1,6 @@
 use std::time::Duration;
 use tokio::time::timeout;
-use crate::models::{DatabaseType, ProcessData};
+use crate::models::{DatabaseType, ProcessData, ContainerData};
 
 #[derive(Clone, Debug, Default)]
 pub struct DbMetrics {
@@ -31,7 +31,8 @@ pub enum DbConnectionStatus {
 
 #[derive(Clone, Debug)]
 pub struct DbMonitorData {
-    pub pid: u32,
+    pub pid: Option<u32>,
+    pub container_id: Option<String>,
     pub db_type: DatabaseType,
     pub status: DbConnectionStatus,
     pub metrics: DbMetrics,
@@ -40,7 +41,18 @@ pub struct DbMonitorData {
 impl DbMonitorData {
     pub fn new(pid: u32, db_type: DatabaseType) -> Self {
         Self {
-            pid,
+            pid: Some(pid),
+            container_id: None,
+            db_type,
+            status: DbConnectionStatus::Disconnected,
+            metrics: DbMetrics::default(),
+        }
+    }
+
+    pub fn new_container(container_id: String, db_type: DatabaseType) -> Self {
+        Self {
+            pid: None,
+            container_id: Some(container_id),
             db_type,
             status: DbConnectionStatus::Disconnected,
             metrics: DbMetrics::default(),
@@ -71,20 +83,33 @@ pub fn extract_port(cmd: &str, db_type: DatabaseType) -> u16 {
     default_port
 }
 
-pub async fn poll_database(process: ProcessData) -> DbMonitorData {
-    let db_type = match process.database_type {
-        Some(t) => t,
-        None => return DbMonitorData::new(process.pid, DatabaseType::PostgreSQL),
+pub fn extract_container_host_port(ports: &[String], db_type: DatabaseType) -> u16 {
+    let target_container_port = match db_type {
+        DatabaseType::PostgreSQL => "5432",
+        DatabaseType::MySqlMariaDb => "3306",
     };
 
-    let mut data = DbMonitorData::new(process.pid, db_type);
-    data.status = DbConnectionStatus::Connecting;
+    for p in ports {
+        if p.contains(&format!("->{}", target_container_port)) || p.contains(&format!("->{}/tcp", target_container_port)) {
+            if let Some(left) = p.split("->").next() {
+                let port_str = left.split(':').next_back().unwrap_or(left).trim();
+                if let Ok(port) = port_str.parse::<u16>() {
+                    return port;
+                }
+            }
+        }
+    }
 
-    let port = extract_port(&process.cmd, db_type);
+    // Default fallback to standard port on localhost
+    match db_type {
+        DatabaseType::PostgreSQL => 5432,
+        DatabaseType::MySqlMariaDb => 3306,
+    }
+}
 
+pub async fn poll_db_at_port(db_type: DatabaseType, port: u16, metrics: &mut DbMetrics) -> DbConnectionStatus {
     match db_type {
         DatabaseType::PostgreSQL => {
-            // Sequential credential lookup
             let user = std::env::var("PGUSER")
                 .or_else(|_| std::env::var("USER"))
                 .unwrap_or_else(|_| "postgres".to_string());
@@ -102,32 +127,30 @@ pub async fn poll_database(process: ProcessData) -> DbMonitorData {
             let connect_future = config.connect(tokio_postgres::NoTls);
             match timeout(Duration::from_millis(1500), connect_future).await {
                 Ok(Ok((client, connection))) => {
-                    // Spawn connection worker in background
                     tokio::spawn(async move {
                         if let Err(e) = connection.await {
                             eprintln!("PostgreSQL connection error: {}", e);
                         }
                     });
 
-                    data.status = DbConnectionStatus::Connected;
-                    
-                    // Fetch Postgres metrics
-                    if let Err(e) = query_postgres_metrics(&client, &mut data.metrics).await {
-                        data.status = DbConnectionStatus::Error(format!("Query failed: {}", e));
+                    if let Err(e) = query_postgres_metrics(&client, metrics).await {
+                        DbConnectionStatus::Error(format!("Query failed: {}", e))
+                    } else {
+                        DbConnectionStatus::Connected
                     }
                 }
                 Ok(Err(e)) => {
                     let err_msg = e.to_string();
                     if err_msg.contains("password") || err_msg.contains("authentication") {
-                        data.status = DbConnectionStatus::AuthRequired(format!(
+                        DbConnectionStatus::AuthRequired(format!(
                             "PGUSER={} PGPASSWORD=*** (Error: {})", user, err_msg
-                        ));
+                        ))
                     } else {
-                        data.status = DbConnectionStatus::Error(format!("Connection failed: {}", err_msg));
+                        DbConnectionStatus::Error(format!("Connection failed: {}", err_msg))
                     }
                 }
                 Err(_) => {
-                    data.status = DbConnectionStatus::Error("Connection timed out (1.5s)".to_string());
+                    DbConnectionStatus::Error("Connection timed out (1.5s)".to_string())
                 }
             }
         }
@@ -145,31 +168,59 @@ pub async fn poll_database(process: ProcessData) -> DbMonitorData {
             }
             
             let pool = mysql_async::Pool::new(opts);
-            match timeout(Duration::from_millis(1500), pool.get_conn()).await {
+            let status = match timeout(Duration::from_millis(1500), pool.get_conn()).await {
                 Ok(Ok(mut conn)) => {
-                    data.status = DbConnectionStatus::Connected;
-                    if let Err(e) = query_mysql_metrics(&mut conn, &mut data.metrics).await {
-                        data.status = DbConnectionStatus::Error(format!("Query failed: {}", e));
+                    if let Err(e) = query_mysql_metrics(&mut conn, metrics).await {
+                        DbConnectionStatus::Error(format!("Query failed: {}", e))
+                    } else {
+                        DbConnectionStatus::Connected
                     }
                 }
                 Ok(Err(e)) => {
                     let err_msg = e.to_string();
                     if err_msg.contains("Access denied") || err_msg.contains("password") {
-                        data.status = DbConnectionStatus::AuthRequired(format!(
+                        DbConnectionStatus::AuthRequired(format!(
                             "MYSQL_USER={} MYSQL_PWD=*** (Error: {})", user, err_msg
-                        ));
+                        ))
                     } else {
-                        data.status = DbConnectionStatus::Error(format!("Connection failed: {}", err_msg));
+                        DbConnectionStatus::Error(format!("Connection failed: {}", err_msg))
                     }
                 }
                 Err(_) => {
-                    data.status = DbConnectionStatus::Error("Connection timed out (1.5s)".to_string());
+                    DbConnectionStatus::Error("Connection timed out (1.5s)".to_string())
                 }
-            }
+            };
             let _ = pool.disconnect().await;
+            status
         }
     }
+}
 
+pub async fn poll_database(process: ProcessData) -> DbMonitorData {
+    let db_type = match process.database_type {
+        Some(t) => t,
+        None => return DbMonitorData::new(process.pid, DatabaseType::PostgreSQL),
+    };
+
+    let mut data = DbMonitorData::new(process.pid, db_type);
+    data.status = DbConnectionStatus::Connecting;
+
+    let port = extract_port(&process.cmd, db_type);
+    data.status = poll_db_at_port(db_type, port, &mut data.metrics).await;
+    data
+}
+
+pub async fn poll_database_container(container: ContainerData) -> DbMonitorData {
+    let db_type = match container.database_type {
+        Some(t) => t,
+        None => return DbMonitorData::new_container(container.id, DatabaseType::PostgreSQL),
+    };
+
+    let mut data = DbMonitorData::new_container(container.id.clone(), db_type);
+    data.status = DbConnectionStatus::Connecting;
+
+    let port = extract_container_host_port(&container.ports, db_type);
+    data.status = poll_db_at_port(db_type, port, &mut data.metrics).await;
     data
 }
 
@@ -302,6 +353,21 @@ mod tests {
         assert_eq!(extract_port("postgres --port=5434", DatabaseType::PostgreSQL), 5434);
         assert_eq!(extract_port("postgres --port 5435", DatabaseType::PostgreSQL), 5435);
         assert_eq!(extract_port("postgres", DatabaseType::PostgreSQL), 5432);
+    }
+
+    #[test]
+    fn test_extract_container_host_port() {
+        let ports = vec![
+            "0.0.0.0:5433->5432/tcp".to_string(),
+            "127.0.0.1:3307->3306/tcp".to_string(),
+            "5432/tcp".to_string(),
+        ];
+        assert_eq!(extract_container_host_port(&ports, DatabaseType::PostgreSQL), 5433);
+        assert_eq!(extract_container_host_port(&ports, DatabaseType::MySqlMariaDb), 3307);
+        
+        let empty_ports: Vec<String> = vec![];
+        assert_eq!(extract_container_host_port(&empty_ports, DatabaseType::PostgreSQL), 5432);
+        assert_eq!(extract_container_host_port(&empty_ports, DatabaseType::MySqlMariaDb), 3306);
     }
 
     #[test]

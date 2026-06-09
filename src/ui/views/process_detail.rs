@@ -420,7 +420,7 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     }
 }
 
-fn render_db_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+pub fn render_db_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
     use crate::collectors::database::DbConnectionStatus;
     
     let db_block = Block::default()
