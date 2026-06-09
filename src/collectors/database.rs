@@ -18,6 +18,22 @@ pub struct DbMetrics {
     pub slow_queries: u32,
     pub read_queries: u64,
     pub write_queries: u64,
+
+    // Cumulative raw counters for rate calculation
+    pub raw_com_select: u64,
+    pub raw_com_insert: u64,
+    pub raw_com_update: u64,
+    pub raw_com_delete: u64,
+    pub raw_slow_queries: u64,
+    pub raw_bytes_sent: u64,
+    pub raw_bytes_received: u64,
+
+    // Rates per second computed asynchronously
+    pub select_per_sec: f64,
+    pub write_per_sec: f64,
+    pub slow_queries_per_sec: f64,
+    pub bytes_sent_per_sec: f64,
+    pub bytes_received_per_sec: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -329,23 +345,78 @@ async fn query_postgres_metrics(client: &tokio_postgres::Client, metrics: &mut D
         metrics.long_running_queries.push((pid as u32, query, format!("{:.1}s", duration)));
     }
 
+    // 5. Tuple operations and block I/O (bytes approximation) from pg_stat_database
+    let rows_db = client.query(
+        "SELECT COALESCE(sum(tup_returned), 0)::int8, COALESCE(sum(tup_inserted + tup_updated + tup_deleted), 0)::int8, COALESCE(sum(blks_read), 0)::int8, COALESCE(sum(blks_write), 0)::int8 FROM pg_stat_database",
+        &[]
+    ).await?;
+    if let Some(row) = rows_db.first() {
+        let reads: i64 = row.get(0);
+        let writes: i64 = row.get(1);
+        let blks_read: i64 = row.get(2);
+        let blks_write: i64 = row.get(3);
+        
+        metrics.raw_com_select = reads as u64;
+        metrics.raw_com_insert = writes as u64;
+        metrics.raw_com_update = 0;
+        metrics.raw_com_delete = 0;
+        metrics.raw_bytes_received = (blks_read as u64) * 8192;
+        metrics.raw_bytes_sent = (blks_write as u64) * 8192;
+    }
+    metrics.raw_slow_queries = metrics.long_running_queries.len() as u64;
+
     Ok(())
 }
 
 async fn query_mysql_metrics(conn: &mut mysql_async::Conn, metrics: &mut DbMetrics) -> Result<(), mysql_async::Error> {
     use mysql_async::prelude::Queryable;
 
-    // 1. Query global status variables
-    let rows: Vec<(String, String)> = conn.query("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected', 'Threads_running', 'Slow_queries', 'Com_select', 'Com_insert', 'Com_update', 'Com_delete')").await?;
+    // 1. Query global status variables (including network traffic bytes)
+    let rows: Vec<(String, String)> = conn.query("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected', 'Threads_running', 'Slow_queries', 'Com_select', 'Com_insert', 'Com_update', 'Com_delete', 'Bytes_sent', 'Bytes_received')").await?;
     metrics.read_queries = 0;
     metrics.write_queries = 0;
+    metrics.raw_com_select = 0;
+    metrics.raw_com_insert = 0;
+    metrics.raw_com_update = 0;
+    metrics.raw_com_delete = 0;
+    metrics.raw_slow_queries = 0;
+    metrics.raw_bytes_sent = 0;
+    metrics.raw_bytes_received = 0;
+    
     for (name, val) in rows {
         match name.as_str() {
             "Threads_connected" => metrics.threads_connected = val.parse().unwrap_or(0),
             "Threads_running" => metrics.threads_running = val.parse().unwrap_or(0),
-            "Slow_queries" => metrics.slow_queries = val.parse().unwrap_or(0),
-            "Com_select" => metrics.read_queries += val.parse::<u64>().unwrap_or(0),
-            "Com_insert" | "Com_update" | "Com_delete" => metrics.write_queries += val.parse::<u64>().unwrap_or(0),
+            "Slow_queries" => {
+                metrics.slow_queries = val.parse().unwrap_or(0);
+                metrics.raw_slow_queries = metrics.slow_queries as u64;
+            }
+            "Com_select" => {
+                let parsed = val.parse::<u64>().unwrap_or(0);
+                metrics.read_queries += parsed;
+                metrics.raw_com_select = parsed;
+            }
+            "Com_insert" => {
+                let parsed = val.parse::<u64>().unwrap_or(0);
+                metrics.write_queries += parsed;
+                metrics.raw_com_insert = parsed;
+            }
+            "Com_update" => {
+                let parsed = val.parse::<u64>().unwrap_or(0);
+                metrics.write_queries += parsed;
+                metrics.raw_com_update = parsed;
+            }
+            "Com_delete" => {
+                let parsed = val.parse::<u64>().unwrap_or(0);
+                metrics.write_queries += parsed;
+                metrics.raw_com_delete = parsed;
+            }
+            "Bytes_sent" => {
+                metrics.raw_bytes_sent = val.parse::<u64>().unwrap_or(0);
+            }
+            "Bytes_received" => {
+                metrics.raw_bytes_received = val.parse::<u64>().unwrap_or(0);
+            }
             _ => {}
         }
     }

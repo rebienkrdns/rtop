@@ -585,131 +585,221 @@ pub fn render_db_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Them
 
             f.render_widget(Paragraph::new(info_lines), db_chunks[0]);
 
-            // Charts Area: split horizontally
-            let chart_cols = Layout::default()
-                .direction(Direction::Horizontal)
+            // Split vertical charts area into 3 sections
+            let chart_sections = Layout::default()
+                .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Percentage(50),
-                    Constraint::Percentage(50),
+                    Constraint::Ratio(1, 3),
+                    Constraint::Ratio(1, 3),
+                    Constraint::Ratio(1, 3),
                 ])
                 .split(db_chunks[1]);
 
-            match monitor_data.db_type {
+            // Retrieve thread-safe db history snapshot
+            let history_snapshot = match state.db_history.lock() {
+                Ok(h) => h.clone(),
+                Err(_) => std::collections::VecDeque::new(),
+            };
+
+            // Chart A: Query Rate & Workload Trend
+            let (title_a, lines_a, max_a) = match monitor_data.db_type {
+                crate::models::DatabaseType::MySqlMariaDb => {
+                    let max_val = history_snapshot.iter()
+                        .map(|m| m.select_per_sec.max(m.write_per_sec).max(m.slow_queries_per_sec))
+                        .fold(5.0, f64::max);
+                    let title = format!(
+                        " Query Rate [last 60s] · Last: R:{:.1}/s, W:{:.1}/s, S:{:.1}/s ",
+                        monitor_data.metrics.select_per_sec,
+                        monitor_data.metrics.write_per_sec,
+                        monitor_data.metrics.slow_queries_per_sec
+                    );
+                    let lines = vec![
+                        ChartLineSpec {
+                            color: Color::Rgb(50, 150, 250), // Blue for reads
+                            style: LineStyle::Solid,
+                            extract: |m| m.select_per_sec,
+                        },
+                        ChartLineSpec {
+                            color: Color::Rgb(250, 150, 50), // Orange for writes
+                            style: LineStyle::Solid,
+                            extract: |m| m.write_per_sec,
+                        },
+                        ChartLineSpec {
+                            color: Color::Rgb(250, 50, 50), // Red for slow
+                            style: LineStyle::Dashed,
+                            extract: |m| m.slow_queries_per_sec,
+                        },
+                    ];
+                    (title, lines, max_val)
+                }
                 crate::models::DatabaseType::PostgreSQL => {
-                    // Left Chart: Connections (Active vs Idle)
-                    let active_last = monitor_data.metrics.connections_active;
-                    let idle_last = monitor_data.metrics.connections_idle;
-                    let max_conn = state.db_history.iter()
+                    let max_val = history_snapshot.iter()
+                        .map(|m| m.select_per_sec.max(m.write_per_sec).max(m.slow_queries_per_sec))
+                        .fold(5.0, f64::max);
+                    let title = format!(
+                        " Query Rate [last 60s] · Last: R:{:.1}/s, W:{:.1}/s, Long:{:.0} ",
+                        monitor_data.metrics.select_per_sec,
+                        monitor_data.metrics.write_per_sec,
+                        monitor_data.metrics.slow_queries_per_sec
+                    );
+                    let lines = vec![
+                        ChartLineSpec {
+                            color: Color::Rgb(50, 150, 250), // Blue for reads
+                            style: LineStyle::Solid,
+                            extract: |m| m.select_per_sec,
+                        },
+                        ChartLineSpec {
+                            color: Color::Rgb(250, 150, 50), // Orange for writes
+                            style: LineStyle::Solid,
+                            extract: |m| m.write_per_sec,
+                        },
+                        ChartLineSpec {
+                            color: Color::Rgb(250, 50, 50), // Red for long-running
+                            style: LineStyle::Dashed,
+                            extract: |m| m.slow_queries_per_sec,
+                        },
+                    ];
+                    (title, lines, max_val)
+                }
+            };
+            
+            let block_a = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_dim))
+                .title(Span::styled(title_a, Style::default().fg(theme.accent)));
+            let inner_a = block_a.inner(chart_sections[0]);
+            f.render_widget(block_a, chart_sections[0]);
+            render_db_chart_multi(f, inner_a, &history_snapshot, max_a, &lines_a);
+
+            // Chart B: Traffic
+            let max_traffic = history_snapshot.iter()
+                .map(|m| m.bytes_sent_per_sec.max(m.bytes_received_per_sec))
+                .fold(1024.0, f64::max);
+            let title_b = format!(
+                " Traffic [last 60s] · Last: Sent: {} / Recv: {} ",
+                format_traffic_rate(monitor_data.metrics.bytes_sent_per_sec),
+                format_traffic_rate(monitor_data.metrics.bytes_received_per_sec)
+            );
+            let lines_b = vec![
+                ChartLineSpec {
+                    color: Color::Rgb(250, 150, 150), // Pink for sent
+                    style: LineStyle::Solid,
+                    extract: |m| m.bytes_sent_per_sec,
+                },
+                ChartLineSpec {
+                    color: Color::Rgb(180, 20, 20), // Dark Red for received
+                    style: LineStyle::Solid,
+                    extract: |m| m.bytes_received_per_sec,
+                },
+            ];
+            let block_b = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_dim))
+                .title(Span::styled(title_b, Style::default().fg(theme.accent)));
+            let inner_b = block_b.inner(chart_sections[1]);
+            f.render_widget(block_b, chart_sections[1]);
+            render_db_chart_multi(f, inner_b, &history_snapshot, max_traffic, &lines_b);
+
+            // Chart C: Sessions & Memory/Cache
+            let (title_c, lines_c, max_c) = match monitor_data.db_type {
+                crate::models::DatabaseType::MySqlMariaDb => {
+                    let max_threads = history_snapshot.iter()
+                        .map(|m| m.threads_connected.max(m.threads_running) as f64)
+                        .fold(10.0, f64::max);
+                    let max_val = max_threads.max(100.0);
+                    let title = format!(
+                        " Sessions & Memory [last 60s] · Last: Connected:{}, Running:{} ",
+                        monitor_data.metrics.threads_connected,
+                        monitor_data.metrics.threads_running
+                    );
+                    let lines = vec![
+                        ChartLineSpec {
+                            color: Color::Rgb(50, 250, 250), // Cyan for connected
+                            style: LineStyle::Solid,
+                            extract: |m| m.threads_connected as f64,
+                        },
+                        ChartLineSpec {
+                            color: Color::Rgb(50, 250, 50), // Green for running
+                            style: LineStyle::Solid,
+                            extract: |m| m.threads_running as f64,
+                        },
+                        ChartLineSpec {
+                            color: Color::Rgb(250, 250, 50), // Yellow for buffer pool util
+                            style: LineStyle::DotDash,
+                            extract: |m| m.buffer_pool_util_pct,
+                        },
+                    ];
+                    (title, lines, max_val)
+                }
+                crate::models::DatabaseType::PostgreSQL => {
+                    let max_conns = history_snapshot.iter()
                         .map(|m| (m.connections_active + m.connections_idle) as f64)
                         .fold(10.0, f64::max);
-
-                    let left_block = Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme.accent_dim))
-                        .title(Span::styled(
-                            format!(" Connections · Last: {}A/{}I ", active_last, idle_last),
-                            Style::default().fg(theme.accent)
-                        ));
-                    let left_inner = left_block.inner(chart_cols[0]);
-                    f.render_widget(left_block, chart_cols[0]);
-
-                    render_db_chart(
-                        f,
-                        left_inner,
-                        &state.db_history,
-                        max_conn,
-                        theme.warn,
-                        |m| m.connections_active as f64,
-                        Some((theme.accent, |m| m.connections_idle as f64)),
+                    let max_val = max_conns.max(100.0);
+                    let title = format!(
+                        " Sessions & Cache [last 60s] · Last: Active:{}, Idle:{} ",
+                        monitor_data.metrics.connections_active,
+                        monitor_data.metrics.connections_idle
                     );
-
-                    // Right Chart: Cache Hit Ratio
-                    let hit_last = monitor_data.metrics.cache_hit_ratio;
-                    let right_block = Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme.accent_dim))
-                        .title(Span::styled(
-                            format!(" Cache Hit Ratio · Last: {:.2}% ", hit_last),
-                            Style::default().fg(theme.accent)
-                        ));
-                    let right_inner = right_block.inner(chart_cols[1]);
-                    f.render_widget(right_block, chart_cols[1]);
-
-                    render_db_chart(
-                        f,
-                        right_inner,
-                        &state.db_history,
-                        100.0,
-                        theme.ok,
-                        |m| m.cache_hit_ratio,
-                        None,
-                    );
+                    let lines = vec![
+                        ChartLineSpec {
+                            color: Color::Rgb(50, 250, 250), // Cyan for active
+                            style: LineStyle::Solid,
+                            extract: |m| m.connections_active as f64,
+                        },
+                        ChartLineSpec {
+                            color: Color::Rgb(50, 250, 50), // Green for idle
+                            style: LineStyle::Solid,
+                            extract: |m| m.connections_idle as f64,
+                        },
+                        ChartLineSpec {
+                            color: Color::Rgb(250, 250, 50), // Yellow for cache hit ratio
+                            style: LineStyle::DotDash,
+                            extract: |m| m.cache_hit_ratio,
+                        },
+                    ];
+                    (title, lines, max_val)
                 }
-                crate::models::DatabaseType::MySqlMariaDb => {
-                    // Left Chart: Threads (Running / Connected)
-                    let running_last = monitor_data.metrics.threads_running;
-                    let conn_last = monitor_data.metrics.threads_connected;
-                    let max_threads = state.db_history.iter()
-                        .map(|m| m.threads_connected as f64)
-                        .fold(10.0, f64::max);
-
-                    let left_block = Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme.accent_dim))
-                        .title(Span::styled(
-                            format!(" Threads · Last: {}R/{}C ", running_last, conn_last),
-                            Style::default().fg(theme.accent)
-                        ));
-                    let left_inner = left_block.inner(chart_cols[0]);
-                    f.render_widget(left_block, chart_cols[0]);
-
-                    render_db_chart(
-                        f,
-                        left_inner,
-                        &state.db_history,
-                        max_threads,
-                        theme.warn,
-                        |m| m.threads_running as f64,
-                        Some((theme.accent, |m| m.threads_connected as f64)),
-                    );
-
-                    // Right Chart: Buffer Pool (Hit Rate & Util)
-                    let pool_hit_last = monitor_data.metrics.buffer_pool_hit_rate;
-                    let pool_util_last = monitor_data.metrics.buffer_pool_util_pct;
-                    let right_block = Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme.accent_dim))
-                        .title(Span::styled(
-                            format!(" Buffer Pool · Last: {:.1}%H/{:.1}%U ", pool_hit_last, pool_util_last),
-                            Style::default().fg(theme.accent)
-                        ));
-                    let right_inner = right_block.inner(chart_cols[1]);
-                    f.render_widget(right_block, chart_cols[1]);
-
-                    render_db_chart(
-                        f,
-                        right_inner,
-                        &state.db_history,
-                        100.0,
-                        theme.ok,
-                        |m| m.buffer_pool_hit_rate,
-                        Some((theme.accent, |m| m.buffer_pool_util_pct)),
-                    );
-                }
-            }
+            };
+            let block_c = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_dim))
+                .title(Span::styled(title_c, Style::default().fg(theme.accent)));
+            let inner_c = block_c.inner(chart_sections[2]);
+            f.render_widget(block_c, chart_sections[2]);
+            render_db_chart_multi(f, inner_c, &history_snapshot, max_c, &lines_c);
         }
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn render_db_chart(
+enum LineStyle {
+    Solid,
+    Dashed,
+    DotDash,
+}
+
+struct ChartLineSpec {
+    color: Color,
+    style: LineStyle,
+    extract: fn(&crate::collectors::database::DbMetrics) -> f64,
+}
+
+fn format_traffic_rate(bytes_per_sec: f64) -> String {
+    if bytes_per_sec >= 1_048_576.0 {
+        format!("{:.2} MB/s", bytes_per_sec / 1_048_576.0)
+    } else if bytes_per_sec >= 1024.0 {
+        format!("{:.1} KB/s", bytes_per_sec / 1024.0)
+    } else {
+        format!("{:.0} B/s", bytes_per_sec)
+    }
+}
+
+fn render_db_chart_multi(
     f: &mut Frame,
     area: Rect,
     history: &std::collections::VecDeque<crate::collectors::database::DbMetrics>,
     max_val: f64,
-    color1: Color,
-    extract1: fn(&crate::collectors::database::DbMetrics) -> f64,
-    line2: Option<(Color, fn(&crate::collectors::database::DbMetrics) -> f64)>,
+    lines: &[ChartLineSpec],
 ) {
     use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
     use ratatui::symbols::Marker;
@@ -729,30 +819,48 @@ fn render_db_chart(
         .marker(Marker::Braille)
         .paint(|ctx| {
             if s_len > 1 {
-                for i in 0..(s_len - 1) {
-                    let x1 = max_samples - (s_len - 1 - i) as f64;
-                    let x2 = max_samples - (s_len - 1 - (i + 1)) as f64;
-                    if x2 < 0.0 {
-                        continue;
-                    }
-                    let x1_clamped = x1.max(0.0);
+                for line_spec in lines {
+                    for i in 0..(s_len - 1) {
+                        let x1 = max_samples - (s_len - 1 - i) as f64;
+                        let x2 = max_samples - (s_len - 1 - (i + 1)) as f64;
+                        if x2 < 0.0 {
+                            continue;
+                        }
+                        let x1_clamped = x1.max(0.0);
 
-                    ctx.draw(&CanvasLine {
-                        x1: x1_clamped,
-                        y1: extract1(&history[i]),
-                        x2,
-                        y2: extract1(&history[i + 1]),
-                        color: color1,
-                    });
-
-                    if let Some((c2, e2)) = line2 {
-                        ctx.draw(&CanvasLine {
-                            x1: x1_clamped,
-                            y1: e2(&history[i]),
-                            x2,
-                            y2: e2(&history[i + 1]),
-                            color: c2,
-                        });
+                        match line_spec.style {
+                            LineStyle::Solid => {
+                                ctx.draw(&CanvasLine {
+                                    x1: x1_clamped,
+                                    y1: (line_spec.extract)(&history[i]),
+                                    x2,
+                                    y2: (line_spec.extract)(&history[i + 1]),
+                                    color: line_spec.color,
+                                });
+                            }
+                            LineStyle::Dashed => {
+                                if i % 2 == 0 {
+                                    ctx.draw(&CanvasLine {
+                                        x1: x1_clamped,
+                                        y1: (line_spec.extract)(&history[i]),
+                                        x2,
+                                        y2: (line_spec.extract)(&history[i + 1]),
+                                        color: line_spec.color,
+                                    });
+                                }
+                            }
+                            LineStyle::DotDash => {
+                                if i % 3 != 1 {
+                                    ctx.draw(&CanvasLine {
+                                        x1: x1_clamped,
+                                        y1: (line_spec.extract)(&history[i]),
+                                        x2,
+                                        y2: (line_spec.extract)(&history[i + 1]),
+                                        color: line_spec.color,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
