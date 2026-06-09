@@ -484,7 +484,7 @@ impl AppState {
             // If the detailed process or container no longer exists, exit the detail view
             if self.current_view == View::ProcessDetail {
                 if let Some(pid) = self.detail_process_pid {
-                    if !self.processes.iter().any(|p| p.pid == pid) {
+                    if !self.processes.is_empty() && !self.processes.iter().any(|p| p.pid == pid) {
                         self.current_view = View::Main;
                         self.detail_process_pid = None;
                         self.process_history.clear();
@@ -493,7 +493,7 @@ impl AppState {
             }
             if self.current_view == View::ContainerDetail {
                 if let Some(ref cid) = self.detail_container_id {
-                    if !self.containers.iter().any(|c| &c.id == cid) {
+                    if !self.containers.is_empty() && !self.containers.iter().any(|c| &c.id == cid) {
                         self.current_view = View::Main;
                         self.detail_container_id = None;
                         self.container_history.clear();
