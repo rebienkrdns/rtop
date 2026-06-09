@@ -1,7 +1,7 @@
 use bytesize::ByteSize;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Clear, Paragraph},
     Frame,
@@ -227,43 +227,6 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
     );
 }
 
-#[allow(dead_code)]
-pub fn render_load(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange) {
-    if area.height < 2 {
-        return;
-    }
-    let theme = Theme::default_theme();
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
-        .split(area);
-
-    let load_last = samples.last().map(|s| s.load1).unwrap_or(0.0);
-
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("Load", Style::default().fg(theme.accent)),
-            Span::styled(
-                format!("  {:.2}  [{}]", load_last, range.label()),
-                Style::default().fg(theme.muted).add_modifier(Modifier::DIM),
-            ),
-        ])),
-        chunks[0],
-    );
-
-    let load_max = max_bps(samples, |s| s.load1).max(1.0);
-    render_history_canvas_dual(
-        f,
-        chunks[1],
-        samples,
-        range,
-        load_max,
-        theme.accent_dim,
-        |s: &MetricSample| s.load1,
-        None,
-    );
-}
 
 #[cfg(test)]
 mod tests {
@@ -275,7 +238,6 @@ mod tests {
         MetricSample {
             cpu_pct: cpu,
             mem_pct: 50.0,
-            load1: 1.0,
             net_recv_bps: 0.0,
             net_sent_bps: 0.0,
             disk_read_bps: 0.0,

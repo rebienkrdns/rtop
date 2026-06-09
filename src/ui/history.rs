@@ -6,8 +6,6 @@ const MAX_SAMPLES: usize = 3600; // 1 hora a 1 muestra/seg
 pub struct MetricSample {
     pub cpu_pct: f64,
     pub mem_pct: f64,
-    #[allow(dead_code)]
-    pub load1: f64,
     pub net_recv_bps: f64,
     pub net_sent_bps: f64,
     pub disk_read_bps: f64,

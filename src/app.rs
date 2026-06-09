@@ -221,7 +221,6 @@ impl AppState {
             self.metrics_history.push(MetricSample {
                 cpu_pct: self.cpu.global_usage_pct,
                 mem_pct,
-                load1: self.cpu.load_avg[0],
                 net_recv_bps: net_recv,
                 net_sent_bps: net_sent,
                 disk_read_bps: disk_read,
