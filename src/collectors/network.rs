@@ -91,3 +91,21 @@ impl NetworkCollector {
 fn is_docker(name: &str) -> bool {
     name.starts_with("docker") || name.starts_with("br-") || name.starts_with("veth")
 }
+
+/// Reads the link speed (in Mbps) from `/sys/class/net/<iface>/speed` and converts to bytes/s.
+/// Falls back to 1 Gbps (125_000_000 B/s) when the file is absent or contains an invalid value.
+pub fn read_interface_max_bps(_name: &str) -> f64 {
+    #[cfg(target_os = "linux")]
+    {
+        let path = format!("/sys/class/net/{}/speed", _name);
+        if let Ok(contents) = std::fs::read_to_string(&path) {
+            if let Ok(mbps) = contents.trim().parse::<u64>() {
+                if mbps > 0 {
+                    return mbps as f64 * 125_000.0; // Mbps → bytes/s
+                }
+            }
+        }
+    }
+    // Fallback: 1 Gbps
+    125_000_000.0
+}

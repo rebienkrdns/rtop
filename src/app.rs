@@ -99,6 +99,10 @@ pub struct AppState {
     pub show_help: bool,
     pub psi: Option<PsiData>,
 
+    // Historial de uso de red (% respecto a capacidad máxima del enlace)
+    pub network_usage_pct_history: std::collections::VecDeque<f64>,
+    pub network_max_bw_by_nic: HashMap<String, f64>,
+
     // Historial de PSI avg10 — some y full para mem e I/O
     pub psi_history_cpu: std::collections::VecDeque<f64>,
     pub psi_history_mem: std::collections::VecDeque<f64>,
@@ -167,6 +171,8 @@ impl AppState {
             refresh_tick: false,
             show_help: false,
             psi: None,
+            network_usage_pct_history: std::collections::VecDeque::new(),
+            network_max_bw_by_nic: HashMap::new(),
             psi_history_cpu: std::collections::VecDeque::new(),
             psi_history_mem: std::collections::VecDeque::new(),
             psi_history_mem_full: std::collections::VecDeque::new(),
@@ -263,6 +269,60 @@ impl AppState {
             self.disks = snapshot.disks;
             self.network_by_nic = snapshot.network_by_nic;
             self.available_nics = snapshot.available_nics;
+
+            // Populate bandwidth cache for new NICs (I/O outside render loop)
+            for nic in &self.available_nics {
+                self.network_max_bw_by_nic
+                    .entry(nic.name.clone())
+                    .or_insert_with(|| {
+                        crate::collectors::network::read_interface_max_bps(&nic.name)
+                    });
+            }
+
+            // Compute network usage % for the selected NIC (or aggregate) and push to history
+            {
+                const NET_HIST_MAX: usize = 300;
+                let (total_bps, max_bps) = if let Some(ref name) = self.selected_nic {
+                    let bps = self
+                        .network_by_nic
+                        .get(name)
+                        .map(|d| d.recv_bytes_per_sec + d.sent_bytes_per_sec)
+                        .unwrap_or(0.0);
+                    let cap = self
+                        .network_max_bw_by_nic
+                        .get(name)
+                        .copied()
+                        .unwrap_or(125_000_000.0);
+                    (bps, cap)
+                } else {
+                    // Aggregate across non-loopback NICs
+                    let loopback_names: std::collections::HashSet<&str> = self
+                        .available_nics
+                        .iter()
+                        .filter(|n| n.is_loopback)
+                        .map(|n| n.name.as_str())
+                        .collect();
+                    let bps = self
+                        .network_by_nic
+                        .iter()
+                        .filter(|(name, _)| !loopback_names.contains(name.as_str()))
+                        .map(|(_, d)| d.recv_bytes_per_sec + d.sent_bytes_per_sec)
+                        .sum::<f64>();
+                    let cap = self
+                        .network_max_bw_by_nic
+                        .iter()
+                        .filter(|(name, _)| !loopback_names.contains(name.as_str()))
+                        .map(|(_, &v)| v)
+                        .fold(0.0_f64, f64::max)
+                        .max(125_000_000.0);
+                    (bps, cap)
+                };
+                let pct = (total_bps / max_bps * 100.0).clamp(0.0, 100.0);
+                if self.network_usage_pct_history.len() >= NET_HIST_MAX {
+                    self.network_usage_pct_history.pop_front();
+                }
+                self.network_usage_pct_history.push_back(pct);
+            }
             self.proc_permission_denied = snapshot.proc_permission_denied;
             self.processes = snapshot.processes;
             self.containers = snapshot.containers;

@@ -1,9 +1,13 @@
 use bytesize::ByteSize;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
+    symbols::Marker,
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{
+        canvas::{Canvas, Line as CanvasLine},
+        Block, Paragraph,
+    },
     Frame,
 };
 
@@ -13,7 +17,6 @@ use crate::ui::theme::Theme;
 pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
     let theme = Theme::default_theme();
 
-    // Determine what data to show: aggregate of all NICs or a single NIC
     let display_data: Option<crate::models::NetworkData> = if state.selected_nic.is_none() {
         state.current_network_total()
     } else {
@@ -39,7 +42,6 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 data.interface.as_str()
             };
 
-            // Find IP if a specific interface is selected
             let ip = if !is_total {
                 state
                     .available_nics
@@ -50,16 +52,26 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 None
             };
 
-            // Layout horizontal: left (content) and right (hint)
+            // Layout: left text | right canvas (if wide enough) | hint
+            let has_canvas = area.width >= 60 && area.height >= 3;
+            let canvas_width = if has_canvas {
+                (area.width / 3).clamp(20, 50)
+            } else {
+                0
+            };
+
             let horizontal = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(0), Constraint::Length(16)])
+                .constraints([
+                    Constraint::Min(0),
+                    Constraint::Length(canvas_width),
+                    Constraint::Length(16),
+                ])
                 .split(area);
 
-            // Left content layout
+            // Left: text data
             let mut left_lines = Vec::new();
 
-            // Line 1: Interfaz: <label> [ IP: <ip> ]
             let mut interface_spans = vec![
                 Span::styled("Interfaz: ", Style::default().fg(theme.muted)),
                 Span::styled(
@@ -78,7 +90,6 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             }
             left_lines.push(Line::from(interface_spans));
 
-            // Line 2: separator line if height >= 5
             if area.height >= 5 {
                 left_lines.push(Line::from(vec![Span::styled(
                     "─".repeat(horizontal[0].width as usize),
@@ -86,7 +97,6 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 )]));
             }
 
-            // Line 3: ↓ Entrada: <rate> (Total Recibido: <total>)
             let recv_total_str = format!("{}", ByteSize(data.total_recv_bytes));
             left_lines.push(Line::from(vec![
                 Span::styled(
@@ -105,7 +115,6 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 ),
             ]));
 
-            // Line 4: ↑ Salida: <rate> (Total Enviado: <total>)
             let sent_total_str = format!("{}", ByteSize(data.total_sent_bytes));
             left_lines.push(Line::from(vec![
                 Span::styled(
@@ -130,13 +139,73 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
 
             f.render_widget(Paragraph::new(left_lines), horizontal[0]);
 
-            // Right content (hint)
+            // Center: Braille usage % canvas
+            if has_canvas && canvas_width > 0 {
+                let current_pct = state
+                    .network_usage_pct_history
+                    .back()
+                    .copied()
+                    .unwrap_or(0.0);
+                let graph_color = if current_pct >= 80.0 {
+                    Color::Red
+                } else if current_pct >= 50.0 {
+                    Color::Yellow
+                } else {
+                    theme.ok
+                };
+
+                let history: Vec<f64> = state.network_usage_pct_history.iter().copied().collect();
+                let n_samples = history.len();
+                let max_x = canvas_width as f64 * 2.0; // Braille gives 2 dots per char column
+
+                let canvas = Canvas::default()
+                    .block(Block::default())
+                    .x_bounds([0.0, max_x])
+                    .y_bounds([0.0, 100.0])
+                    .marker(Marker::Braille)
+                    .paint(move |ctx| {
+                        if n_samples > 1 {
+                            for i in 0..(n_samples - 1) {
+                                // Align newest sample to right edge
+                                let x2 = max_x - (n_samples - 1 - (i + 1)) as f64;
+                                let x1 = max_x - (n_samples - 1 - i) as f64;
+                                if x2 < 0.0 {
+                                    continue;
+                                }
+                                ctx.draw(&CanvasLine {
+                                    x1: x1.max(0.0),
+                                    y1: history[i],
+                                    x2,
+                                    y2: history[i + 1],
+                                    color: graph_color,
+                                });
+                            }
+                        }
+                    });
+
+                // Render canvas in a sub-area, leaving row 0 for the % label
+                let canvas_split = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(1), Constraint::Min(1)])
+                    .split(horizontal[1]);
+
+                f.render_widget(
+                    Paragraph::new(Line::from(vec![Span::styled(
+                        format!("Uso: {:.1}%", current_pct),
+                        Style::default().fg(graph_color).add_modifier(Modifier::DIM),
+                    )])),
+                    canvas_split[0],
+                );
+                f.render_widget(canvas, canvas_split[1]);
+            }
+
+            // Right: hint
             let hint = Paragraph::new(Line::from(vec![Span::styled(
                 "[ F3 cambiar ]",
                 Style::default().fg(theme.muted),
             )]))
             .alignment(Alignment::Right);
-            f.render_widget(hint, horizontal[1]);
+            f.render_widget(hint, horizontal[2]);
         }
     }
 }
