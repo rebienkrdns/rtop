@@ -118,42 +118,42 @@ impl Theme {
                 selected_fg: Color::Rgb(46, 52, 64),
             },
             ThemeMode::Matrix => Self {
-                ok: Color::Rgb(0, 255, 0),             // bright green
-                warn: Color::Rgb(128, 255, 0),         // yellow-green
-                crit: Color::Rgb(255, 0, 0),           // red
-                accent: Color::Rgb(0, 255, 0),
-                accent_dim: Color::Rgb(0, 180, 0),
-                disk_fill: Color::Rgb(0, 200, 0),
-                text: Color::Rgb(0, 255, 0),
-                muted: Color::Rgb(0, 100, 0),
-                bg: Color::Rgb(0, 0, 0),
-                selected_bg: Color::Rgb(0, 255, 0),
-                selected_fg: Color::Rgb(0, 0, 0),
+                ok: Color::Rgb(34, 179, 34),            // soft forest green
+                warn: Color::Rgb(138, 179, 34),          // soft yellow-green
+                crit: Color::Rgb(194, 48, 48),           // soft red
+                accent: Color::Rgb(57, 194, 57),         // classic matrix green
+                accent_dim: Color::Rgb(23, 115, 23),     // dark green
+                disk_fill: Color::Rgb(46, 163, 46),      // muted green fill
+                text: Color::Rgb(77, 219, 77),           // readable terminal green
+                muted: Color::Rgb(23, 115, 23),          // dark muted green
+                bg: Color::Rgb(10, 15, 10),              // very deep forest black
+                selected_bg: Color::Rgb(34, 139, 34),
+                selected_fg: Color::Rgb(255, 255, 255),
             },
             ThemeMode::Sunset => Self {
-                ok: Color::Rgb(244, 162, 97),          // sandy orange
-                warn: Color::Rgb(231, 111, 81),         // burnt orange
-                crit: Color::Rgb(230, 57, 70),          // red
-                accent: Color::Rgb(233, 196, 106),     // yellow
-                accent_dim: Color::Rgb(244, 162, 97),
-                disk_fill: Color::Rgb(224, 122, 95),
-                text: Color::Rgb(244, 241, 222),       // warm white
-                muted: Color::Rgb(129, 178, 154),      // sage green/gray
+                ok: Color::Rgb(233, 150, 122),         // soft dark salmon
+                warn: Color::Rgb(220, 118, 51),        // warm muted orange
+                crit: Color::Rgb(203, 67, 53),          // soft brick red
+                accent: Color::Rgb(244, 208, 111),     // pastel yellow
+                accent_dim: Color::Rgb(220, 118, 51),
+                disk_fill: Color::Rgb(211, 84, 0),
+                text: Color::Rgb(250, 243, 224),       // cream warm white
+                muted: Color::Rgb(147, 172, 149),      // soft sage
                 bg: Color::Reset,
-                selected_bg: Color::Rgb(233, 196, 106),
-                selected_fg: Color::Rgb(61, 64, 91),
+                selected_bg: Color::Rgb(244, 208, 111),
+                selected_fg: Color::Rgb(46, 64, 87),
             },
             ThemeMode::Dracula => Self {
-                ok: Color::Rgb(80, 250, 123),          // dracula green
-                warn: Color::Rgb(241, 250, 140),       // dracula yellow
-                crit: Color::Rgb(255, 85, 85),         // dracula red
+                ok: Color::Rgb(106, 224, 137),         // soft pastel green
+                warn: Color::Rgb(240, 245, 170),       // soft pastel yellow
+                crit: Color::Rgb(245, 120, 120),       // soft pastel red
                 accent: Color::Rgb(189, 147, 249),     // dracula purple
-                accent_dim: Color::Rgb(98, 114, 164),  // dracula comment/blue-gray
-                disk_fill: Color::Rgb(255, 121, 198),  // dracula pink
-                text: Color::Rgb(248, 248, 242),       // dracula foreground white
-                muted: Color::Rgb(98, 114, 164),       // dracula comment/blue-gray
+                accent_dim: Color::Rgb(98, 114, 164),  // dracula blue-gray
+                disk_fill: Color::Rgb(245, 150, 200),  // soft pink
+                text: Color::Rgb(248, 248, 242),       // warm white
+                muted: Color::Rgb(139, 155, 204),      // lighter blue-gray
                 bg: Color::Reset,
-                selected_bg: Color::Rgb(68, 71, 90),   // dracula current line bg
+                selected_bg: Color::Rgb(68, 71, 90),
                 selected_fg: Color::Rgb(248, 248, 242),
             },
             ThemeMode::Gruvbox => Self {
