@@ -14,6 +14,7 @@ use ratatui::symbols::Marker;
 use crate::ui::history::{HistoryRange, MetricSample};
 use crate::ui::theme::Theme;
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn render_history_canvas_dual<T>(
     f: &mut Frame,
     area: Rect,

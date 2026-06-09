@@ -90,125 +90,46 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         header_area,
     );
 
-    // — Métricas responsivas: 3 columnas si es ancho, 2 columnas si es compacto —
-    let is_wide = area.width >= 120;
+    // — Métricas: 2 columnas (CPU·RAM·Disco·Red | Presión PSI) —
+    let metrics_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(metrics_area);
 
-    if is_wide {
-        let metrics_cols = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(30),
-                Constraint::Percentage(35),
-                Constraint::Percentage(35),
-            ])
-            .split(metrics_area);
+    // Columna 1: CPU · RAM · Disco · Red
+    let col1_block = Block::default()
+        .title(Span::styled(
+            " CPU · RAM · Disco · Red ",
+            Style::default().fg(theme.accent),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent_dim));
+    let col1_inner = col1_block.inner(metrics_cols[0]);
+    f.render_widget(col1_block, metrics_cols[0]);
 
-        // Columna 1: CPU · RAM · Disco
-        let col1_block = Block::default()
-            .title(Span::styled(
-                " CPU · RAM · Disco ",
-                Style::default().fg(theme.accent),
-            ))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.accent_dim));
-        let col1_inner = col1_block.inner(metrics_cols[0]);
-        f.render_widget(col1_block, metrics_cols[0]);
-
-        if state.history_mode {
-            let samples = state.metrics_history.tail_n(state.history_range.samples());
-            history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range);
-        } else {
-            draw_metrics(f, col1_inner, state);
-        }
-
-        // Columna 2: Red (exclusiva)
-        let col2_block = Block::default()
-            .title(Span::styled(
-                " Red ",
-                Style::default().fg(theme.accent),
-            ))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.accent_dim));
-        let col2_inner = col2_block.inner(metrics_cols[1]);
-        f.render_widget(col2_block, metrics_cols[1]);
-
-        if state.history_mode {
-            let samples = state.metrics_history.tail_n(state.history_range.samples());
-            history_chart::render_disk_net(f, col2_inner, &samples, state.history_range);
-        } else {
-            network_widget::render(f, col2_inner, state);
-        }
-
-        // Columna 3: Presión (PSI)
-        let col3_block = Block::default()
-            .title(Span::styled(
-                " Presión (PSI) ",
-                Style::default().fg(theme.accent),
-            ))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.accent_dim));
-        let col3_inner = col3_block.inner(metrics_cols[2]);
-        f.render_widget(col3_block, metrics_cols[2]);
-        psi_widget::render(f, col3_inner, state);
+    if state.history_mode {
+        let samples = state.metrics_history.tail_n(state.history_range.samples());
+        history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range);
     } else {
-        let metrics_cols = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-            .split(metrics_area);
+        draw_metrics(f, col1_inner, state);
+    }
 
-        // Columna 1: CPU, RAM y Disco
-        let col1_block = Block::default()
-            .title(Span::styled(
-                " CPU · RAM · Disco ",
-                Style::default().fg(theme.accent),
-            ))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.accent_dim));
-        let col1_inner = col1_block.inner(metrics_cols[0]);
-        f.render_widget(col1_block, metrics_cols[0]);
-        if state.history_mode {
-            let samples = state.metrics_history.tail_n(state.history_range.samples());
-            history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range);
-        } else {
-            draw_metrics(f, col1_inner, state);
-        }
+    // Columna 2: Presión (PSI)
+    let col2_block = Block::default()
+        .title(Span::styled(
+            " Presión (PSI) ",
+            Style::default().fg(theme.accent),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent_dim));
+    let col2_inner = col2_block.inner(metrics_cols[1]);
+    f.render_widget(col2_block, metrics_cols[1]);
 
-        // Columna 2: Red y Presión (PSI)
-        let col2_block = Block::default()
-            .title(Span::styled(
-                " Red · Presión (PSI) ",
-                Style::default().fg(theme.accent),
-            ))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.accent_dim));
-        let col2_inner = col2_block.inner(metrics_cols[1]);
-        f.render_widget(col2_block, metrics_cols[1]);
-
-        if state.history_mode {
-            let samples = state.metrics_history.tail_n(state.history_range.samples());
-            let col2_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(0),
-                    Constraint::Length(1),
-                    Constraint::Min(0),
-                ])
-                .split(col2_inner);
-            history_chart::render_disk_net(f, col2_layout[0], &samples, state.history_range);
-            psi_widget::render(f, col2_layout[2], state);
-        } else {
-            let col2_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(4), // Red
-                    Constraint::Length(1), // spacer
-                    Constraint::Min(0),    // PSI
-                ])
-                .split(col2_inner);
-
-            network_widget::render(f, col2_layout[0], state);
-            psi_widget::render(f, col2_layout[2], state);
-        }
+    if state.history_mode {
+        let samples = state.metrics_history.tail_n(state.history_range.samples());
+        history_chart::render_disk_net(f, col2_inner, &samples, state.history_range);
+    } else {
+        psi_widget::render(f, col2_inner, state);
     }
 
     // — Barra de pestañas —
@@ -483,16 +404,14 @@ fn draw_metrics(f: &mut Frame, area: Rect, state: &AppState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2), // CPU
-            Constraint::Length(1), // separador
             Constraint::Length(2), // RAM
-            Constraint::Length(1), // separador
-            Constraint::Length(4), // Disco (título + barra + I/O + margen)
-            Constraint::Min(0),
+            Constraint::Length(3), // Disco (título + barra + I/O)
+            Constraint::Min(0),    // Red (ocupa el resto)
         ])
         .split(area);
 
     cpu_bar::render_with_loading(f, chunks[0], &state.cpu, state.data_loaded);
-    memory_bar::render_with_loading(f, chunks[2], &state.memory, state.data_loaded);
+    memory_bar::render_with_loading(f, chunks[1], &state.memory, state.data_loaded);
 
     let selected_disk = state.selected_disk.as_deref().unwrap_or("");
     let disk_to_render = state
@@ -505,6 +424,8 @@ fn draw_metrics(f: &mut Frame, area: Rect, state: &AppState) {
         .or_else(|| state.disks.first());
 
     if let Some(disk) = disk_to_render {
-        disk_bar::render(f, chunks[4], disk);
+        disk_bar::render(f, chunks[2], disk);
     }
+
+    network_widget::render(f, chunks[3], state);
 }
