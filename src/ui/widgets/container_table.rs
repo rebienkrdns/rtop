@@ -267,10 +267,10 @@ pub fn render_with_cursor(
                     Style::default().bg(group_header_bg).fg(group_header_fg).add_modifier(Modifier::BOLD)
                 };
 
-                // Group header spans all columns via a single wide cell + empty cells
+                // Put header text in the Name column (Min constraint) so it isn't truncated
                 let cells: Vec<Cell> = vec![
-                    Cell::from(Line::from(vec![Span::styled(header_text, style)])),
                     Cell::from(""),
+                    Cell::from(Line::from(vec![Span::styled(header_text, style)])),
                     Cell::from(""),
                     Cell::from(""),
                     Cell::from(""),
