@@ -103,10 +103,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             ])
             .split(metrics_area);
 
-        // Columna 1: CPU y RAM
+        // Columna 1: CPU · RAM · Disco
         let col1_block = Block::default()
             .title(Span::styled(
-                " CPU · RAM ",
+                " CPU · RAM · Disco ",
                 Style::default().fg(theme.accent),
             ))
             .borders(Borders::ALL)
@@ -118,23 +118,13 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             let samples = state.metrics_history.tail_n(state.history_range.samples());
             history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range);
         } else {
-            let col1_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(2), // CPU
-                    Constraint::Length(1), // spacer
-                    Constraint::Length(2), // RAM
-                    Constraint::Min(0),
-                ])
-                .split(col1_inner);
-            cpu_bar::render_with_loading(f, col1_layout[0], &state.cpu, state.data_loaded);
-            memory_bar::render_with_loading(f, col1_layout[2], &state.memory, state.data_loaded);
+            draw_metrics(f, col1_inner, state);
         }
 
-        // Columna 2: Disco y Red (I/O)
+        // Columna 2: Red (exclusiva)
         let col2_block = Block::default()
             .title(Span::styled(
-                " Disco · Red (I/O) ",
+                " Red ",
                 Style::default().fg(theme.accent),
             ))
             .borders(Borders::ALL)
@@ -146,29 +136,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             let samples = state.metrics_history.tail_n(state.history_range.samples());
             history_chart::render_disk_net(f, col2_inner, &samples, state.history_range);
         } else {
-            let col2_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(4), // Disco (título + barra + I/O + margen/spacer)
-                    Constraint::Length(1), // spacer
-                    Constraint::Min(0),    // Red
-                ])
-                .split(col2_inner);
-
-            let selected_disk = state.selected_disk.as_deref().unwrap_or("");
-            let disk_to_render = state
-                .disks
-                .iter()
-                .find(|d| {
-                    let short = crate::collectors::disk::device_short_name(&d.device);
-                    short == selected_disk
-                })
-                .or_else(|| state.disks.first());
-
-            if let Some(disk) = disk_to_render {
-                disk_bar::render(f, col2_layout[0], disk);
-            }
-            network_widget::render(f, col2_layout[2], state);
+            network_widget::render(f, col2_inner, state);
         }
 
         // Columna 3: Presión (PSI)
