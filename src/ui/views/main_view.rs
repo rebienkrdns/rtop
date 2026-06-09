@@ -80,6 +80,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Span::styled("  ", Style::default()),
         Span::styled(now.as_str(), Style::default().fg(theme.muted)),
         Span::styled("   [F1 Ayuda]", Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("   [F4 {}: {}]", state.t("Theme"), state.cfg.theme.name()),
+            Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+        ),
     ]);
     f.render_widget(
         Paragraph::new(header_text).block(

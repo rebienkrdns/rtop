@@ -11,6 +11,9 @@ pub enum ThemeMode {
     Nord,
     Matrix,
     Sunset,
+    Dracula,
+    Gruvbox,
+    TokyoNight,
 }
 
 impl ThemeMode {
@@ -20,7 +23,10 @@ impl ThemeMode {
             Self::Light => Self::Nord,
             Self::Nord => Self::Matrix,
             Self::Matrix => Self::Sunset,
-            Self::Sunset => Self::Dark,
+            Self::Sunset => Self::Dracula,
+            Self::Dracula => Self::Gruvbox,
+            Self::Gruvbox => Self::TokyoNight,
+            Self::TokyoNight => Self::Dark,
         }
     }
 
@@ -31,6 +37,9 @@ impl ThemeMode {
             Self::Nord => "Nord",
             Self::Matrix => "Matrix",
             Self::Sunset => "Sunset",
+            Self::Dracula => "Dracula",
+            Self::Gruvbox => "Gruvbox",
+            Self::TokyoNight => "Tokyo Night",
         }
     }
 }
@@ -60,6 +69,9 @@ impl Theme {
             ThemeMode::Nord => 2,
             ThemeMode::Matrix => 3,
             ThemeMode::Sunset => 4,
+            ThemeMode::Dracula => 5,
+            ThemeMode::Gruvbox => 6,
+            ThemeMode::TokyoNight => 7,
         };
         CURRENT_THEME.store(val, Ordering::Relaxed);
     }
@@ -131,6 +143,45 @@ impl Theme {
                 selected_bg: Color::Rgb(233, 196, 106),
                 selected_fg: Color::Rgb(61, 64, 91),
             },
+            ThemeMode::Dracula => Self {
+                ok: Color::Rgb(80, 250, 123),          // dracula green
+                warn: Color::Rgb(241, 250, 140),       // dracula yellow
+                crit: Color::Rgb(255, 85, 85),         // dracula red
+                accent: Color::Rgb(189, 147, 249),     // dracula purple
+                accent_dim: Color::Rgb(98, 114, 164),  // dracula comment/blue-gray
+                disk_fill: Color::Rgb(255, 121, 198),  // dracula pink
+                text: Color::Rgb(248, 248, 242),       // dracula foreground white
+                muted: Color::Rgb(98, 114, 164),       // dracula comment/blue-gray
+                bg: Color::Reset,
+                selected_bg: Color::Rgb(68, 71, 90),   // dracula current line bg
+                selected_fg: Color::Rgb(248, 248, 242),
+            },
+            ThemeMode::Gruvbox => Self {
+                ok: Color::Rgb(184, 187, 38),          // gruvbox green
+                warn: Color::Rgb(250, 189, 47),        // gruvbox yellow
+                crit: Color::Rgb(251, 73, 52),         // gruvbox red
+                accent: Color::Rgb(254, 128, 25),      // gruvbox orange
+                accent_dim: Color::Rgb(214, 93, 14),   // gruvbox dark orange
+                disk_fill: Color::Rgb(177, 98, 134),   // gruvbox purple
+                text: Color::Rgb(235, 219, 178),       // gruvbox cream text
+                muted: Color::Rgb(146, 131, 116),      // gruvbox gray
+                bg: Color::Reset,
+                selected_bg: Color::Rgb(80, 73, 69),   // gruvbox dark gray bg
+                selected_fg: Color::Rgb(235, 219, 178),
+            },
+            ThemeMode::TokyoNight => Self {
+                ok: Color::Rgb(158, 206, 106),         // tokyo night green
+                warn: Color::Rgb(224, 175, 104),       // tokyo night yellow
+                crit: Color::Rgb(247, 118, 142),       // tokyo night red
+                accent: Color::Rgb(122, 162, 247),     // tokyo night blue
+                accent_dim: Color::Rgb(61, 89, 161),   // tokyo night dark blue
+                disk_fill: Color::Rgb(187, 154, 247),  // tokyo night purple
+                text: Color::Rgb(169, 177, 214),       // tokyo night foreground gray
+                muted: Color::Rgb(86, 95, 137),        // tokyo night muted blue-gray
+                bg: Color::Reset,
+                selected_bg: Color::Rgb(51, 70, 124),  // tokyo night dark selection bg
+                selected_fg: Color::Rgb(192, 202, 245),
+            },
         }
     }
 
@@ -142,6 +193,9 @@ impl Theme {
             2 => ThemeMode::Nord,
             3 => ThemeMode::Matrix,
             4 => ThemeMode::Sunset,
+            5 => ThemeMode::Dracula,
+            6 => ThemeMode::Gruvbox,
+            7 => ThemeMode::TokyoNight,
             _ => ThemeMode::Dark,
         };
         Self::get_theme(mode)

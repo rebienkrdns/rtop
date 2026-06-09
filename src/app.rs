@@ -1341,6 +1341,72 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 }
                             }
                         }
+                        crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                            let size = terminal.size().unwrap_or_default();
+                            let height = size.height;
+                            if mouse.row == 1 {
+                                let hostname_len = state.hostname.chars().count();
+                                let idx = state.interval_idx;
+                                let interval_label_str = crate::config::interval_label(idx);
+                                let left_arrow = if idx > 0 { "◀ " } else { "  " };
+                                let right_arrow = if idx < crate::config::INTERVALS.len() - 1 { " ▶" } else { "  " };
+                                let interval_ctrl = format!("[ {}{}{} ]", left_arrow, interval_label_str, right_arrow);
+                                let interval_ctrl_len = interval_ctrl.chars().count();
+                                let help_text_len = if state.lang == crate::localization::Language::Spanish {
+                                    "   [F1 Ayuda]".chars().count()
+                                } else {
+                                    "   [F1 Help]".chars().count()
+                                };
+                                let base_offset = 1 + 6 + 2 + hostname_len + 14 + interval_ctrl_len + 2 + 1 + 2 + 8 + help_text_len;
+                                let theme_btn_label = state.t("Theme");
+                                let theme_name = state.cfg.theme.name();
+                                let btn_text = format!("   [F4 {}: {}]", theme_btn_label, theme_name);
+                                let btn_len = btn_text.chars().count();
+                                let start_col = base_offset;
+                                let end_col = base_offset + btn_len;
+                                if mouse.column >= start_col as u16 && mouse.column < end_col as u16 {
+                                    terminal.clear()?;
+                                    state.cycle_theme();
+                                }
+                            } else if mouse.row == height.saturating_sub(2) {
+                                let mut start_col = 0;
+                                let spans = if state.active_tab == Tab::Processes {
+                                    vec![
+                                        " [q] ", "Salir  ",
+                                        "[/] ", "Filtrar  ",
+                                        "[c] ", "CPU  ",
+                                        "[m] ", "RAM  ",
+                                        "[r] ", "DiskR  ",
+                                        "[w] ", "DiskW  ",
+                                        "[Tab] ", "Contenedores  ",
+                                        "[h] ", "Historial  "
+                                    ]
+                                } else {
+                                    vec![
+                                        " [q] ", "Salir  ",
+                                        "[◀▶] ", "Refresco  ",
+                                        "[F2] ", "Disco  ",
+                                        "[F3] ", "Red  ",
+                                        "[h] ", "Historial  ",
+                                        "[t] ", "Rango  ",
+                                        "[Tab] ", "Cambiar  "
+                                    ]
+                                };
+                                for s in spans {
+                                    start_col += s.chars().count();
+                                }
+                                start_col += 1; // border
+                                let theme_btn_label = state.t("Theme");
+                                let theme_name = state.cfg.theme.name();
+                                let btn_text = format!("[F4] {} ({})  ", theme_btn_label, theme_name);
+                                let btn_len = btn_text.chars().count();
+                                let end_col = start_col + btn_len;
+                                if mouse.column >= start_col as u16 && mouse.column < end_col as u16 {
+                                    terminal.clear()?;
+                                    state.cycle_theme();
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
