@@ -315,6 +315,13 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             ),
             Span::styled("Historial  ", Style::default().fg(theme.muted)),
             Span::styled(
+                "[F4] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()), Style::default().fg(theme.muted)),
+            Span::styled(
                 "[F1] ",
                 Style::default()
                     .fg(theme.accent)
@@ -373,6 +380,13 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled("Cambiar  ", Style::default().fg(theme.muted)),
+            Span::styled(
+                "[F4] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()), Style::default().fg(theme.muted)),
             Span::styled(
                 "[F1] ",
                 Style::default()

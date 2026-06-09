@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::ui::theme::ThemeMode;
+
 pub const INTERVALS: &[f64] = &[0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0];
 pub const DEFAULT_INTERVAL_IDX: usize = 2; // 2s
 
@@ -35,6 +37,8 @@ pub struct Config {
     pub process_sort_column: SortColumn,
     pub show_swap: bool,
     pub docker_socket_path: Option<String>,
+    #[serde(default)]
+    pub theme: ThemeMode,
 }
 
 impl Default for Config {
@@ -47,6 +51,7 @@ impl Default for Config {
             process_sort_column: SortColumn::Cpu,
             show_swap: true,
             docker_socket_path: None,
+            theme: ThemeMode::Dark,
         }
     }
 }
@@ -148,6 +153,7 @@ mod tests {
         assert_eq!(cfg.process_sort_column, SortColumn::Cpu);
         assert!(cfg.show_swap);
         assert!(cfg.docker_socket_path.is_none());
+        assert_eq!(cfg.theme, ThemeMode::Dark);
 
         assert!(
             temp_file_path.exists(),
@@ -163,6 +169,7 @@ mod tests {
         modified.process_sort_column = SortColumn::Memory;
         modified.show_swap = false;
         modified.docker_socket_path = Some("/var/run/docker.sock".to_string());
+        modified.theme = ThemeMode::Light;
 
         save(&modified).expect("Failed to save config");
 
@@ -177,6 +184,7 @@ mod tests {
             loaded.docker_socket_path.as_deref(),
             Some("/var/run/docker.sock")
         );
+        assert_eq!(loaded.theme, ThemeMode::Light);
 
         // 3. Corrupt configuration file
         let corrupt_content = "this is invalid toml = [ {";

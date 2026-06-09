@@ -118,6 +118,11 @@ pub struct AppState {
     pub container_history: std::collections::VecDeque<ContainerHistorySample>,
     pub lang: crate::localization::Language,
 
+    pub db_monitor: Option<crate::collectors::database::DbMonitorData>,
+    db_tx: mpsc::Sender<crate::collectors::database::DbMonitorData>,
+    db_rx: mpsc::Receiver<crate::collectors::database::DbMonitorData>,
+    current_db_monitored_pid: Option<u32>,
+
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -184,9 +189,26 @@ impl AppState {
             process_history: std::collections::VecDeque::new(),
             container_history: std::collections::VecDeque::new(),
             lang,
+            db_monitor: None,
+            db_tx: {
+                let (tx, _) = mpsc::channel(8);
+                tx
+            },
+            db_rx: {
+                let (_, rx) = mpsc::channel(8);
+                rx
+            },
+            current_db_monitored_pid: None,
             metrics_rx: rx,
             interval_tx,
         }
+    }
+
+    pub fn cycle_theme(&mut self) {
+        let next = self.cfg.theme.next();
+        self.cfg.theme = next;
+        crate::ui::theme::Theme::set_current_theme(next);
+        config::save_non_blocking(self.cfg.clone());
     }
 
     fn try_update(&mut self) {
@@ -343,6 +365,53 @@ impl AppState {
             }
             if snapshot.docker_client.is_some() {
                 self.docker_client = snapshot.docker_client;
+            }
+
+            // Receive any DB monitor updates
+            while let Ok(db_data) = self.db_rx.try_recv() {
+                if Some(db_data.pid) == self.detail_process_pid {
+                    self.db_monitor = Some(db_data);
+                }
+            }
+
+            // Check if we need to spawn database monitoring task
+            if self.current_view == View::ProcessDetail {
+                if let Some(pid) = self.detail_process_pid {
+                    if let Some(proc) = self.processes.iter().find(|p| p.pid == pid) {
+                        if let Some(db_type) = proc.database_type {
+                            if self.current_db_monitored_pid != Some(pid) {
+                                self.current_db_monitored_pid = Some(pid);
+                                self.db_monitor = Some(crate::collectors::database::DbMonitorData::new(pid, db_type));
+                                
+                                // Create new channels specifically for this connection task
+                                let (tx, rx) = mpsc::channel(8);
+                                self.db_rx = rx; // replace our receiver
+                                self.db_tx = tx.clone();
+
+                                let proc_clone = proc.clone();
+                                tokio::spawn(async move {
+                                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(2));
+                                    loop {
+                                        let data = crate::collectors::database::poll_database(proc_clone.clone()).await;
+                                        if tx.send(data).await.is_err() {
+                                            break;
+                                        }
+                                        ticker.tick().await;
+                                    }
+                                });
+                            }
+                        } else {
+                            self.db_monitor = None;
+                            self.current_db_monitored_pid = None;
+                        }
+                    }
+                } else {
+                    self.db_monitor = None;
+                    self.current_db_monitored_pid = None;
+                }
+            } else {
+                self.db_monitor = None;
+                self.current_db_monitored_pid = None;
             }
 
             // If the detailed process or container no longer exists, exit the detail view
@@ -707,6 +776,7 @@ fn fetch_logs_blocking(docker: Docker, container_id: String) -> Vec<String> {
 
 pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let cfg = config::load();
+    crate::ui::theme::Theme::set_current_theme(cfg.theme);
     let initial_idx = INTERVALS
         .iter()
         .position(|&s| (s - cfg.refresh_interval_secs).abs() < f64::EPSILON)
@@ -834,6 +904,10 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         // ── Help modal (F1) ───────────────────────────────────
                         (KeyCode::F(1), _) => {
                             state.show_help = !state.show_help;
+                        }
+                        // ── Cycle Theme (F4) ───────────────────────────────────
+                        (KeyCode::F(4), _) if !state.process_table.filter_active => {
+                            state.cycle_theme();
                         }
                         (KeyCode::Esc, _) if state.show_help => {
                             state.show_help = false;

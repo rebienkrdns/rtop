@@ -35,6 +35,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 ("[Ctrl+C]", state.t("Quit always")),
                 ("[Tab]", state.t("Change tab")),
                 ("[F1]", state.t("Show hide help")),
+                ("[F4]", state.t("Change theme")),
                 ("[Esc]", state.t("Close modal exit detail")),
             ],
         ),
