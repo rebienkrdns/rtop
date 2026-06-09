@@ -98,10 +98,12 @@ pub struct AppState {
     pub show_help: bool,
     pub psi: Option<PsiData>,
 
-    // Historial de PSI (avg10 de cpu_some, memory_some, io_some)
+    // Historial de PSI avg10 — some y full para mem e I/O
     pub psi_history_cpu: std::collections::VecDeque<f64>,
     pub psi_history_mem: std::collections::VecDeque<f64>,
+    pub psi_history_mem_full: std::collections::VecDeque<f64>,
     pub psi_history_io: std::collections::VecDeque<f64>,
+    pub psi_history_io_full: std::collections::VecDeque<f64>,
 
     // Historial de métricas
     pub metrics_history: MetricsHistory,
@@ -165,7 +167,9 @@ impl AppState {
             psi: None,
             psi_history_cpu: std::collections::VecDeque::new(),
             psi_history_mem: std::collections::VecDeque::new(),
+            psi_history_mem_full: std::collections::VecDeque::new(),
             psi_history_io: std::collections::VecDeque::new(),
+            psi_history_io_full: std::collections::VecDeque::new(),
             metrics_history: MetricsHistory::new(),
             history_mode: false,
             history_range: HistoryRange::OneMin,
@@ -267,10 +271,14 @@ impl AppState {
                 const PSI_MAX: usize = 3600;
                 if self.psi_history_cpu.len() >= PSI_MAX { self.psi_history_cpu.pop_front(); }
                 if self.psi_history_mem.len() >= PSI_MAX { self.psi_history_mem.pop_front(); }
+                if self.psi_history_mem_full.len() >= PSI_MAX { self.psi_history_mem_full.pop_front(); }
                 if self.psi_history_io.len() >= PSI_MAX { self.psi_history_io.pop_front(); }
+                if self.psi_history_io_full.len() >= PSI_MAX { self.psi_history_io_full.pop_front(); }
                 self.psi_history_cpu.push_back(p.cpu_some.avg10);
                 self.psi_history_mem.push_back(p.memory_some.avg10);
+                self.psi_history_mem_full.push_back(p.memory_full.avg10);
                 self.psi_history_io.push_back(p.io_some.avg10);
+                self.psi_history_io_full.push_back(p.io_full.avg10);
             }
             if snapshot.docker_client.is_some() {
                 self.docker_client = snapshot.docker_client;
