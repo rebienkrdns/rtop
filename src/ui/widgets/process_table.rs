@@ -194,6 +194,21 @@ pub fn render(
         })
         .collect();
 
+    // Render process count over filter bar (right-aligned)
+    let count_text = if filtered.len() == processes.len() {
+        format!(" {} {} ", filtered.len(), t("processes"))
+    } else {
+        format!(" {}/{} {} ", filtered.len(), processes.len(), t("processes"))
+    };
+    let count_widget = Paragraph::new(Line::from(Span::styled(
+        count_text,
+        Style::default()
+            .fg(theme.muted)
+            .add_modifier(Modifier::BOLD),
+    )))
+    .alignment(ratatui::layout::Alignment::Right);
+    f.render_widget(count_widget, chunks[0]);
+
     // Apply sort
     filtered.sort_by(|a, b| {
         let ord = match state.sort_col {
