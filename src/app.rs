@@ -85,6 +85,8 @@ pub struct AppState {
     pub current_view: View,
     pub detail_process_pid: Option<u32>,
     pub detail_container_id: Option<String>,
+    detail_process_missing_count: u8,
+    detail_container_missing_count: u8,
     #[allow(dead_code)]
     pub selected_process_idx: Option<usize>,
     #[allow(dead_code)]
@@ -169,6 +171,8 @@ impl AppState {
             current_view: View::Main,
             detail_process_pid: None,
             detail_container_id: None,
+            detail_process_missing_count: 0,
+            detail_container_missing_count: 0,
             selected_process_idx: None,
             selected_container_idx: None,
             container_cursor: 0,
@@ -563,22 +567,36 @@ impl AppState {
                 self.current_db_monitored_cid = None;
             }
 
-            // If the detailed process or container no longer exists, exit the detail view
+            // If the detailed process or container no longer exists, exit the detail view.
+            // Require 3 consecutive missing snapshots to avoid false exits from transient
+            // Docker stats failures or momentarily empty lists.
             if self.current_view == View::ProcessDetail {
                 if let Some(pid) = self.detail_process_pid {
                     if !self.processes.is_empty() && !self.processes.iter().any(|p| p.pid == pid) {
-                        self.current_view = View::Main;
-                        self.detail_process_pid = None;
-                        self.process_history.clear();
+                        self.detail_process_missing_count += 1;
+                        if self.detail_process_missing_count >= 3 {
+                            self.current_view = View::Main;
+                            self.detail_process_pid = None;
+                            self.detail_process_missing_count = 0;
+                            self.process_history.clear();
+                        }
+                    } else {
+                        self.detail_process_missing_count = 0;
                     }
                 }
             }
             if self.current_view == View::ContainerDetail {
                 if let Some(ref cid) = self.detail_container_id {
                     if !self.containers.is_empty() && !self.containers.iter().any(|c| &c.id == cid) {
-                        self.current_view = View::Main;
-                        self.detail_container_id = None;
-                        self.container_history.clear();
+                        self.detail_container_missing_count += 1;
+                        if self.detail_container_missing_count >= 3 {
+                            self.current_view = View::Main;
+                            self.detail_container_id = None;
+                            self.detail_container_missing_count = 0;
+                            self.container_history.clear();
+                        }
+                    } else {
+                        self.detail_container_missing_count = 0;
                     }
                 }
             }
@@ -1113,6 +1131,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         (KeyCode::Esc, _) if state.current_view == View::ContainerDetail => {
                             state.current_view = View::Main;
                             state.detail_container_id = None;
+                            state.detail_container_missing_count = 0;
                             state.container_history.clear();
                         }
                         (KeyCode::Char('l'), _) if state.current_view == View::ContainerDetail => {
@@ -1147,6 +1166,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         (KeyCode::Esc, _) if state.current_view == View::ProcessDetail => {
                             state.current_view = View::Main;
                             state.detail_process_pid = None;
+                            state.detail_process_missing_count = 0;
                             state.process_history.clear();
                         }
 
