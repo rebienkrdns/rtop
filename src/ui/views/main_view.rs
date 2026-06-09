@@ -344,6 +344,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     state.container_cursor,
                     state.container_sort_col,
                     state.container_sort_asc,
+                    &state.collapsed_compose_groups,
                     state.lang,
                 );
             } else {

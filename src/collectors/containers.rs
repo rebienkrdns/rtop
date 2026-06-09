@@ -176,6 +176,11 @@ impl ContainerCollector {
                 },
             );
 
+            let compose_project = c
+                .labels
+                .as_ref()
+                .and_then(|labels| labels.get("com.docker.compose.project").cloned());
+
             result.push(ContainerData {
                 id: full_id.chars().take(12).collect(),
                 name,
@@ -202,6 +207,7 @@ impl ContainerCollector {
                 volumes: extract_volumes(&inspect_opt),
                 networks: extract_networks(&inspect_opt),
                 env_vars: extract_env_vars(&inspect_opt),
+                compose_project,
             });
         }
 

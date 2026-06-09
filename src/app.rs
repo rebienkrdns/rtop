@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Stdout;
 use std::time::Duration;
 
@@ -79,6 +79,7 @@ pub struct AppState {
     pub container_state: ContainerBackendState,
     pub container_sort_col: ContainerSortColumn,
     pub container_sort_asc: bool,
+    pub collapsed_compose_groups: HashSet<String>,
 
     // View navigation
     pub current_view: View,
@@ -152,6 +153,7 @@ impl AppState {
             container_state: ContainerBackendState::default(),
             container_sort_col: ContainerSortColumn::default(),
             container_sort_asc: true,
+            collapsed_compose_groups: HashSet::new(),
             current_view: View::Main,
             detail_process_pid: None,
             detail_container_id: None,
@@ -497,14 +499,39 @@ impl AppState {
         self.container_cursor = 0;
     }
 
+    pub fn container_visual_rows(&self) -> Vec<ContainerVisualRow> {
+        build_container_visual_rows(&self.containers, &self.collapsed_compose_groups)
+    }
+
     pub fn container_move_cursor(&mut self, delta: i32) {
-        let count = self.containers.len();
+        let rows = self.container_visual_rows();
+        let count = rows.len();
         if count == 0 {
             return;
         }
         let new_cursor =
             (self.container_cursor as i32 + delta).clamp(0, (count as i32) - 1) as usize;
         self.container_cursor = new_cursor;
+    }
+
+    pub fn container_toggle_group_at_cursor(&mut self) {
+        let rows = self.container_visual_rows();
+        if let Some(ContainerVisualRow::GroupHeader { group_key, .. }) =
+            rows.get(self.container_cursor)
+        {
+            let key = group_key.clone();
+            if self.collapsed_compose_groups.contains(&key) {
+                self.collapsed_compose_groups.remove(&key);
+            } else {
+                self.collapsed_compose_groups.insert(key);
+            }
+            // Re-clamp cursor after visibility change
+            let new_rows = self.container_visual_rows();
+            let count = new_rows.len();
+            if count > 0 && self.container_cursor >= count {
+                self.container_cursor = count - 1;
+            }
+        }
     }
 
     pub fn selected_process(&self) -> Option<&ProcessData> {
@@ -557,7 +584,13 @@ impl AppState {
         if let Some(ref id) = self.detail_container_id {
             return self.containers.iter().find(|c| &c.id == id);
         }
-        self.containers.get(self.container_cursor)
+        let rows = self.container_visual_rows();
+        match rows.get(self.container_cursor) {
+            Some(ContainerVisualRow::Container { real_idx, .. }) => {
+                self.containers.get(*real_idx)
+            }
+            _ => None,
+        }
     }
 
     fn step_interval(&mut self, delta: i32) {
@@ -983,6 +1016,13 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             state.detail_process_pid = new_pid;
                             state.current_view = View::ProcessDetail;
                         }
+                        // Container table: Space toggles group collapse
+                        (KeyCode::Char(' '), _)
+                            if state.current_view == View::Main
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_toggle_group_at_cursor();
+                        }
                         // Container table: navigate to detail on Enter
                         (KeyCode::Enter, _)
                             if state.current_view == View::Main
@@ -1180,4 +1220,68 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub enum ContainerVisualRow {
+    GroupHeader {
+        group_key: String,
+        label: String,
+        count: usize,
+        collapsed: bool,
+        cpu_sum: f64,
+        mem_sum: u64,
+    },
+    Container {
+        real_idx: usize,
+    },
+}
+
+pub fn build_container_visual_rows(
+    containers: &[ContainerData],
+    collapsed: &HashSet<String>,
+) -> Vec<ContainerVisualRow> {
+    use std::collections::BTreeMap;
+
+    // Group containers: keyed by compose project or "" for standalone
+    let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (idx, c) in containers.iter().enumerate() {
+        let key = c.compose_project.clone().unwrap_or_default();
+        groups.entry(key).or_default().push(idx);
+    }
+
+    // Build rows: standalone containers (key "") come first without a header
+    let mut rows = Vec::new();
+
+    // Standalone (no compose project) — emit directly without group header
+    if let Some(indices) = groups.get("") {
+        for &idx in indices {
+            rows.push(ContainerVisualRow::Container { real_idx: idx });
+        }
+    }
+
+    // Compose stacks — sorted alphabetically
+    for (key, indices) in &groups {
+        if key.is_empty() {
+            continue;
+        }
+        let cpu_sum: f64 = indices.iter().map(|&i| containers[i].cpu_pct).sum();
+        let mem_sum: u64 = indices.iter().map(|&i| containers[i].memory_bytes).sum();
+        let is_collapsed = collapsed.contains(key);
+        rows.push(ContainerVisualRow::GroupHeader {
+            group_key: key.clone(),
+            label: key.clone(),
+            count: indices.len(),
+            collapsed: is_collapsed,
+            cpu_sum,
+            mem_sum,
+        });
+        if !is_collapsed {
+            for &idx in indices {
+                rows.push(ContainerVisualRow::Container { real_idx: idx });
+            }
+        }
+    }
+
+    rows
 }

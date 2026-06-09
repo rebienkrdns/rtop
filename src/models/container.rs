@@ -58,4 +58,5 @@ pub struct ContainerData {
     pub volumes: Vec<String>,
     pub networks: Vec<String>,
     pub env_vars: Vec<String>,
+    pub compose_project: Option<String>,
 }
