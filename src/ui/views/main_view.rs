@@ -93,7 +93,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     // — Métricas: 2 columnas (CPU·RAM·Disco·Red | Presión PSI) —
     let metrics_cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(metrics_area);
 
     // Columna 1: CPU · RAM · Disco · Red
