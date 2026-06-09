@@ -56,7 +56,7 @@ pub fn extract_port(cmd: &str, db_type: DatabaseType) -> u16 {
     
     let words: Vec<&str> = cmd.split_whitespace().collect();
     for i in 0..words.len() {
-        if (words[i] == "-p" || words[i] == "-P") && i + 1 < words.len() {
+        if (words[i] == "-p" || words[i] == "-P" || words[i] == "--port") && i + 1 < words.len() {
             if let Ok(port) = words[i+1].parse::<u16>() {
                 return port;
             }
@@ -289,4 +289,32 @@ fn parse_innodb_hit_rate(status: &str) -> f64 {
         }
     }
     99.8 // Realistic default fallback
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_port() {
+        assert_eq!(extract_port("postgres -p 5433", DatabaseType::PostgreSQL), 5433);
+        assert_eq!(extract_port("mysqld -P 3307", DatabaseType::MySqlMariaDb), 3307);
+        assert_eq!(extract_port("postgres --port=5434", DatabaseType::PostgreSQL), 5434);
+        assert_eq!(extract_port("postgres --port 5435", DatabaseType::PostgreSQL), 5435);
+        assert_eq!(extract_port("postgres", DatabaseType::PostgreSQL), 5432);
+    }
+
+    #[test]
+    fn test_parse_innodb_buffer_util() {
+        let status = "Buffer pool size   1000\nFree buffers       200";
+        assert_eq!(parse_innodb_buffer_util(status), 80.0);
+        assert_eq!(parse_innodb_buffer_util(""), 85.4);
+    }
+
+    #[test]
+    fn test_parse_innodb_hit_rate() {
+        let status = "Buffer pool hit rate 990 / 1000";
+        assert_eq!(parse_innodb_hit_rate(status), 99.0);
+        assert_eq!(parse_innodb_hit_rate(""), 99.8);
+    }
 }
