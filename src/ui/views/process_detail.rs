@@ -52,7 +52,20 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let inner_height = inner.height;
+    let (left_area, db_area) = if process.database_type.is_some() {
+        let h_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(55),
+                Constraint::Percentage(45),
+            ])
+            .split(inner);
+        (h_chunks[0], Some(h_chunks[1]))
+    } else {
+        (inner, None)
+    };
+
+    let inner_height = left_area.height;
     let remaining_height = inner_height.saturating_sub(10);
     let chart_height = if state.history_mode {
         (remaining_height / 4).max(3)
@@ -71,7 +84,7 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
             Constraint::Length(2),            // footer hint
             Constraint::Min(0),
         ])
-        .split(inner);
+        .split(left_area);
 
     // Info fields
     let uptime_str = format_uptime(process.uptime_secs);
@@ -401,6 +414,182 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
         ),
     ]);
     f.render_widget(Paragraph::new(hint), chunks[5]);
+
+    if let Some(db_rect) = db_area {
+        render_db_panel(f, db_rect, state, &theme);
+    }
+}
+
+fn render_db_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    use crate::collectors::database::DbConnectionStatus;
+    
+    let db_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent_dim))
+        .title(Span::styled(" Database Dashboard ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)));
+        
+    let inner_rect = db_block.inner(area);
+    f.render_widget(db_block, area);
+
+    let monitor_data = match &state.db_monitor {
+        Some(data) => data,
+        None => {
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  [DB Initializing / Disconnected]", Style::default().fg(theme.muted))),
+                Line::from(""),
+                Line::from("  No metrics collected yet. Checking status..."),
+            ]);
+            f.render_widget(paragraph, inner_rect);
+            return;
+        }
+    };
+
+    match &monitor_data.status {
+        DbConnectionStatus::Disconnected => {
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  [DB Disconnected]", Style::default().fg(theme.crit))),
+                Line::from(""),
+                Line::from("  Polling is currently disabled or disconnected."),
+            ]);
+            f.render_widget(paragraph, inner_rect);
+        }
+        DbConnectionStatus::Connecting => {
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  [DB Connecting...]", Style::default().fg(theme.warn))),
+                Line::from(""),
+                Line::from("  Attempting connection to local instance..."),
+            ]);
+            f.render_widget(paragraph, inner_rect);
+        }
+        DbConnectionStatus::AuthRequired(instructions) => {
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled("  [Authentication Required]", Style::default().fg(theme.warn).add_modifier(Modifier::BOLD))),
+                Line::from(""),
+                Line::from("  Authentication failed. Please check credentials:"),
+                Line::from(Span::styled(format!("  {}", instructions), Style::default().fg(theme.warn))),
+                Line::from(""),
+                Line::from("  Set environment variables:"),
+                Line::from("  - Postgres: PGUSER, PGPASSWORD"),
+                Line::from("  - MySQL: MYSQL_USER, MYSQL_PWD"),
+            ];
+            let paragraph = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
+            f.render_widget(paragraph, inner_rect);
+        }
+        DbConnectionStatus::Error(err_msg) => {
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled("  [DB Disconnected]", Style::default().fg(theme.crit).add_modifier(Modifier::BOLD))),
+                Line::from(""),
+                Line::from(format!("  Error: {}", err_msg)),
+                Line::from(""),
+                Line::from("  Check if the database service is running locally"),
+                Line::from("  and accepts connections on localhost."),
+            ];
+            let paragraph = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
+            f.render_widget(paragraph, inner_rect);
+        }
+        DbConnectionStatus::Connected => {
+            let db_type_str = match monitor_data.db_type {
+                crate::models::DatabaseType::PostgreSQL => "PostgreSQL",
+                crate::models::DatabaseType::MySqlMariaDb => "MySQL / MariaDB",
+            };
+            
+            let mut lines = vec![
+                Line::from(vec![
+                    Span::styled("  Engine:   ", Style::default().fg(theme.muted)),
+                    Span::styled(db_type_str, Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
+                    Span::raw("   "),
+                    Span::styled("● Active", Style::default().fg(theme.ok)),
+                ]),
+                Line::from(""),
+            ];
+
+            match monitor_data.db_type {
+                crate::models::DatabaseType::PostgreSQL => {
+                    lines.push(Line::from(vec![
+                        Span::styled("  Connections:  ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("{} active", monitor_data.metrics.connections_active), Style::default().fg(theme.text)),
+                        Span::raw(", "),
+                        Span::styled(format!("{} idle", monitor_data.metrics.connections_idle), Style::default().fg(theme.muted)),
+                    ]));
+                    lines.push(Line::from(vec![
+                        Span::styled("  Waiting Locks:", Style::default().fg(theme.muted)),
+                        Span::styled(
+                            format!(" {}", monitor_data.metrics.locks_count),
+                            if monitor_data.metrics.locks_count > 0 { Style::default().fg(theme.crit) } else { Style::default().fg(theme.ok) }
+                        ),
+                    ]));
+                    
+                    let hit_ratio = monitor_data.metrics.cache_hit_ratio;
+                    lines.push(Line::from(vec![
+                        Span::styled("  Cache Hit Ratio: ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("{:.2}%", hit_ratio), Style::default().fg(if hit_ratio >= 99.0 { theme.ok } else if hit_ratio >= 95.0 { theme.warn } else { theme.crit })),
+                    ]));
+                    
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(Span::styled("  Long-Running Queries (>5s):", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))));
+                    if monitor_data.metrics.long_running_queries.is_empty() {
+                        lines.push(Line::from(Span::styled("    No queries match criteria", Style::default().fg(theme.muted))));
+                    } else {
+                        for (pid, query, dur) in &monitor_data.metrics.long_running_queries {
+                            let truncated_query = if query.len() > 30 {
+                                format!("{}...", &query[0..27])
+                            } else {
+                                query.clone()
+                            };
+                            lines.push(Line::from(vec![
+                                Span::styled(format!("    PID {}: ", pid), Style::default().fg(theme.muted)),
+                                Span::styled(truncated_query, Style::default().fg(theme.warn)),
+                                Span::raw(format!(" ({})", dur)),
+                            ]));
+                        }
+                    }
+                }
+                crate::models::DatabaseType::MySqlMariaDb => {
+                    lines.push(Line::from(vec![
+                        Span::styled("  Threads:  ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("{} running", monitor_data.metrics.threads_running), Style::default().fg(theme.text)),
+                        Span::raw(", "),
+                        Span::styled(format!("{} connected", monitor_data.metrics.threads_connected), Style::default().fg(theme.muted)),
+                    ]));
+                    lines.push(Line::from(vec![
+                        Span::styled("  Slow Queries:", Style::default().fg(theme.muted)),
+                        Span::styled(format!(" {}", monitor_data.metrics.slow_queries), Style::default().fg(theme.text)),
+                    ]));
+
+                    let read = monitor_data.metrics.read_queries;
+                    let write = monitor_data.metrics.write_queries;
+                    let total = read + write;
+                    let read_pct = if total > 0 { (read as f64 / total as f64) * 100.0 } else { 0.0 };
+                    let write_pct = if total > 0 { (write as f64 / total as f64) * 100.0 } else { 0.0 };
+                    
+                    lines.push(Line::from(vec![
+                        Span::styled("  Workload: ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("{:.1}% Read", read_pct), Style::default().fg(theme.ok)),
+                        Span::raw(" / "),
+                        Span::styled(format!("{:.1}% Write", write_pct), Style::default().fg(theme.warn)),
+                    ]));
+
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        Span::styled("  Buffer Pool Hit Rate: ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("{:.2}%", monitor_data.metrics.buffer_pool_hit_rate), Style::default().fg(theme.ok)),
+                    ]));
+                    lines.push(Line::from(vec![
+                        Span::styled("  Buffer Pool Util:     ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("{:.2}%", monitor_data.metrics.buffer_pool_util_pct), Style::default().fg(theme.accent)),
+                    ]));
+                }
+            }
+            
+            let paragraph = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
+            f.render_widget(paragraph, inner_rect);
+        }
+    }
 }
 
 fn format_uptime(secs: u64) -> String {

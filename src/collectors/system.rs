@@ -229,6 +229,15 @@ impl SystemCollector {
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "—".to_string());
 
+                let name_lower = name.to_lowercase();
+                let database_type = if name_lower.contains("postgres") {
+                    Some(crate::models::DatabaseType::PostgreSQL)
+                } else if name_lower.contains("mysqld") || name_lower.contains("mariadbd") {
+                    Some(crate::models::DatabaseType::MySqlMariaDb)
+                } else {
+                    None
+                };
+
                 ProcessData {
                     pid,
                     name,
@@ -244,6 +253,7 @@ impl SystemCollector {
                     exe_path,
                     cmd,
                     cwd,
+                    database_type,
                 }
             })
             .collect();

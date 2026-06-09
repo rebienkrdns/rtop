@@ -35,7 +35,7 @@ impl ThemeMode {
     }
 }
 
-static CURRENT_THEME: AtomicU8 = AtomicU8::new(0); // 0 = Dark, 1 = Light, 2 = Nord, 3 = Matrix, 4 = Sunset
+static CURRENT_THEME: AtomicU8 = AtomicU8::new(0);
 
 #[allow(dead_code)]
 pub struct Theme {

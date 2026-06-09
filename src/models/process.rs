@@ -47,6 +47,12 @@ impl ProcessStatus {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DatabaseType {
+    PostgreSQL,
+    MySqlMariaDb,
+}
+
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct ProcessData {
@@ -64,4 +70,6 @@ pub struct ProcessData {
     pub exe_path: String,
     pub cmd: String,
     pub cwd: String,
+    pub database_type: Option<DatabaseType>,
 }
+
