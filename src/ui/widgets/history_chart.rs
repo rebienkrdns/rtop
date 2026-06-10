@@ -33,6 +33,15 @@ pub fn render_history_canvas_dual<T>(
         .y_bounds([0.0, max_val])
         .marker(Marker::Braille)
         .paint(|ctx| {
+            // Baseline completa de largo a largo en y=0 para todas las gráficas
+            ctx.draw(&CanvasLine {
+                x1: 0.0,
+                y1: 0.0,
+                x2: max_samples,
+                y2: 0.0,
+                color: Color::Rgb(80, 82, 95),
+            });
+
             if s_len > 1 {
                 for i in 0..(s_len - 1) {
                     let x1 = max_samples - (s_len - 1 - i) as f64;
@@ -42,30 +51,22 @@ pub fn render_history_canvas_dual<T>(
                     }
                     let x1_clamped = x1.max(0.0);
 
-                    let y1_a = extract1(samples[i]);
-                    let y2_a = extract1(samples[i + 1]);
-                    if y1_a != 0.0 || y2_a != 0.0 {
-                        ctx.draw(&CanvasLine {
-                            x1: x1_clamped,
-                            y1: y1_a,
-                            x2,
-                            y2: y2_a,
-                            color: color1,
-                        });
-                    }
+                    ctx.draw(&CanvasLine {
+                        x1: x1_clamped,
+                        y1: extract1(samples[i]),
+                        x2,
+                        y2: extract1(samples[i + 1]),
+                        color: color1,
+                    });
 
                     if let Some((c2, e2)) = line2 {
-                        let y1_b = e2(samples[i]);
-                        let y2_b = e2(samples[i + 1]);
-                        if y1_b != 0.0 || y2_b != 0.0 {
-                            ctx.draw(&CanvasLine {
-                                x1: x1_clamped,
-                                y1: y1_b,
-                                x2,
-                                y2: y2_b,
-                                color: c2,
-                            });
-                        }
+                        ctx.draw(&CanvasLine {
+                            x1: x1_clamped,
+                            y1: e2(samples[i]),
+                            x2,
+                            y2: e2(samples[i + 1]),
+                            color: c2,
+                        });
                     }
                 }
             }
