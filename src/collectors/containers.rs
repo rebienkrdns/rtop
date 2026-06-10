@@ -356,13 +356,14 @@ fn detect_node_runtime(
     name_lower: &str,
     image_lower: &str,
 ) -> Option<crate::models::NodeRuntimeType> {
-    // detect by image/name first
-    let by_image = if image_lower.contains("node") || name_lower.contains("node") {
-        Some(crate::models::NodeRuntimeType::Node)
-    } else if image_lower.contains("bun") || name_lower.contains("bun") {
+    // detect by image/name first — bun/deno before node to avoid false positives
+    let node_image_keywords = ["node", "npm", "pnpm", "yarn", "nestjs", "next", "nuxt", "remix"];
+    let by_image = if image_lower.contains("oven/bun") || image_lower.contains("/bun:") || name_lower.contains("bun") {
         Some(crate::models::NodeRuntimeType::Bun)
     } else if image_lower.contains("deno") || name_lower.contains("deno") {
         Some(crate::models::NodeRuntimeType::Deno)
+    } else if node_image_keywords.iter().any(|k| image_lower.contains(k) || name_lower.contains(k)) {
+        Some(crate::models::NodeRuntimeType::Node)
     } else {
         None
     };
@@ -375,15 +376,24 @@ fn detect_node_runtime(
     let Some(resp) = inspect else { return None };
     let config = resp.config.as_ref()?;
 
-    let has_node_env = config.env.as_ref().is_some_and(|env| {
-        env.iter().any(|e| {
+    let (has_node_env, is_bun_env) = config.env.as_ref().map_or((false, false), |env| {
+        let bun = env.iter().any(|e| e.starts_with("BUN_INSTALL") || e.starts_with("BUN_VERSION"));
+        let node = env.iter().any(|e| {
             e.starts_with("NODE_ENV=")
                 || e.starts_with("NODE_VERSION=")
                 || e.starts_with("NPM_")
-        })
+                || e.starts_with("PNPM_HOME=")
+                || e.starts_with("PNPM_VERSION=")
+                || e.starts_with("YARN_VERSION=")
+                || e.starts_with("NVM_DIR=")
+        });
+        (node || bun, bun)
     });
 
-    let node_cmd_keywords = ["node", "npm", "yarn", "pm2", "nest", "bun", "deno", "tsx", "ts-node"];
+    let node_cmd_keywords = [
+        "node", "npm", "npx", "pnpm", "pnpx", "yarn",
+        "pm2", "nest", "bun", "bunx", "deno", "tsx", "ts-node",
+    ];
     let cmd_str = config
         .cmd
         .as_ref()
@@ -398,7 +408,7 @@ fn detect_node_runtime(
     let has_node_cmd = node_cmd_keywords.iter().any(|k| combined.contains(k));
 
     if has_node_env || has_node_cmd {
-        if combined.contains("bun") {
+        if is_bun_env || combined.contains("bunx") || combined.split_whitespace().next() == Some("bun") {
             Some(crate::models::NodeRuntimeType::Bun)
         } else if combined.contains("deno") {
             Some(crate::models::NodeRuntimeType::Deno)

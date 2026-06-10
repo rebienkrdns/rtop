@@ -257,12 +257,19 @@ impl SystemCollector {
                     None
                 };
 
-                let node_runtime_type = if name_lower == "node" || name_lower.starts_with("node ") || exe_path.contains("/node") {
-                    Some(crate::models::NodeRuntimeType::Node)
-                } else if name_lower == "bun" || exe_path.contains("/bun") {
+                let node_runtime_type = if name_lower == "bun" || exe_path.contains("/bun") {
                     Some(crate::models::NodeRuntimeType::Bun)
                 } else if name_lower == "deno" || exe_path.contains("/deno") {
                     Some(crate::models::NodeRuntimeType::Deno)
+                } else if matches!(
+                    name_lower.as_str(),
+                    "node" | "npm" | "npx" | "pnpm" | "pnpx" | "yarn" | "pm2"
+                        | "nest" | "tsx" | "ts-node" | "ts-node-esm"
+                ) || exe_path.contains("/node")
+                    || exe_path.contains("/.nvm/")
+                    || exe_path.contains("/nvm/versions/")
+                {
+                    Some(crate::models::NodeRuntimeType::Node)
                 } else {
                     None
                 };
