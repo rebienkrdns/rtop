@@ -1050,7 +1050,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
             let endpoint = match monitor_data.proxy_type {
                 crate::models::HttpProxyType::Nginx => "/nginx_status",
                 crate::models::HttpProxyType::Apache => "/server-status?auto",
-                crate::models::HttpProxyType::Traefik => "/metrics (port 8080)",
+                crate::models::HttpProxyType::Traefik => "/metrics (port 9090)",
             };
             let lines = vec![
                 Line::from(""),
@@ -1068,94 +1068,183 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
         }
         ProxyConnectionStatus::Connected => {
             let m = &monitor_data.metrics;
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Min(0),
-                ])
-                .split(inner_rect);
 
-            let rps_label = format!(" RPS  {:.1} req/s ", m.rps);
-            let rps_gauge = Gauge::default()
-                .block(
-                    Block::default()
-                        .title(Span::styled(rps_label, Style::default().fg(theme.accent)))
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme.accent_dim)),
-                )
-                .gauge_style(Style::default().fg(theme.ok).bg(Color::Rgb(51, 52, 61)))
-                .ratio((m.rps / 1000.0).clamp(0.0, 1.0));
-            f.render_widget(rps_gauge, chunks[0]);
+            if state.history_mode {
+                // ── Historical mode: ALL charts as Braille over time ──
+                // Connections shown as plain number in SRE text, not as chart
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(5), // 0: RPS braille
+                        Constraint::Length(5), // 1: 1xx braille
+                        Constraint::Length(5), // 2: 2xx braille
+                        Constraint::Length(5), // 3: 3xx braille
+                        Constraint::Length(5), // 4: 4xx braille
+                        Constraint::Length(5), // 5: 5xx braille
+                        Constraint::Length(5), // 6: p50 braille
+                        Constraint::Length(5), // 7: p95 braille
+                        Constraint::Length(5), // 8: p99 braille
+                        Constraint::Min(0),    // 9: SRE text
+                    ])
+                    .split(inner_rect);
 
-            let conn_label = format!(" Connections  {} active ", m.active_connections);
-            let conn_gauge = Gauge::default()
-                .block(
-                    Block::default()
-                        .title(Span::styled(conn_label, Style::default().fg(theme.accent)))
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme.accent_dim)),
-                )
-                .gauge_style(
-                    Style::default()
-                        .fg(theme.accent_dim)
-                        .bg(Color::Rgb(51, 52, 61)),
-                )
-                .ratio((m.active_connections as f64 / 500.0).clamp(0.0, 1.0));
-            f.render_widget(conn_gauge, chunks[1]);
+                let rps_color = if m.rps > 500.0 { theme.warn } else { theme.ok };
+                render_proxy_braille_chart(f, chunks[0], &monitor_data.rps_history,
+                    format!(" RPS  {:.1} req/s ", m.rps), rps_color);
 
-            let total_status =
-                (m.status_2xx + m.status_3xx + m.status_4xx + m.status_5xx).max(1) as f64;
-            let status_color = if m.status_5xx > 0 {
-                theme.crit
+                let total_req = (m.status_1xx + m.status_2xx + m.status_3xx + m.status_4xx + m.status_5xx).max(1) as f64;
+                let s5xx_color = if m.status_5xx > 0 { theme.crit } else { Color::DarkGray };
+                let hist_status: [(&std::collections::VecDeque<u64>, u64, Color, usize, &str); 5] = [
+                    (&monitor_data.s1xx_history, m.status_1xx, Color::Blue,   1, "1xx  Info"),
+                    (&monitor_data.s2xx_history, m.status_2xx, theme.ok,      2, "2xx  Success"),
+                    (&monitor_data.s3xx_history, m.status_3xx, Color::Cyan,   3, "3xx  Redirect"),
+                    (&monitor_data.s4xx_history, m.status_4xx, Color::Yellow, 4, "4xx  Client"),
+                    (&monitor_data.s5xx_history, m.status_5xx, s5xx_color,    5, "5xx  Server"),
+                ];
+                for (hist, count, color, slot, label) in hist_status {
+                    let pct = count as f64 / total_req * 100.0;
+                    render_proxy_braille_chart(f, chunks[slot], hist,
+                        format!(" {}  {}  ({:.1}%) ", label, count, pct), color);
+                }
+
+                let p99_color = if m.p99_ms > 500.0 { theme.crit } else if m.p99_ms > 200.0 { theme.warn } else { theme.ok };
+                render_proxy_braille_chart(f, chunks[6], &monitor_data.p50_history, format!(" p50  {:.0}ms ", m.p50_ms), theme.ok);
+                render_proxy_braille_chart(f, chunks[7], &monitor_data.p95_history, format!(" p95  {:.0}ms ", m.p95_ms), theme.warn);
+                render_proxy_braille_chart(f, chunks[8], &monitor_data.p99_history, format!(" p99  {:.0}ms ", m.p99_ms), p99_color);
+
+                render_proxy_sre_text(f, chunks[9], m, monitor_data.proxy_type, theme);
             } else {
-                theme.ok
-            };
-            let status_label = format!(
-                " 2xx:{} 3xx:{} 4xx:{} 5xx:{} ",
-                m.status_2xx, m.status_3xx, m.status_4xx, m.status_5xx
-            );
-            let status_gauge = Gauge::default()
-                .block(
-                    Block::default()
-                        .title(Span::styled(
-                            status_label,
-                            Style::default().fg(theme.accent),
-                        ))
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme.accent_dim)),
-                )
-                .gauge_style(
-                    Style::default()
-                        .fg(status_color)
-                        .bg(Color::Rgb(51, 52, 61)),
-                )
-                .ratio((m.status_2xx as f64 / total_status).clamp(0.0, 1.0));
-            f.render_widget(status_gauge, chunks[2]);
+                // ── Real-time mode: status bars + SRE text (connections as number in text) ──
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(4), // 0: 1xx
+                        Constraint::Length(4), // 1: 2xx
+                        Constraint::Length(4), // 2: 3xx
+                        Constraint::Length(4), // 3: 4xx
+                        Constraint::Length(4), // 4: 5xx
+                        Constraint::Min(0),    // 5: SRE text
+                    ])
+                    .split(inner_rect);
 
-            let extra = match monitor_data.proxy_type {
-                crate::models::HttpProxyType::Nginx => vec![
-                    Line::from(format!(
-                        "  Reading: {}  Writing: {}  Waiting: {}",
-                        m.reading, m.writing, m.waiting
-                    )),
-                    Line::from(format!("  Total Requests: {}", m.requests_total)),
-                ],
-                crate::models::HttpProxyType::Apache => vec![
-                    Line::from(format!(
-                        "  Busy Workers: {}  Idle Workers: {}",
-                        m.busy_workers, m.idle_workers
-                    )),
-                    Line::from(format!("  Total Accesses: {}", m.requests_total)),
-                ],
-                crate::models::HttpProxyType::Traefik => vec![
-                    Line::from(format!("  Total Requests: {}", m.requests_total)),
-                    Line::from(format!("  Open Connections: {}", m.active_connections)),
-                ],
-            };
-            f.render_widget(Paragraph::new(extra), chunks[3]);
+                let total_req = (m.status_1xx + m.status_2xx + m.status_3xx + m.status_4xx + m.status_5xx).max(1) as f64;
+                let status_bars: [(u64, &str, Color, usize); 5] = [
+                    (m.status_1xx, "1xx  Info",     Color::Blue,    0),
+                    (m.status_2xx, "2xx  Success",  theme.ok,       1),
+                    (m.status_3xx, "3xx  Redirect", Color::Cyan,    2),
+                    (m.status_4xx, "4xx  Client",   Color::Yellow,  3),
+                    (m.status_5xx, "5xx  Server",   if m.status_5xx > 0 { theme.crit } else { Color::DarkGray }, 4),
+                ];
+                for (count, label, color, slot) in status_bars {
+                    let pct = count as f64 / total_req * 100.0;
+                    let bar_label = format!(" {} {:>6}  ({:.1}%) ", label, count, pct);
+                    let border_color = if count > 0 { color } else { theme.accent_dim };
+                    f.render_widget(
+                        Gauge::default()
+                            .block(Block::default()
+                                .title(Span::styled(bar_label, Style::default().fg(color)))
+                                .borders(Borders::ALL)
+                                .border_style(Style::default().fg(border_color)))
+                            .gauge_style(Style::default().fg(color).bg(Color::Rgb(51, 52, 61)))
+                            .ratio((count as f64 / total_req).clamp(0.0, 1.0)),
+                        chunks[slot],
+                    );
+                }
+
+                render_proxy_sre_text(f, chunks[5], m, monitor_data.proxy_type, theme);
+            }
         }
     }
+}
+
+fn render_proxy_sre_text(
+    f: &mut Frame,
+    area: Rect,
+    m: &crate::collectors::proxy::ProxyMetrics,
+    proxy_type: crate::models::HttpProxyType,
+    theme: &Theme,
+) {
+    let err_color = if m.error_rate > 2.0 { theme.crit } else if m.error_rate > 0.5 { theme.warn } else { theme.ok };
+    let mut lines: Vec<Line> = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Error Rate "),
+            Span::styled(format!("{:.2}%", m.error_rate), Style::default().fg(err_color)),
+            Span::raw("   Total Reqs: "),
+            Span::raw(format!("{}", m.requests_total)),
+        ]),
+    ];
+    match proxy_type {
+        crate::models::HttpProxyType::Nginx => {
+            lines.push(Line::from(format!(
+                "  Workers    Reading: {}  Writing: {}  Waiting: {}",
+                m.reading, m.writing, m.waiting
+            )));
+        }
+        crate::models::HttpProxyType::Apache => {
+            let total_workers = (m.busy_workers + m.idle_workers).max(1) as f64;
+            let util = m.busy_workers as f64 / total_workers * 100.0;
+            lines.push(Line::from(format!(
+                "  Workers    Busy: {}  Idle: {}  Util: {:.1}%",
+                m.busy_workers, m.idle_workers, util
+            )));
+        }
+        crate::models::HttpProxyType::Traefik => {}
+    }
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+fn render_proxy_braille_chart(
+    f: &mut Frame,
+    area: Rect,
+    history: &std::collections::VecDeque<u64>,
+    title: String,
+    color: Color,
+) {
+    use ratatui::symbols::Marker;
+    use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
+    use ratatui::widgets::Clear;
+
+    if area.height < 2 || area.width < 5 {
+        return;
+    }
+
+    let theme = crate::ui::theme::Theme::default_theme();
+    // Use at least a small non-zero range so a flat zero line is visible
+    let data_max = history.iter().copied().max().unwrap_or(0) as f64;
+    let y_max = if data_max < 1.0 { 10.0 } else { data_max * 1.15 };
+    let max_samples = 60.0_f64;
+    let s_len = history.len();
+    let vals: Vec<f64> = history.iter().map(|&v| v as f64).collect();
+
+    let canvas = Canvas::default()
+        .block(
+            Block::default()
+                .title(Span::styled(title, Style::default().fg(color)))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_dim))
+                .style(Style::default().bg(Color::Rgb(30, 31, 38))),
+        )
+        .x_bounds([0.0, max_samples])
+        .y_bounds([0.0, y_max])
+        .marker(Marker::Braille)
+        .paint(move |ctx| {
+            if s_len == 0 {
+                // flat baseline
+                ctx.draw(&CanvasLine { x1: 0.0, y1: 0.0, x2: max_samples, y2: 0.0, color });
+            } else if s_len == 1 {
+                // horizontal reference line at current value
+                let y = vals[0];
+                ctx.draw(&CanvasLine { x1: 0.0, y1: y, x2: max_samples, y2: y, color });
+            } else {
+                for i in 0..(s_len - 1) {
+                    let x1 = (max_samples - (s_len - 1 - i) as f64).max(0.0);
+                    let x2 = max_samples - (s_len - 2 - i) as f64;
+                    ctx.draw(&CanvasLine { x1, y1: vals[i], x2, y2: vals[i + 1], color });
+                }
+            }
+        });
+
+    f.render_widget(Clear, area);
+    f.render_widget(canvas, area);
 }
