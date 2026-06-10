@@ -16,7 +16,7 @@ pub fn render(f: &mut Frame, state: &AppState) {
 
     let block = Block::default()
         .title(Span::styled(
-            " Seleccionar dispositivo de disco ",
+            format!(" {} ", state.t("SelectDisk")),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -28,7 +28,7 @@ pub fn render(f: &mut Frame, state: &AppState) {
     f.render_widget(block, area);
 
     if state.selector_entries.is_empty() {
-        let msg = Paragraph::new("No se detectaron dispositivos.")
+        let msg = Paragraph::new(state.t("NoDisks"))
             .style(Style::default().fg(Color::DarkGray));
         f.render_widget(msg, inner);
         return;
@@ -72,7 +72,7 @@ pub fn render(f: &mut Frame, state: &AppState) {
 
         let cursor_sym = if is_cursor { "> " } else { "  " };
         let mount = if entry.mount_point.is_empty() {
-            "(sin mount)".to_string()
+            "(no mount)".to_string()
         } else {
             entry.mount_point.clone()
         };
@@ -81,7 +81,7 @@ pub fn render(f: &mut Frame, state: &AppState) {
         } else {
             "?".to_string()
         };
-        let sel_mark = if is_selected { "  (seleccionado)" } else { "" };
+        let sel_mark = if is_selected { format!("  ({})", state.t("Selected")) } else { String::new() };
 
         let base_style = if is_cursor {
             Style::default()
@@ -102,14 +102,13 @@ pub fn render(f: &mut Frame, state: &AppState) {
 
     f.render_widget(Paragraph::new(lines), list_area);
 
-    // Línea de ayuda
     let hint = Line::from(vec![
         Span::styled("↑↓", Style::default().fg(Color::Cyan)),
-        Span::raw(" navegar  "),
+        Span::raw(format!(" {}  ", state.t("Navigate"))),
         Span::styled("Enter", Style::default().fg(Color::Green)),
-        Span::raw(" seleccionar  "),
+        Span::raw(format!(" {}  ", state.t("Selected"))),
         Span::styled("ESC", Style::default().fg(Color::Yellow)),
-        Span::raw(" cancelar"),
+        Span::raw(format!(" {}", state.t("Cancel"))),
     ]);
     f.render_widget(Paragraph::new(hint).alignment(Alignment::Center), hint_area);
 }

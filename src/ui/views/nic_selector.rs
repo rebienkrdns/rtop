@@ -17,7 +17,7 @@ pub fn render(f: &mut Frame, state: &AppState) {
 
     let block = Block::default()
         .title(Span::styled(
-            " Seleccionar interfaz de red ",
+            format!(" {} ", state.t("SelectNIC")),
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
@@ -51,18 +51,18 @@ pub fn render(f: &mut Frame, state: &AppState) {
     });
     let all_item = ListItem::new(Line::from(vec![
         Span::styled(all_prefix, all_style),
-        Span::styled(format!("{:<12}", "Todas"), all_style),
+        Span::styled(format!("{:<12}", state.t("AllNICs")), all_style),
         Span::styled(
-            format!("{:<18}", "(sumatoria)"),
+            format!("{:<18}", state.t("Summation")),
             Style::default().fg(theme.muted),
         ),
         Span::styled(
             format!(
                 "★ {}",
                 if all_is_selected {
-                    "seleccionada"
+                    state.t("NicSelected")
                 } else {
-                    "suma de interfaces"
+                    state.t("SumOfNICs")
                 }
             ),
             all_status_style,
@@ -77,14 +77,16 @@ pub fn render(f: &mut Frame, state: &AppState) {
         let is_cursor = (i + 1) == state.nic_cursor;
 
         let bullet = if nic.is_up { "●" } else { "○" };
-        let status = if nic.is_loopback {
+        let selected_status;
+        let status: &str = if nic.is_loopback {
             "loopback"
         } else if is_selected {
-            "activa (seleccionada)"
+            selected_status = format!("{} ({})", state.t("Active"), state.t("NicSelected"));
+            &selected_status
         } else if nic.is_up {
-            "activa"
+            state.t("Active")
         } else {
-            "inactiva"
+            state.t("Inactive")
         };
 
         let ip_str = nic.ip_address.as_deref().unwrap_or("—");
@@ -131,21 +133,21 @@ pub fn render(f: &mut Frame, state: &AppState) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" navegar  ", Style::default().fg(theme.muted)),
+        Span::styled(format!(" {}  ", state.t("Navigate")), Style::default().fg(theme.muted)),
         Span::styled(
             "Enter",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" seleccionar  ", Style::default().fg(theme.muted)),
+        Span::styled(format!(" {}  ", state.t("Selected")), Style::default().fg(theme.muted)),
         Span::styled(
             "ESC",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" cancelar", Style::default().fg(theme.muted)),
+        Span::styled(format!(" {}", state.t("Cancel")), Style::default().fg(theme.muted)),
     ]));
     f.render_widget(footer, layout[1]);
 }

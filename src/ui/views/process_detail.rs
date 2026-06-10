@@ -705,8 +705,12 @@ pub fn render_db_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Them
                 crate::models::DatabaseType::MySqlMariaDb => {
                     let max_threads = history_snapshot.iter()
                         .map(|m| m.threads_connected.max(m.threads_running) as f64)
-                        .fold(10.0, f64::max);
-                    let max_val = max_threads.max(100.0);
+                        .fold(
+                            monitor_data.metrics.threads_connected.max(monitor_data.metrics.threads_running) as f64,
+                            f64::max,
+                        );
+                    // Use a dynamic ceiling so low thread counts (1-5) are still visible
+                    let max_val = (max_threads * 1.5).max(10.0);
                     let title = format!(
                         " Sessions & Memory [last 60s] · Last: Connected:{}, Running:{} ",
                         monitor_data.metrics.threads_connected,
@@ -818,7 +822,19 @@ fn render_db_chart_multi(
         .y_bounds([0.0, max_val])
         .marker(Marker::Braille)
         .paint(|ctx| {
-            if s_len > 1 {
+            if s_len == 1 {
+                // Draw a flat reference line at the current value for each metric
+                for line_spec in lines {
+                    let y = (line_spec.extract)(&history[0]);
+                    ctx.draw(&CanvasLine {
+                        x1: 0.0,
+                        y1: y,
+                        x2: max_samples,
+                        y2: y,
+                        color: line_spec.color,
+                    });
+                }
+            } else if s_len > 1 {
                 for line_spec in lines {
                     for i in 0..(s_len - 1) {
                         let x1 = max_samples - (s_len - 1 - i) as f64;

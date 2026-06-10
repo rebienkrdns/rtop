@@ -5,6 +5,8 @@ pub enum ProcessSortColumn {
     Memory,
     DiskRead,
     DiskWrite,
+    NetRx,
+    NetTx,
     Name,
 }
 
@@ -64,6 +66,10 @@ pub struct ProcessData {
     pub memory_pct: f64,
     pub disk_read_per_sec: Option<f64>,
     pub disk_write_per_sec: Option<f64>,
+    pub net_rx_per_sec: Option<f64>,
+    pub net_tx_per_sec: Option<f64>,
+    pub net_rx_total: Option<u64>,
+    pub net_tx_total: Option<u64>,
     pub status: ProcessStatus,
     pub uptime_secs: u64,
     pub threads: u32,

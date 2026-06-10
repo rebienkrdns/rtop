@@ -301,67 +301,73 @@ pub async fn poll_database_container(container: ContainerData) -> DbMonitorData 
 
 async fn query_postgres_metrics(client: &tokio_postgres::Client, metrics: &mut DbMetrics) -> Result<(), tokio_postgres::Error> {
     // 1. Connections active vs idle
-    let rows = client.query("SELECT state, count(*) FROM pg_stat_activity GROUP BY state", &[]).await?;
-    metrics.connections_idle = 0;
-    metrics.connections_active = 0;
-    for row in rows {
-        let state: Option<String> = row.get(0);
-        let count: Option<i64> = row.get(1);
-        if let Some(c) = count {
-            match state.as_deref() {
-                Some("active") => metrics.connections_active = c as u32,
-                _ => metrics.connections_idle += c as u32,
+    if let Ok(rows) = client.query("SELECT state, count(*) FROM pg_stat_activity GROUP BY state", &[]).await {
+        metrics.connections_idle = 0;
+        metrics.connections_active = 0;
+        for row in rows {
+            let state: Option<String> = row.get(0);
+            let count: Option<i64> = row.get(1);
+            if let Some(c) = count {
+                match state.as_deref() {
+                    Some("active") => metrics.connections_active = c as u32,
+                    _ => metrics.connections_idle += c as u32,
+                }
             }
         }
     }
 
     // 2. Cache Hit Ratio
-    let rows = client.query(
-        "SELECT sum(heap_blks_hit)::float8 / (sum(heap_blks_read) + sum(heap_blks_hit) + 1)::float8 * 100.0 FROM pg_statio_user_tables", 
+    if let Ok(rows) = client.query(
+        "SELECT sum(heap_blks_hit)::float8 / (sum(heap_blks_read) + sum(heap_blks_hit) + 1)::float8 * 100.0 FROM pg_statio_user_tables",
         &[]
-    ).await?;
-    if let Some(row) = rows.first() {
-        let ratio: Option<f64> = row.get(0);
-        metrics.cache_hit_ratio = ratio.unwrap_or(0.0);
+    ).await {
+        if let Some(row) = rows.first() {
+            let ratio: Option<f64> = row.get(0);
+            metrics.cache_hit_ratio = ratio.unwrap_or(0.0);
+        }
     }
 
     // 3. Locks
-    let rows = client.query("SELECT count(*) FROM pg_locks WHERE NOT granted", &[]).await?;
-    if let Some(row) = rows.first() {
-        let count: Option<i64> = row.get(0);
-        metrics.locks_count = count.unwrap_or(0) as u32;
+    if let Ok(rows) = client.query("SELECT count(*) FROM pg_locks WHERE NOT granted", &[]).await {
+        if let Some(row) = rows.first() {
+            let count: Option<i64> = row.get(0);
+            metrics.locks_count = count.unwrap_or(0) as u32;
+        }
     }
 
     // 4. Long running queries
-    let rows = client.query(
+    if let Ok(rows) = client.query(
         "SELECT pid, query, EXTRACT(epoch FROM (now() - query_start))::float8 FROM pg_stat_activity WHERE state = 'active' AND now() - query_start > interval '5 seconds' ORDER BY query_start ASC LIMIT 3",
         &[]
-    ).await?;
-    metrics.long_running_queries.clear();
-    for row in rows {
-        let pid: i32 = row.get(0);
-        let query: String = row.get(1);
-        let duration: f64 = row.get(2);
-        metrics.long_running_queries.push((pid as u32, query, format!("{:.1}s", duration)));
+    ).await {
+        metrics.long_running_queries.clear();
+        for row in rows {
+            let pid: i32 = row.get(0);
+            let query: String = row.get(1);
+            let duration: f64 = row.get(2);
+            metrics.long_running_queries.push((pid as u32, query, format!("{:.1}s", duration)));
+        }
     }
 
-    // 5. Tuple operations and block I/O (bytes approximation) from pg_stat_database
-    let rows_db = client.query(
-        "SELECT COALESCE(sum(tup_returned), 0)::int8, COALESCE(sum(tup_inserted + tup_updated + tup_deleted), 0)::int8, COALESCE(sum(blks_read), 0)::int8, COALESCE(sum(blks_write), 0)::int8 FROM pg_stat_database",
+    // 5. Tuple operations and block I/O from pg_stat_database
+    // blks_read = disk blocks read; blks_hit = blocks served from buffer cache (≈ bytes sent to clients)
+    if let Ok(rows_db) = client.query(
+        "SELECT COALESCE(sum(tup_returned), 0)::int8, COALESCE(sum(tup_inserted + tup_updated + tup_deleted), 0)::int8, COALESCE(sum(blks_read), 0)::int8, COALESCE(sum(blks_hit), 0)::int8 FROM pg_stat_database",
         &[]
-    ).await?;
-    if let Some(row) = rows_db.first() {
-        let reads: i64 = row.get(0);
-        let writes: i64 = row.get(1);
-        let blks_read: i64 = row.get(2);
-        let blks_write: i64 = row.get(3);
-        
-        metrics.raw_com_select = reads as u64;
-        metrics.raw_com_insert = writes as u64;
-        metrics.raw_com_update = 0;
-        metrics.raw_com_delete = 0;
-        metrics.raw_bytes_received = (blks_read as u64) * 8192;
-        metrics.raw_bytes_sent = (blks_write as u64) * 8192;
+    ).await {
+        if let Some(row) = rows_db.first() {
+            let reads: i64 = row.get(0);
+            let writes: i64 = row.get(1);
+            let blks_read: i64 = row.get(2);
+            let blks_hit: i64 = row.get(3);
+
+            metrics.raw_com_select = reads as u64;
+            metrics.raw_com_insert = writes as u64;
+            metrics.raw_com_update = 0;
+            metrics.raw_com_delete = 0;
+            metrics.raw_bytes_received = (blks_read as u64) * 8192;
+            metrics.raw_bytes_sent = (blks_hit as u64) * 8192;
+        }
     }
     metrics.raw_slow_queries = metrics.long_running_queries.len() as u64;
 

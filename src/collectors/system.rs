@@ -4,6 +4,7 @@ use sysinfo::{Disks, System};
 
 use crate::collectors::disk::{device_short_name, DiskIoCollector};
 use crate::collectors::network::NetworkCollector;
+use crate::collectors::process_net::ProcessNetCollector;
 use crate::collectors::psi::PsiCollector;
 use crate::models::{
     CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessStatus,
@@ -27,6 +28,7 @@ pub struct SystemCollector {
     disks: Disks,
     disk_io: DiskIoCollector,
     network: NetworkCollector,
+    process_net: ProcessNetCollector,
     psi: PsiCollector,
 }
 
@@ -46,6 +48,7 @@ impl SystemCollector {
             disks,
             disk_io: DiskIoCollector::new(),
             network: NetworkCollector::new(),
+            process_net: ProcessNetCollector::new(),
             psi: PsiCollector::new(),
         }
     }
@@ -180,6 +183,7 @@ impl SystemCollector {
             .map(|pid| pid.as_u32())
             .collect();
         let (rates, permission_denied) = self.disk_io.process_io_rates(&pids);
+        let net_rates = self.process_net.collect(&pids);
         let users = sysinfo::Users::new_with_refreshed_list();
         let total_mem = self.sys.total_memory();
 
@@ -207,6 +211,11 @@ impl SystemCollector {
                 let io_rate = rates.get(&pid);
                 let disk_read_per_sec = io_rate.map(|r| r.read_bytes_per_sec);
                 let disk_write_per_sec = io_rate.map(|r| r.write_bytes_per_sec);
+                let net_rate = net_rates.get(&pid);
+                let net_rx_per_sec = net_rate.map(|r| r.rx_bytes_per_sec);
+                let net_tx_per_sec = net_rate.map(|r| r.tx_bytes_per_sec);
+                let net_rx_total = net_rate.map(|r| r.rx_total);
+                let net_tx_total = net_rate.map(|r| r.tx_total);
 
                 let status = match proc_val.status() {
                     sysinfo::ProcessStatus::Run => ProcessStatus::Running,
@@ -247,6 +256,10 @@ impl SystemCollector {
                     memory_pct,
                     disk_read_per_sec,
                     disk_write_per_sec,
+                    net_rx_per_sec,
+                    net_tx_per_sec,
+                    net_rx_total,
+                    net_tx_total,
                     status,
                     uptime_secs,
                     threads,

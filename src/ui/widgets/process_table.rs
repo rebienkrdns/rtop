@@ -158,8 +158,12 @@ pub fn render(
             Span::styled("r", Style::default().fg(theme.accent)),
             Span::styled(" DiskR  ", Style::default().fg(theme.muted)),
             Span::styled("w", Style::default().fg(theme.accent)),
+            Span::styled(" DiskW  ", Style::default().fg(theme.muted)),
+            Span::styled("i", Style::default().fg(theme.accent)),
+            Span::styled(" NetRX  ", Style::default().fg(theme.muted)),
+            Span::styled("o", Style::default().fg(theme.accent)),
             Span::styled(
-                format!(" DiskW  ↑↓ {}  Enter {}  ", t("Navigate"), t("EnterDetail")),
+                format!(" NetTX  ↑↓ {}  Enter {}  ", t("Navigate"), t("EnterDetail")),
                 Style::default().fg(theme.muted),
             ),
             Span::styled(
@@ -227,6 +231,16 @@ pub fn render(
                 let bw = b.disk_write_per_sec.unwrap_or(0.0);
                 aw.partial_cmp(&bw).unwrap_or(std::cmp::Ordering::Equal)
             }
+            ProcessSortColumn::NetRx => {
+                let ar = a.net_rx_per_sec.unwrap_or(0.0);
+                let br = b.net_rx_per_sec.unwrap_or(0.0);
+                ar.partial_cmp(&br).unwrap_or(std::cmp::Ordering::Equal)
+            }
+            ProcessSortColumn::NetTx => {
+                let at = a.net_tx_per_sec.unwrap_or(0.0);
+                let bt = b.net_tx_per_sec.unwrap_or(0.0);
+                at.partial_cmp(&bt).unwrap_or(std::cmp::Ordering::Equal)
+            }
             ProcessSortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
         };
         if state.sort_asc {
@@ -240,13 +254,18 @@ pub fn render(
     let is_mem = state.sort_col == ProcessSortColumn::Memory;
     let is_dr = state.sort_col == ProcessSortColumn::DiskRead;
     let is_dw = state.sort_col == ProcessSortColumn::DiskWrite;
+    let is_nrx = state.sort_col == ProcessSortColumn::NetRx;
+    let is_ntx = state.sort_col == ProcessSortColumn::NetTx;
     let is_name = state.sort_col == ProcessSortColumn::Name;
+
+    // Only show network columns when at least one process has network data
+    let show_net = processes.iter().any(|p| p.net_rx_per_sec.is_some() || p.net_rx_total.is_some());
 
     let header_style = Style::default()
         .fg(theme.accent)
         .add_modifier(Modifier::BOLD);
 
-    let header_cells = vec![
+    let mut header_cells = vec![
         Cell::from(
             Line::from(Span::styled("PID", header_style))
                 .alignment(ratatui::layout::Alignment::Right),
@@ -313,8 +332,47 @@ pub fn render(
             ))
             .alignment(ratatui::layout::Alignment::Right),
         ),
-        Cell::from(Span::styled(t("State"), header_style)),
     ];
+
+    if show_net {
+        header_cells.push(Cell::from(
+            Line::from(Span::styled(
+                col_header("Net RX", is_nrx, state.sort_asc),
+                if is_nrx {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ));
+        header_cells.push(Cell::from(
+            Line::from(Span::styled(
+                col_header("Net TX", is_ntx, state.sort_asc),
+                if is_ntx {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+        ));
+        header_cells.push(Cell::from(
+            Line::from(Span::styled("Net RX Tot", header_style))
+                .alignment(ratatui::layout::Alignment::Right),
+        ));
+        header_cells.push(Cell::from(
+            Line::from(Span::styled("Net TX Tot", header_style))
+                .alignment(ratatui::layout::Alignment::Right),
+        ));
+    }
+
+    header_cells.push(Cell::from(Span::styled(t("State"), header_style)));
+
     let header_row = Row::new(header_cells).height(1);
 
     let visible_rows = (table_area.height as usize).saturating_sub(1); // minus header
@@ -399,28 +457,74 @@ pub fn render(
             row_style.fg(status_color),
         )]));
 
-        let row = Row::new(vec![
+        let mut cells = vec![
             pid_cell,
             process_cell,
             cpu_cell,
             ram_cell,
             disk_r_cell,
             disk_w_cell,
-            status_cell,
-        ])
-        .style(row_style);
+        ];
+
+        if show_net {
+            let net_rx_color = if selected { sel_fg } else { Color::Cyan };
+            let net_tx_color = if selected { sel_fg } else { Color::Magenta };
+
+            cells.push(Cell::from(
+                Line::from(vec![Span::styled(
+                    fmt_rate(p.net_rx_per_sec),
+                    row_style.fg(net_rx_color),
+                )])
+                .alignment(ratatui::layout::Alignment::Right),
+            ));
+            cells.push(Cell::from(
+                Line::from(vec![Span::styled(
+                    fmt_rate(p.net_tx_per_sec),
+                    row_style.fg(net_tx_color),
+                )])
+                .alignment(ratatui::layout::Alignment::Right),
+            ));
+            cells.push(Cell::from(
+                Line::from(vec![Span::styled(
+                    p.net_rx_total
+                        .map(|v| ByteSize(v).to_string())
+                        .unwrap_or_else(|| "–".to_string()),
+                    row_style.fg(if selected { sel_fg } else { net_rx_color }),
+                )])
+                .alignment(ratatui::layout::Alignment::Right),
+            ));
+            cells.push(Cell::from(
+                Line::from(vec![Span::styled(
+                    p.net_tx_total
+                        .map(|v| ByteSize(v).to_string())
+                        .unwrap_or_else(|| "–".to_string()),
+                    row_style.fg(if selected { sel_fg } else { net_tx_color }),
+                )])
+                .alignment(ratatui::layout::Alignment::Right),
+            ));
+        }
+
+        cells.push(status_cell);
+
+        let row = Row::new(cells).style(row_style);
         rows.push(row);
     }
 
-    let constraints = vec![
+    let mut constraints = vec![
         Constraint::Length(6),  // PID
-        Constraint::Min(15),    // Process Name
+        Constraint::Min(12),    // Process Name
         Constraint::Length(8),  // CPU%
-        Constraint::Length(12), // RAM
-        Constraint::Length(12), // Disk Read
-        Constraint::Length(12), // Disk Write
-        Constraint::Length(12), // Status
+        Constraint::Length(10), // RAM
+        Constraint::Length(10), // Disk Read
+        Constraint::Length(10), // Disk Write
     ];
+    if show_net {
+        constraints.push(Constraint::Length(10)); // Net RX/s
+        constraints.push(Constraint::Length(10)); // Net TX/s
+        constraints.push(Constraint::Length(10)); // Net RX Tot
+        constraints.push(Constraint::Length(10)); // Net TX Tot
+    }
+    constraints.push(Constraint::Length(10)); // Status
 
     let table = Table::new(rows, constraints)
         .header(header_row)

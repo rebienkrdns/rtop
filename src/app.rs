@@ -866,6 +866,16 @@ impl AppState {
                     let bw = b.disk_write_per_sec.unwrap_or(0.0);
                     aw.partial_cmp(&bw).unwrap_or(std::cmp::Ordering::Equal)
                 }
+                ProcessSortColumn::NetRx => {
+                    let ar = a.net_rx_per_sec.unwrap_or(0.0);
+                    let br = b.net_rx_per_sec.unwrap_or(0.0);
+                    ar.partial_cmp(&br).unwrap_or(std::cmp::Ordering::Equal)
+                }
+                ProcessSortColumn::NetTx => {
+                    let at = a.net_tx_per_sec.unwrap_or(0.0);
+                    let bt = b.net_tx_per_sec.unwrap_or(0.0);
+                    at.partial_cmp(&bt).unwrap_or(std::cmp::Ordering::Equal)
+                }
                 ProcessSortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             };
             if self.process_table.sort_asc {
@@ -1151,7 +1161,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         }
                         (KeyCode::Char('l'), _) if state.current_view == View::ContainerDetail => {
                             if let Some(c) = state.selected_container().cloned() {
-                                let mut ls = LogsViewState::new(c.id.clone(), c.name.clone());
+                                let mut ls = LogsViewState::new(c.id.clone(), c.name.clone(), state.lang);
                                 // Fetch last 200 lines statically
                                 if let Some(docker) = state.docker_client.clone() {
                                     let id = c.id.clone();
@@ -1397,6 +1407,20 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 && !state.process_table.filter_active =>
                         {
                             state.process_sort_by(ProcessSortColumn::DiskWrite);
+                        }
+                        (KeyCode::Char('i'), _)
+                            if state.current_view == View::Main
+                                && state.active_tab == Tab::Processes
+                                && !state.process_table.filter_active =>
+                        {
+                            state.process_sort_by(ProcessSortColumn::NetRx);
+                        }
+                        (KeyCode::Char('o'), _)
+                            if state.current_view == View::Main
+                                && state.active_tab == Tab::Processes
+                                && !state.process_table.filter_active =>
+                        {
+                            state.process_sort_by(ProcessSortColumn::NetTx);
                         }
                         (KeyCode::Char('f'), _)
                             if state.current_view == View::Main

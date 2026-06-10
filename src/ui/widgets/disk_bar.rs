@@ -7,17 +7,18 @@ use ratatui::{
     Frame,
 };
 
+use crate::localization::{translate, Language};
 use crate::models::DiskData;
 use crate::ui::theme::Theme;
 
 fn fmt_rate(bps: Option<f64>) -> String {
     match bps {
         Some(value) => format!("{}/s", ByteSize(value as u64)),
-        None => "N/D".to_string(),
+        None => "N/A".to_string(),
     }
 }
 
-pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
+pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
     if area.height < 2 {
         return;
     }
@@ -47,10 +48,11 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
         .constraints([Constraint::Min(0), Constraint::Length(8)])
         .split(chunks[0]);
 
+    let disk_label = translate("Disk", lang);
     let name_str = if disk.mount_point.is_empty() {
-        format!("Disco  {}", disk.device)
+        format!("{}  {}", disk_label, disk.device)
     } else {
-        format!("Disco  {} ({})", disk.device, disk.mount_point)
+        format!("{}  {} ({})", disk_label, disk.device, disk.mount_point)
     };
     f.render_widget(
         Paragraph::new(name_str).style(Style::default().fg(theme.accent)),
@@ -108,7 +110,7 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData) {
         ]);
         f.render_widget(Paragraph::new(io_line), io_cols[0]);
 
-        let hint = Paragraph::new("[ F2 cambiar ]")
+        let hint = Paragraph::new(format!("[ F2 {} ]", translate("Change tab", lang)))
             .style(Style::default().fg(theme.muted))
             .alignment(ratatui::layout::Alignment::Right);
         f.render_widget(hint, io_cols[1]);

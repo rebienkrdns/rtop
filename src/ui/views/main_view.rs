@@ -68,7 +68,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         ),
         Span::styled("│ ", Style::default().fg(theme.muted)),
         Span::styled(state.hostname.as_str(), Style::default().fg(theme.text)),
-        Span::styled("    Refresco: ", Style::default().fg(theme.muted)),
+        Span::styled(format!("    {}: ", state.t("Refresh")), Style::default().fg(theme.muted)),
         Span::styled(
             interval_ctrl,
             Style::default()
@@ -79,7 +79,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Span::styled(tick_dot, Style::default().fg(tick_color)),
         Span::styled("  ", Style::default()),
         Span::styled(now.as_str(), Style::default().fg(theme.muted)),
-        Span::styled("   [F1 Ayuda]", Style::default().fg(theme.muted)),
+        Span::styled(format!("   [F1 {}]", state.t("Help")), Style::default().fg(theme.muted)),
         Span::styled(
             format!("   [F4 {}: {}]", state.t("Theme"), state.cfg.theme.name()),
             Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
@@ -103,7 +103,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     // Columna 1: CPU · RAM · Disco · Red
     let col1_block = Block::default()
         .title(Span::styled(
-            " CPU · RAM · Disco · Red ",
+            format!(" {} ", state.t("CPU RAM")),
             Style::default().fg(theme.accent),
         ))
         .borders(Borders::ALL)
@@ -113,7 +113,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
     if state.history_mode {
         let samples = state.metrics_history.tail_n(state.history_range.samples());
-        history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range);
+        history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range, state.lang);
     } else {
         draw_metrics(f, col1_inner, state);
     }
@@ -121,7 +121,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     // Columna 2: Presión (PSI)
     let col2_block = Block::default()
         .title(Span::styled(
-            " Presión (PSI) ",
+            format!(" {} ", state.t("Pressure PSI")),
             Style::default().fg(theme.accent),
         ))
         .borders(Borders::ALL)
@@ -131,7 +131,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
     if state.history_mode {
         let samples = state.metrics_history.tail_n(state.history_range.samples());
-        history_chart::render_disk_net(f, col2_inner, &samples, state.history_range);
+        history_chart::render_disk_net(f, col2_inner, &samples, state.history_range, state.lang);
     } else {
         psi_widget::render(f, col2_inner, state);
     }
@@ -139,7 +139,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     // — Barra de pestañas —
     let tabs_line = Line::from(vec![
         Span::styled(
-            " Procesos ",
+            format!(" {} ", state.t("Processes")),
             Style::default()
                 .fg(if state.active_tab == Tab::Processes {
                     theme.selected_fg
@@ -155,7 +155,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         ),
         Span::raw("  "),
         Span::styled(
-            " Contenedores ",
+            format!(" {} ", state.t("Containers")),
             Style::default()
                 .fg(if state.active_tab == Tab::Containers {
                     theme.selected_fg
@@ -207,20 +207,24 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 };
                 if has_limit {
                     format!(
-                        " Contenedores: {} activos · Mem: {} / {} ",
+                        " {}: {} {} · Mem: {} / {} ",
+                        state.t("Containers"),
                         state.containers.len(),
+                        state.t("Active"),
                         ByteSize(total_used),
                         ByteSize(total_limit)
                     )
                 } else {
                     format!(
-                        " Contenedores: {} activos · Mem: {} (límite: host) ",
+                        " {}: {} {} · Mem: {} ",
+                        state.t("Containers"),
                         state.containers.len(),
+                        state.t("Active"),
                         ByteSize(total_used)
                     )
                 }
             } else {
-                " Contenedores ".to_string()
+                format!(" {} ", state.t("Containers"))
             };
 
             let block = Block::default()
@@ -245,7 +249,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .container_state
                     .message
                     .clone()
-                    .unwrap_or_else(|| "Docker / Podman no detectado".to_string());
+                    .unwrap_or_else(|| "Docker / Podman not detected".to_string());
                 f.render_widget(
                     Paragraph::new(Line::from(vec![
                         Span::styled("⚠  ", Style::default().fg(Color::Yellow)),
@@ -268,14 +272,14 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Salir  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Quit rtop")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[/] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Filtrar  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Filter")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[c] ",
                 Style::default()
@@ -310,14 +314,14 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Contenedores  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Containers")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[h] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Historial  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[F4] ",
                 Style::default()
@@ -331,7 +335,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Ayuda", Style::default().fg(theme.muted)),
+            Span::styled(state.t("Help"), Style::default().fg(theme.muted)),
         ])
     } else {
         Line::from(vec![
@@ -341,49 +345,49 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Salir  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Quit rtop")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[◀▶] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Refresco  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Refresh")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[F2] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Disco  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Disk")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[F3] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Red  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Network")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[h] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Historial  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[t] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Rango  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Range")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[Tab] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Cambiar  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Change tab")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[F4] ",
                 Style::default()
@@ -397,7 +401,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Ayuda", Style::default().fg(theme.muted)),
+            Span::styled(state.t("Help"), Style::default().fg(theme.muted)),
         ])
     };
     f.render_widget(
@@ -442,7 +446,7 @@ fn draw_metrics(f: &mut Frame, area: Rect, state: &AppState) {
         .or_else(|| state.disks.first());
 
     if let Some(disk) = disk_to_render {
-        disk_bar::render(f, chunks[2], disk);
+        disk_bar::render(f, chunks[2], disk, state.lang);
     }
 
     network_widget::render(f, chunks[3], state);

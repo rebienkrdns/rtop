@@ -3,37 +3,71 @@
 [![CI](https://github.com/rebienkrdns/rtop/actions/workflows/ci.yml/badge.svg)](https://github.com/rebienkrdns/rtop/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
 
-`rtop` is a modern, fast, and lightweight terminal-based system resource monitor (TUI) written in Rust. Beyond classic monitoring metrics, `rtop` offers native Docker/Podman integration and detailed system/process-level disk I/O tracking (read/write speeds) on Linux and macOS.
+`rtop` is a modern, fast, and lightweight terminal-based system resource monitor (TUI) written in Rust. It runs on **macOS and Linux** and provides real-time CPU, memory, disk, and network metrics alongside native Docker/Podman container monitoring, application-aware database dashboards, historical metric charts, and multiple premium themes — all in a beautifully crafted terminal interface.
 
 ---
 
-## 📸 Demonstration
+## 📸 Screenshots
 
-Here is a preview of the main interface running in dark mode:
+<details>
+<summary>🖼️ Explore the interface</summary>
 
-![rtop dashboard](assets/screenshot.png)
+![Screenshot 0](screenshot0.png)
+
+![Screenshot 1](screenshot1.png)
+
+![Screenshot 2](screenshot2.png)
+
+![Screenshot 3](screenshot3.png)
+
+![Screenshot 4](screenshot4.png)
+
+![Screenshot 5](screenshot5.png)
+
+![Screenshot 6](screenshot6.png)
+
+![Screenshot 7](screenshot7.png)
+
+![Screenshot 8](screenshot8.png)
+
+![Screenshot 9](screenshot9.png)
+
+</details>
+
+---
+
+## ✨ Features
+
+- **Real-time system monitoring** — CPU, RAM, Swap, Disk I/O, and Network throughput in a clean 2-column layout
+- **Process monitoring** — sortable table with per-process CPU, memory, and disk read/write speeds; full process detail view
+- **Docker/Podman integration** — native container monitoring with stats, logs, restart/stop controls
+- **Application-aware database dashboards** — auto-detects PostgreSQL, MySQL, and MariaDB processes (local or in containers) and renders live metrics with historical Braille charts
+- **Historical metrics charts** — Braille-rendered canvas charts for CPU, memory, disk, and network history; configurable time ranges (1 min → 5 min → 15 min → 1 hour)
+- **Premium themes** — Default, Dracula, Gruvbox, and Tokyo Night; cycle with `F4` or the on-screen button
+- **Dynamic localization** — automatic English/Spanish UI based on your system locale (`LANG`, `LC_ALL`, `LC_MESSAGES`)
+- **Minimal footprint** — under 15 MB RAM at runtime
 
 ---
 
 ## 🏗️ Architecture
 
-The following diagram illustrates how `rtop` collects metrics and handles the rendering/event loop:
-
 ```mermaid
 graph TD
     A[Hardware & OS Stats] --> B(collectors::SystemCollector)
     C[Docker/Podman Engine] --> D(collectors::ContainerCollector)
-    
-    B --> E[AppState Snapshot]
-    D --> E
-    
-    E -->|1. Detects Env Locale / Defaults to EN| F(localization::translate)
-    E -->|2. Ticks every N seconds| G(ui::draw)
-    
-    G --> H[Views: Main / Process Detail / Container Detail / Logs]
-    H -->|Ratatui / Crossterm| I[Terminal Screen Output]
-    
-    J[Keyboard Events] -->|Tab, F1-F3, Enter, ESC, etc.| E
+    E[Database Processes / Containers] --> F(collectors::DatabaseCollector)
+
+    B --> G[AppState Snapshot]
+    D --> G
+    F --> G
+
+    G -->|1. Detects Env Locale / Defaults to EN| H(localization::translate)
+    G -->|2. Ticks every N seconds| I(ui::draw)
+
+    I --> J[Views: Main / Process Detail / Container Detail / Logs / DB Dashboard]
+    J -->|Ratatui / Crossterm| K[Terminal Screen Output]
+
+    L[Keyboard Events] -->|Tab, F1-F4, Enter, ESC, etc.| G
 ```
 
 ---
@@ -54,20 +88,12 @@ If you have Cargo installed:
 cargo install rtop
 ```
 
-### 3. macOS (Homebrew)
-Install `rtop` via our custom Homebrew formula tap:
-
-```bash
-brew tap rebienkrdns/rtop
-brew install rtop
-```
-
-### 4. Packages for Linux Distributions
+### 3. Packages for Linux Distributions
 Download the packages directly from the [GitHub Releases](https://github.com/rebienkrdns/rtop/releases):
 *   **Debian/Ubuntu (`.deb`):** `sudo dpkg -i rtop_*.deb`
 *   **RHEL/CentOS/Fedora (`.rpm`):** `sudo rpm -i rtop_*.rpm`
 
-### 5. Compiling from Source
+### 4. Compiling from Source
 ```bash
 git clone https://github.com/rebienkrdns/rtop.git
 cd rtop
@@ -77,21 +103,9 @@ The optimized binary will be located in `target/release/rtop`.
 
 ---
 
-## 📊 Comparison with Alternatives
-
-| Feature | `rtop` 🚀 | `btop` | `ctop` | `htop` |
-| :--- | :---: | :---: | :---: | :---: |
-| **Written in** | **Rust** | C++ | Go | C |
-| **Memory Usage** | **Minimal (< 15MB)** | Low | Medium | Minimal |
-| **Docker/Podman Monitoring** | **Yes (Native)** | No | Yes (Only containers) | No |
-| **Disk Read/Write per Process** | **Yes (Direct read)** | No | No | No |
-| **Easy Packaging** | **Yes (`cargo`)** | Yes | Yes | Yes |
-
----
-
 ## ⚙️ Configuration
 
-`rtop` stores its configuration file at `~/.config/rtop/config.toml` (or using the path specified by the `RTOP_CONFIG_PATH` environment variable). The file is generated automatically with default values the first time the program is launched.
+`rtop` stores its configuration file at `~/.config/rtop/config.toml` (or the path specified by the `RTOP_CONFIG_PATH` environment variable). The file is generated automatically with default values on first launch.
 
 ### `config.toml` Example
 
@@ -116,6 +130,9 @@ process_sort_column = "cpu"
 # Show or hide Swap memory section
 show_swap = true
 
+# Active theme ("default", "dracula", "gruvbox", "tokyo_night")
+theme = "default"
+
 # Custom path to the Docker socket (e.g., "/var/run/docker.sock")
 # docker_socket_path = "/var/run/docker.sock"
 ```
@@ -130,10 +147,11 @@ show_swap = true
 | `Tab` | Toggle between tabs (Processes ↔ Containers) |
 | `↑` / `↓` | Navigate lists |
 | `Enter` | View details of the selected process or container |
-| `ESC` | Back to previous screen / Close help or selector modal |
+| `ESC` | Back to previous screen / Close modal |
 | `F1` | Show help modal |
 | `F2` | Open disk device selector |
 | `F3` | Open network interface selector |
+| `F4` | Cycle through themes (Default → Dracula → Gruvbox → Tokyo Night) |
 | `[` | Decrease refresh interval (faster updates) |
 | `]` | Increase refresh interval (slower updates) |
 | `c` | Sort processes by CPU usage |
@@ -141,17 +159,29 @@ show_swap = true
 | `r` | Sort processes by Disk Read speed |
 | `w` | Sort processes by Disk Write speed |
 | `/` | Filter processes/containers by name |
+| `h` | Toggle between historical charts and bar gauges |
+| `t` | Cycle history time ranges (1 min → 5 min → 15 min → 1 hour) |
 | `L` | *(Containers)* View logs in detail view |
 | `R` | *(Containers)* Restart container (requests confirmation) |
 | `S` | *(Containers)* Stop container (requests confirmation) |
-| `h` | Toggle between metric history charts (Sparklines) and bar gauges |
-| `t` | Cycle history time ranges (1 min → 5 mins → 15 mins → 1 hour) |
+
+---
+
+## 🗄️ Database Monitoring
+
+`rtop` automatically detects running PostgreSQL, MySQL, and MariaDB instances — whether running as local processes or inside Docker/Podman containers. When you enter the detail view of a detected database process or container, `rtop` renders an application-specific dashboard with:
+
+- Live connection counts, query throughput, cache hit rates, and engine-specific metrics
+- Historical Braille charts for all key indicators
+- Support for credential overrides via `config.toml` (useful when connecting to containers)
+
+No manual configuration is needed for local instances with default socket/port settings.
 
 ---
 
 ## 🌐 Dynamic Localization
 
-`rtop` defaults to **English**. On startup, it checks standard environment variables (`LANG`, `LC_ALL`, `LC_MESSAGES`) to determine the system locale. If your system is set to **Spanish** (e.g. starting with `es`), the interface and command-line help options will automatically adjust to Spanish.
+`rtop` defaults to **English**. On startup, it checks standard environment variables (`LANG`, `LC_ALL`, `LC_MESSAGES`) to determine the system locale. If your system is set to **Spanish** (e.g. starting with `es`), the interface and command-line help options will automatically switch to Spanish.
 
 ---
 

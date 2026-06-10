@@ -11,6 +11,7 @@ use ratatui::symbols::Marker;
 
 
 
+use crate::localization::{translate, Language};
 use crate::ui::history::{HistoryRange, MetricSample};
 use crate::ui::theme::Theme;
 
@@ -74,7 +75,7 @@ fn max_bps(samples: &[&MetricSample], f: impl Fn(&MetricSample) -> f64) -> f64 {
         .fold(0.0_f64, f64::max)
 }
 
-pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange) {
+pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange, lang: Language) {
     if area.height < 4 {
         return;
     }
@@ -100,7 +101,7 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         Paragraph::new(Line::from(vec![
             Span::styled("CPU", Style::default().fg(theme.accent)),
             Span::styled(
-                format!("  {:.1}%  [h] historial · [t] {}", cpu_last, range.label()),
+                format!("  {:.1}%  [h] {} · [t] {}", cpu_last, translate("History", lang), range.label()),
                 Style::default().fg(theme.muted),
             ),
         ])),
@@ -146,7 +147,7 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
     );
 }
 
-pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange) {
+pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange, lang: Language) {
     if area.height < 4 {
         return;
     }
@@ -172,7 +173,7 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
     // Disco label
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("Disco", Style::default().fg(theme.accent)),
+            Span::styled(translate("Disk", lang), Style::default().fg(theme.accent)),
             Span::styled(
                 format!(
                     "  ↑{}/s  ↓{}/s",
@@ -201,7 +202,7 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
     // Red label
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("Red", Style::default().fg(theme.accent)),
+            Span::styled(translate("Network", lang), Style::default().fg(theme.accent)),
             Span::styled(
                 format!(
                     "  ↓{}/s  ↑{}/s",

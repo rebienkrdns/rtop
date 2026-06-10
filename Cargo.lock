@@ -2147,6 +2147,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "futures-util",
+ "libc",
  "libproc",
  "mysql_async",
  "ratatui",

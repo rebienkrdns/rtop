@@ -22,7 +22,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
     match display_data {
         None => {
             let msg = Paragraph::new(Line::from(vec![Span::styled(
-                "Detectando interfaz…",
+                state.t("SelectNIC"),
                 Style::default().fg(theme.muted),
             )]));
             f.render_widget(msg, area);
@@ -30,7 +30,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
         Some(data) => {
             let is_total = state.selected_nic.is_none();
             let label = if is_total {
-                "Todas (sumatoria)".to_string()
+                format!("{} {}", state.t("AllNICs"), state.t("Summation"))
             } else {
                 data.interface.clone()
             };
@@ -75,7 +75,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
 
             f.render_widget(
                 Paragraph::new(Line::from(vec![
-                    Span::styled("Red  ", Style::default().fg(theme.muted)),
+                    Span::styled(format!("{}  ", state.t("Network")), Style::default().fg(theme.muted)),
                     Span::styled(
                         label,
                         Style::default()
@@ -120,13 +120,13 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 f.render_widget(
                     Paragraph::new(Line::from(vec![
                         Span::styled(
-                            "↓ Entrada ",
+                            format!("↓ {} ", "In"),
                             Style::default().fg(theme.ok).add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(recv_str, Style::default().fg(theme.ok)),
                         Span::raw("     "),
                         Span::styled(
-                            "↑ Salida ",
+                            format!("↑ {} ", "Out"),
                             Style::default()
                                 .fg(theme.accent_dim)
                                 .add_modifier(Modifier::BOLD),
@@ -136,7 +136,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                     rate_cols[0],
                 );
                 f.render_widget(
-                    Paragraph::new("[ F3 cambiar ]")
+                    Paragraph::new(format!("[ F3 {} ]", state.t("Change tab")))
                         .style(Style::default().fg(theme.muted))
                         .alignment(Alignment::Right),
                     rate_cols[1],
@@ -149,10 +149,10 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 let sent_total = format!("{}", ByteSize(data.total_sent_bytes));
                 f.render_widget(
                     Paragraph::new(Line::from(vec![
-                        Span::styled("Total recibido: ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("↓ {}: ", state.t("Net Tot")), Style::default().fg(theme.muted)),
                         Span::styled(recv_total, Style::default().fg(theme.ok)),
                         Span::raw("     "),
-                        Span::styled("Total enviado: ", Style::default().fg(theme.muted)),
+                        Span::styled(format!("↑ {}: ", state.t("Net Tot")), Style::default().fg(theme.muted)),
                         Span::styled(sent_total, Style::default().fg(theme.accent_dim)),
                     ])),
                     chunks[3],

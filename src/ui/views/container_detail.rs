@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Block, Borders, Gauge, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 
@@ -43,7 +43,7 @@ pub fn render(
 
     let block = Block::default()
         .title(Span::styled(
-            format!(" Contenedor: {} ", container.name),
+            format!(" {}: {} ", state.t("ContainerDetailHeader").trim_end_matches(':'), container.name),
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
@@ -115,11 +115,11 @@ pub fn render(
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw("   "),
-            Span::styled("Imagen: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("Image")), Style::default().fg(theme.muted)),
             Span::styled(container.image.clone(), Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
-            Span::styled("Estado: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("State")), Style::default().fg(theme.muted)),
             Span::styled(
                 container.status.as_str(),
                 Style::default()
@@ -127,7 +127,7 @@ pub fn render(
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw("   "),
-            Span::styled("Uptime: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("Uptime")), Style::default().fg(theme.muted)),
             Span::styled(uptime_str, Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
@@ -142,7 +142,7 @@ pub fn render(
             ),
         ]),
         Line::from(vec![
-            Span::styled("Red Tot: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("Net Tot")), Style::default().fg(theme.muted)),
             Span::styled(
                 format!(
                     "↓ {}  ·  ↑ {}",
@@ -152,7 +152,7 @@ pub fn render(
                 Style::default().fg(Color::White),
             ),
             Span::raw("   "),
-            Span::styled("Disk Tot: ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}: ", state.t("Disk Tot")), Style::default().fg(theme.muted)),
             Span::styled(
                 format!(
                     "R {}  ·  W {}",
@@ -173,8 +173,10 @@ pub fn render(
         let cpu_block = Block::default()
             .title(Span::styled(
                 format!(
-                    " CPU Historial ({}) · Último: {:.1}% ",
+                    " {} ({}) · {}: {:.1}% ",
+                    state.t("CPUHistory"),
                     state.history_range.label(),
+                    state.t("LastLabel"),
                     cpu_pct
                 ),
                 Style::default().fg(theme.muted),
@@ -219,8 +221,10 @@ pub fn render(
         let mem_block = Block::default()
             .title(Span::styled(
                 format!(
-                    " Memoria Historial ({}) · Último: {:.1}% ",
+                    " {} ({}) · {}: {:.1}% ",
+                    state.t("MemHistory"),
                     state.history_range.label(),
+                    state.t("LastLabel"),
                     mem_pct
                 ),
                 Style::default().fg(theme.muted),
@@ -266,8 +270,10 @@ pub fn render(
         let net_block = Block::default()
             .title(Span::styled(
                 format!(
-                    " Red Historial ({}) · Último: ↓{}/s · ↑{}/s ",
+                    " {} ({}) · {}: ↓{}/s · ↑{}/s ",
+                    state.t("Net History"),
                     state.history_range.label(),
+                    state.t("LastLabel"),
                     ByteSize(net_recv as u64),
                     ByteSize(net_sent as u64)
                 ),
@@ -297,7 +303,8 @@ pub fn render(
                 Block::default()
                     .title(Span::styled(
                         format!(
-                            " Red  ↓{}/s (Total: {})  ↑{}/s (Total: {}) ",
+                            " {}  ↓{}/s (Total: {})  ↑{}/s (Total: {}) ",
+                            state.t("Network"),
                             ByteSize(net_recv as u64),
                             ByteSize(container.net_recv_total),
                             ByteSize(net_sent as u64),
@@ -320,8 +327,10 @@ pub fn render(
         let disk_block = Block::default()
             .title(Span::styled(
                 format!(
-                    " Disco Historial ({}) · Último: R:{}/s · W:{}/s ",
+                    " {} ({}) · {}: R:{}/s · W:{}/s ",
+                    state.t("Disk History"),
                     state.history_range.label(),
+                    state.t("LastLabel"),
                     ByteSize(disk_r as u64),
                     ByteSize(disk_w as u64)
                 ),
@@ -351,7 +360,8 @@ pub fn render(
                 Block::default()
                     .title(Span::styled(
                         format!(
-                            " Disco  R:{}/s (Total: {})  W:{}/s (Total: {}) ",
+                            " {}  R:{}/s (Total: {})  W:{}/s (Total: {}) ",
+                            state.t("Disk"),
                             ByteSize(disk_r as u64),
                             ByteSize(container.disk_read_total),
                             ByteSize(disk_w as u64),
@@ -367,7 +377,7 @@ pub fn render(
         f.render_widget(disk_gauge, chunks[4]);
     }
 
-    // Metadata: puertos, volúmenes, redes, env vars — todo en un único bloque
+    // Metadata: puertos, volúmenes, redes, env vars — todo en un único bloque con scroll
     {
         let meta_block = Block::default()
             .borders(Borders::ALL)
@@ -379,9 +389,8 @@ pub fn render(
 
         let muted = theme.muted;
 
-        // Puertos
         lines.push(Line::from(Span::styled(
-            "── Puertos ",
+            format!("── {} ", state.t("Ports")),
             Style::default().fg(muted),
         )));
         if container.ports.is_empty() {
@@ -390,7 +399,9 @@ pub fn render(
                 Span::styled("—", Style::default().fg(Color::DarkGray)),
             ]));
         } else {
-            for p in &container.ports {
+            let mut sorted_ports = container.ports.clone();
+            sorted_ports.sort();
+            for p in &sorted_ports {
                 lines.push(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(p.clone(), Style::default().fg(Color::Cyan)),
@@ -398,9 +409,8 @@ pub fn render(
             }
         }
 
-        // Volúmenes
         lines.push(Line::from(Span::styled(
-            "── Volúmenes ",
+            format!("── {} ", state.t("Volumes")),
             Style::default().fg(muted),
         )));
         if container.volumes.is_empty() {
@@ -409,7 +419,9 @@ pub fn render(
                 Span::styled("—", Style::default().fg(Color::DarkGray)),
             ]));
         } else {
-            for v in &container.volumes {
+            let mut sorted_volumes = container.volumes.clone();
+            sorted_volumes.sort();
+            for v in &sorted_volumes {
                 lines.push(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(v.clone(), Style::default().fg(Color::Yellow)),
@@ -417,9 +429,8 @@ pub fn render(
             }
         }
 
-        // Redes
         lines.push(Line::from(Span::styled(
-            "── Redes ",
+            format!("── {} ", state.t("Networks")),
             Style::default().fg(muted),
         )));
         if container.networks.is_empty() {
@@ -428,7 +439,9 @@ pub fn render(
                 Span::styled("—", Style::default().fg(Color::DarkGray)),
             ]));
         } else {
-            for n in &container.networks {
+            let mut sorted_networks = container.networks.clone();
+            sorted_networks.sort();
+            for n in &sorted_networks {
                 lines.push(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(n.clone(), Style::default().fg(Color::Magenta)),
@@ -436,9 +449,8 @@ pub fn render(
             }
         }
 
-        // Variables de entorno
         lines.push(Line::from(Span::styled(
-            "── Variables de entorno ",
+            format!("── {} ", state.t("EnvVarsLabel")),
             Style::default().fg(muted),
         )));
         if container.env_vars.is_empty() {
@@ -447,7 +459,9 @@ pub fn render(
                 Span::styled("—", Style::default().fg(Color::DarkGray)),
             ]));
         } else {
-            for e in &container.env_vars {
+            let mut sorted_env = container.env_vars.clone();
+            sorted_env.sort();
+            for e in &sorted_env {
                 if let Some((key, val)) = e.split_once('=') {
                     lines.push(Line::from(vec![
                         Span::raw("  "),
@@ -466,7 +480,25 @@ pub fn render(
             }
         }
 
-        f.render_widget(Paragraph::new(lines), meta_inner);
+        let total_lines = lines.len();
+        let visible_height = meta_inner.height as usize;
+        let max_scroll = total_lines.saturating_sub(visible_height);
+        let scroll = state.detail_meta_scroll.min(max_scroll);
+
+        f.render_widget(
+            Paragraph::new(lines).scroll((scroll as u16, 0)),
+            meta_inner,
+        );
+
+        // Scrollbar visual
+        if total_lines > visible_height {
+            let mut scrollbar_state = ScrollbarState::new(max_scroll).position(scroll);
+            f.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight),
+                chunks[5],
+                &mut scrollbar_state,
+            );
+        }
     }
 
     // Footer
@@ -477,35 +509,35 @@ pub fn render(
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Volver  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", state.t("BackLabel")), Style::default().fg(theme.muted)),
         Span::styled(
             "[L] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Logs  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", state.t("Logs")), Style::default().fg(theme.muted)),
         Span::styled(
             "[R] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Reiniciar  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", state.t("Restart")), Style::default().fg(theme.muted)),
         Span::styled(
             "[S] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Detener  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", state.t("Stop")), Style::default().fg(theme.muted)),
         Span::styled(
             "[H] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Historial  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
         Span::styled(
             "[T] ",
             Style::default()
@@ -513,9 +545,16 @@ pub fn render(
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("Rango ({})", state.history_range.label()),
+            format!("{} ({})  ", state.t("Range"), state.history_range.label()),
             Style::default().fg(theme.muted),
         ),
+        Span::styled(
+            "[↑↓] ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(state.t("Navigate"), Style::default().fg(theme.muted)),
     ]);
     f.render_widget(Paragraph::new(hint), chunks[6]);
 
@@ -525,7 +564,7 @@ pub fn render(
 
     // Confirmation overlay
     if let Some(action) = confirm {
-        render_confirm_dialog(f, area, action);
+        render_confirm_dialog(f, area, action, state);
     }
 }
 
@@ -551,7 +590,7 @@ impl ConfirmAction {
     }
 }
 
-fn render_confirm_dialog(f: &mut Frame, area: Rect, action: &ConfirmAction) {
+fn render_confirm_dialog(f: &mut Frame, area: Rect, action: &ConfirmAction, state: &AppState) {
     let theme = Theme::default_theme();
 
     // Center a small dialog box
@@ -568,7 +607,7 @@ fn render_confirm_dialog(f: &mut Frame, area: Rect, action: &ConfirmAction) {
 
     let block = Block::default()
         .title(Span::styled(
-            " Confirmar ",
+            format!(" {} ", state.t("Confirm")),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
@@ -577,7 +616,7 @@ fn render_confirm_dialog(f: &mut Frame, area: Rect, action: &ConfirmAction) {
     f.render_widget(ratatui::widgets::Clear, dialog_area);
     f.render_widget(block, dialog_area);
 
-    let msg = format!("¿Seguro que quieres {} este contenedor?", action.label());
+    let msg = state.t(if matches!(action, ConfirmAction::Restart(_)) { "YesNoConfirmRestart" } else { "YesNoConfirmStop" }).to_string();
     let lines = vec![
         Line::from(Span::styled(msg, Style::default().fg(Color::White))),
         Line::from(vec![]),
@@ -586,14 +625,14 @@ fn render_confirm_dialog(f: &mut Frame, area: Rect, action: &ConfirmAction) {
                 "[Enter] ",
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Confirmar  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("{}  ", state.t("Confirm")), Style::default().fg(theme.muted)),
             Span::styled(
                 "[ESC] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("Cancelar", Style::default().fg(theme.muted)),
+            Span::styled(state.t("Cancel"), Style::default().fg(theme.muted)),
         ]),
     ];
     f.render_widget(Paragraph::new(lines), inner);

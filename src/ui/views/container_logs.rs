@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::localization::{translate, Language};
 use crate::ui::theme::Theme;
 
 pub struct LogsViewState {
@@ -15,16 +16,18 @@ pub struct LogsViewState {
     pub lines: Vec<String>,
     pub scroll: usize,
     pub follow: bool,
+    pub lang: Language,
 }
 
 impl LogsViewState {
-    pub fn new(container_id: String, container_name: String) -> Self {
+    pub fn new(container_id: String, container_name: String, lang: Language) -> Self {
         Self {
             container_id,
             container_name,
             lines: vec![],
             scroll: 0,
             follow: false,
+            lang,
         }
     }
 
@@ -61,16 +64,17 @@ impl LogsViewState {
 pub fn render(f: &mut Frame, area: Rect, state: &LogsViewState) {
     let theme = Theme::default_theme();
 
-    let title = format!(" Logs: {} ", state.container_name);
+    let t = |key: &'static str| translate(key, state.lang);
+    let title = format!(" {}: {} ", t("Logs"), state.container_name);
     let follow_indicator = if state.follow {
         Span::styled(
-            " [SIGUIENDO] ",
+            format!(" [{}] ", t("Toggle auto-scroll")),
             Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
         )
     } else {
-        Span::styled(" [ESTÁTICO] ", Style::default().fg(theme.muted))
+        Span::styled(format!(" [{}] ", t("Scroll logs")), Style::default().fg(theme.muted))
     };
 
     let block = Block::default()
@@ -100,7 +104,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &LogsViewState) {
     // Log lines
     if state.lines.is_empty() {
         let msg = Line::from(Span::styled(
-            "  Sin logs disponibles…",
+            format!("  {}…", t("NoContainers")),
             Style::default().fg(theme.muted),
         ));
         f.render_widget(Paragraph::new(vec![msg]), log_area);
@@ -127,24 +131,24 @@ pub fn render(f: &mut Frame, area: Rect, state: &LogsViewState) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Volver  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", t("BackLabel")), Style::default().fg(theme.muted)),
         Span::styled(
             "[F] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Seguir  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", t("Toggle auto-scroll")), Style::default().fg(theme.muted)),
         Span::styled(
             "[↑↓] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Scroll  ", Style::default().fg(theme.muted)),
+        Span::styled(format!("{}  ", t("Scroll logs")), Style::default().fg(theme.muted)),
         Span::styled(
             format!(
-                " {}/{} líneas",
+                " {}/{}",
                 state.scroll + visible_rows.min(state.lines.len()),
                 state.lines.len()
             ),
