@@ -68,7 +68,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         ),
         Span::styled("│ ", Style::default().fg(theme.muted)),
         Span::styled(state.hostname.as_str(), Style::default().fg(theme.text)),
-        Span::styled(format!("    {}: ", state.t("Refresh")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("    {}: ", state.t("Refresh")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled(
             interval_ctrl,
             Style::default()
@@ -79,10 +82,15 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Span::styled(tick_dot, Style::default().fg(tick_color)),
         Span::styled("  ", Style::default()),
         Span::styled(now.as_str(), Style::default().fg(theme.muted)),
-        Span::styled(format!("   [F1 {}]", state.t("Help")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("   [F1 {}]", state.t("Help")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled(
             format!("   [F4 {}: {}]", state.t("Theme"), state.cfg.theme.name()),
-            Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
         ),
     ]);
     f.render_widget(
@@ -272,14 +280,20 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Quit rtop")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Quit rtop")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[/] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Filter")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Filter")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[c] ",
                 Style::default()
@@ -314,21 +328,30 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Containers")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Containers")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[h] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("History")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[F4] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[F1] ",
                 Style::default()
@@ -345,56 +368,80 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Quit rtop")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Quit rtop")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[◀▶] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Refresh")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Refresh")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[F2] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Disk")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Disk")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[F3] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Network")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Network")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[h] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("History")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[t] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Range")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Range")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[Tab] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{}  ", state.t("Change tab")), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{}  ", state.t("Change tab")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[F4] ",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled(
                 "[F1] ",
                 Style::default()

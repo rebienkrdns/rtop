@@ -122,12 +122,13 @@ pub struct AppState {
     pub lang: crate::localization::Language,
 
     pub db_monitor: Option<crate::collectors::database::DbMonitorData>,
-    pub db_history: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<crate::collectors::database::DbMetrics>>>,
+    pub db_history: std::sync::Arc<
+        std::sync::Mutex<std::collections::VecDeque<crate::collectors::database::DbMetrics>>,
+    >,
     db_tx: mpsc::Sender<crate::collectors::database::DbMonitorData>,
     db_rx: mpsc::Receiver<crate::collectors::database::DbMonitorData>,
     current_db_monitored_pid: Option<u32>,
     current_db_monitored_cid: Option<String>,
-
 
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
@@ -199,7 +200,9 @@ impl AppState {
             container_history: std::collections::VecDeque::new(),
             lang,
             db_monitor: None,
-            db_history: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
+            db_history: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::VecDeque::new(),
+            )),
             db_tx: {
                 let (tx, _) = mpsc::channel(8);
                 tx
@@ -363,11 +366,21 @@ impl AppState {
             self.psi = snapshot.psi.clone();
             if let Some(ref p) = snapshot.psi {
                 const PSI_MAX: usize = 3600;
-                if self.psi_history_cpu.len() >= PSI_MAX { self.psi_history_cpu.pop_front(); }
-                if self.psi_history_mem.len() >= PSI_MAX { self.psi_history_mem.pop_front(); }
-                if self.psi_history_mem_full.len() >= PSI_MAX { self.psi_history_mem_full.pop_front(); }
-                if self.psi_history_io.len() >= PSI_MAX { self.psi_history_io.pop_front(); }
-                if self.psi_history_io_full.len() >= PSI_MAX { self.psi_history_io_full.pop_front(); }
+                if self.psi_history_cpu.len() >= PSI_MAX {
+                    self.psi_history_cpu.pop_front();
+                }
+                if self.psi_history_mem.len() >= PSI_MAX {
+                    self.psi_history_mem.pop_front();
+                }
+                if self.psi_history_mem_full.len() >= PSI_MAX {
+                    self.psi_history_mem_full.pop_front();
+                }
+                if self.psi_history_io.len() >= PSI_MAX {
+                    self.psi_history_io.pop_front();
+                }
+                if self.psi_history_io_full.len() >= PSI_MAX {
+                    self.psi_history_io_full.pop_front();
+                }
                 self.psi_history_cpu.push_back(p.cpu_some.avg10);
                 self.psi_history_mem.push_back(p.memory_some.avg10);
                 self.psi_history_mem_full.push_back(p.memory_full.avg10);
@@ -411,11 +424,13 @@ impl AppState {
                             if self.current_db_monitored_pid != Some(pid) {
                                 self.current_db_monitored_pid = Some(pid);
                                 self.current_db_monitored_cid = None;
-                                self.db_monitor = Some(crate::collectors::database::DbMonitorData::new(pid, db_type));
+                                self.db_monitor = Some(
+                                    crate::collectors::database::DbMonitorData::new(pid, db_type),
+                                );
                                 if let Ok(mut history) = self.db_history.lock() {
                                     history.clear();
                                 }
-                                
+
                                 // Create new channels specifically for this connection task
                                 let (tx, rx) = mpsc::channel(8);
                                 self.db_rx = rx; // replace our receiver
@@ -423,38 +438,73 @@ impl AppState {
 
                                 let proc_clone = proc.clone();
                                 tokio::spawn(async move {
-                                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
-                                    let mut prev_metrics: Option<crate::collectors::database::DbMetrics> = None;
+                                    let mut ticker =
+                                        tokio::time::interval(std::time::Duration::from_secs(1));
+                                    let mut prev_metrics: Option<
+                                        crate::collectors::database::DbMetrics,
+                                    > = None;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
-                                        let mut data = crate::collectors::database::poll_database(proc_clone.clone()).await;
-                                        
+                                        let mut data = crate::collectors::database::poll_database(
+                                            proc_clone.clone(),
+                                        )
+                                        .await;
+
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
-                                        
+
                                         if let Some(ref prev) = prev_metrics {
                                             if dt > 0.0 {
-                                                let select_diff = data.metrics.raw_com_select.saturating_sub(prev.raw_com_select) as f64;
+                                                let select_diff = data
+                                                    .metrics
+                                                    .raw_com_select
+                                                    .saturating_sub(prev.raw_com_select)
+                                                    as f64;
                                                 data.metrics.select_per_sec = select_diff / dt;
-                                                
-                                                let write_diff = (data.metrics.raw_com_insert + data.metrics.raw_com_update + data.metrics.raw_com_delete)
-                                                    .saturating_sub(prev.raw_com_insert + prev.raw_com_update + prev.raw_com_delete) as f64;
+
+                                                let write_diff = (data.metrics.raw_com_insert
+                                                    + data.metrics.raw_com_update
+                                                    + data.metrics.raw_com_delete)
+                                                    .saturating_sub(
+                                                        prev.raw_com_insert
+                                                            + prev.raw_com_update
+                                                            + prev.raw_com_delete,
+                                                    )
+                                                    as f64;
                                                 data.metrics.write_per_sec = write_diff / dt;
-                                                
-                                                if data.db_type == crate::models::DatabaseType::MySqlMariaDb {
-                                                    let slow_diff = data.metrics.raw_slow_queries.saturating_sub(prev.raw_slow_queries) as f64;
-                                                    data.metrics.slow_queries_per_sec = slow_diff / dt;
+
+                                                if data.db_type
+                                                    == crate::models::DatabaseType::MySqlMariaDb
+                                                {
+                                                    let slow_diff = data
+                                                        .metrics
+                                                        .raw_slow_queries
+                                                        .saturating_sub(prev.raw_slow_queries)
+                                                        as f64;
+                                                    data.metrics.slow_queries_per_sec =
+                                                        slow_diff / dt;
                                                 } else {
-                                                    data.metrics.slow_queries_per_sec = data.metrics.long_running_queries.len() as f64;
+                                                    data.metrics.slow_queries_per_sec =
+                                                        data.metrics.long_running_queries.len()
+                                                            as f64;
                                                 }
-                                                
-                                                let sent_diff = data.metrics.raw_bytes_sent.saturating_sub(prev.raw_bytes_sent) as f64;
+
+                                                let sent_diff = data
+                                                    .metrics
+                                                    .raw_bytes_sent
+                                                    .saturating_sub(prev.raw_bytes_sent)
+                                                    as f64;
                                                 data.metrics.bytes_sent_per_sec = sent_diff / dt;
-                                                
-                                                let recv_diff = data.metrics.raw_bytes_received.saturating_sub(prev.raw_bytes_received) as f64;
-                                                data.metrics.bytes_received_per_sec = recv_diff / dt;
+
+                                                let recv_diff = data
+                                                    .metrics
+                                                    .raw_bytes_received
+                                                    .saturating_sub(prev.raw_bytes_received)
+                                                    as f64;
+                                                data.metrics.bytes_received_per_sec =
+                                                    recv_diff / dt;
                                             }
                                         }
                                         prev_metrics = Some(data.metrics.clone());
@@ -489,11 +539,16 @@ impl AppState {
                             if self.current_db_monitored_cid.as_ref() != Some(cid) {
                                 self.current_db_monitored_cid = Some(cid.clone());
                                 self.current_db_monitored_pid = None;
-                                self.db_monitor = Some(crate::collectors::database::DbMonitorData::new_container(cid.clone(), db_type));
+                                self.db_monitor = Some(
+                                    crate::collectors::database::DbMonitorData::new_container(
+                                        cid.clone(),
+                                        db_type,
+                                    ),
+                                );
                                 if let Ok(mut history) = self.db_history.lock() {
                                     history.clear();
                                 }
-                                
+
                                 // Create new channels specifically for this connection task
                                 let (tx, rx) = mpsc::channel(8);
                                 self.db_rx = rx; // replace our receiver
@@ -501,38 +556,74 @@ impl AppState {
 
                                 let container_clone = container.clone();
                                 tokio::spawn(async move {
-                                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
-                                    let mut prev_metrics: Option<crate::collectors::database::DbMetrics> = None;
+                                    let mut ticker =
+                                        tokio::time::interval(std::time::Duration::from_secs(1));
+                                    let mut prev_metrics: Option<
+                                        crate::collectors::database::DbMetrics,
+                                    > = None;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
-                                        let mut data = crate::collectors::database::poll_database_container(container_clone.clone()).await;
-                                        
+                                        let mut data =
+                                            crate::collectors::database::poll_database_container(
+                                                container_clone.clone(),
+                                            )
+                                            .await;
+
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
-                                        
+
                                         if let Some(ref prev) = prev_metrics {
                                             if dt > 0.0 {
-                                                let select_diff = data.metrics.raw_com_select.saturating_sub(prev.raw_com_select) as f64;
+                                                let select_diff = data
+                                                    .metrics
+                                                    .raw_com_select
+                                                    .saturating_sub(prev.raw_com_select)
+                                                    as f64;
                                                 data.metrics.select_per_sec = select_diff / dt;
-                                                
-                                                let write_diff = (data.metrics.raw_com_insert + data.metrics.raw_com_update + data.metrics.raw_com_delete)
-                                                    .saturating_sub(prev.raw_com_insert + prev.raw_com_update + prev.raw_com_delete) as f64;
+
+                                                let write_diff = (data.metrics.raw_com_insert
+                                                    + data.metrics.raw_com_update
+                                                    + data.metrics.raw_com_delete)
+                                                    .saturating_sub(
+                                                        prev.raw_com_insert
+                                                            + prev.raw_com_update
+                                                            + prev.raw_com_delete,
+                                                    )
+                                                    as f64;
                                                 data.metrics.write_per_sec = write_diff / dt;
-                                                
-                                                if data.db_type == crate::models::DatabaseType::MySqlMariaDb {
-                                                    let slow_diff = data.metrics.raw_slow_queries.saturating_sub(prev.raw_slow_queries) as f64;
-                                                    data.metrics.slow_queries_per_sec = slow_diff / dt;
+
+                                                if data.db_type
+                                                    == crate::models::DatabaseType::MySqlMariaDb
+                                                {
+                                                    let slow_diff = data
+                                                        .metrics
+                                                        .raw_slow_queries
+                                                        .saturating_sub(prev.raw_slow_queries)
+                                                        as f64;
+                                                    data.metrics.slow_queries_per_sec =
+                                                        slow_diff / dt;
                                                 } else {
-                                                    data.metrics.slow_queries_per_sec = data.metrics.long_running_queries.len() as f64;
+                                                    data.metrics.slow_queries_per_sec =
+                                                        data.metrics.long_running_queries.len()
+                                                            as f64;
                                                 }
-                                                
-                                                let sent_diff = data.metrics.raw_bytes_sent.saturating_sub(prev.raw_bytes_sent) as f64;
+
+                                                let sent_diff = data
+                                                    .metrics
+                                                    .raw_bytes_sent
+                                                    .saturating_sub(prev.raw_bytes_sent)
+                                                    as f64;
                                                 data.metrics.bytes_sent_per_sec = sent_diff / dt;
-                                                
-                                                let recv_diff = data.metrics.raw_bytes_received.saturating_sub(prev.raw_bytes_received) as f64;
-                                                data.metrics.bytes_received_per_sec = recv_diff / dt;
+
+                                                let recv_diff = data
+                                                    .metrics
+                                                    .raw_bytes_received
+                                                    .saturating_sub(prev.raw_bytes_received)
+                                                    as f64;
+                                                data.metrics.bytes_received_per_sec =
+                                                    recv_diff / dt;
                                             }
                                         }
                                         prev_metrics = Some(data.metrics.clone());
@@ -589,7 +680,8 @@ impl AppState {
             }
             if self.current_view == View::ContainerDetail {
                 if let Some(ref cid) = self.detail_container_id {
-                    if !self.containers.is_empty() && !self.containers.iter().any(|c| &c.id == cid) {
+                    if !self.containers.is_empty() && !self.containers.iter().any(|c| &c.id == cid)
+                    {
                         self.detail_container_missing_count += 1;
                         if self.detail_container_missing_count >= 3 {
                             self.current_view = View::Main;
@@ -893,9 +985,7 @@ impl AppState {
         }
         let rows = self.container_visual_rows();
         match rows.get(self.container_cursor) {
-            Some(ContainerVisualRow::Container { real_idx, .. }) => {
-                self.containers.get(*real_idx)
-            }
+            Some(ContainerVisualRow::Container { real_idx, .. }) => self.containers.get(*real_idx),
             _ => None,
         }
     }
@@ -1161,7 +1251,8 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         }
                         (KeyCode::Char('l'), _) if state.current_view == View::ContainerDetail => {
                             if let Some(c) = state.selected_container().cloned() {
-                                let mut ls = LogsViewState::new(c.id.clone(), c.name.clone(), state.lang);
+                                let mut ls =
+                                    LogsViewState::new(c.id.clone(), c.name.clone(), state.lang);
                                 // Fetch last 200 lines statically
                                 if let Some(docker) = state.docker_client.clone() {
                                     let id = c.id.clone();

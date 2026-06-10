@@ -1,6 +1,6 @@
+use crate::models::{ContainerData, DatabaseType, ProcessData};
 use std::time::Duration;
 use tokio::time::timeout;
-use crate::models::{DatabaseType, ProcessData, ContainerData};
 
 #[derive(Clone, Debug, Default)]
 pub struct DbMetrics {
@@ -9,7 +9,7 @@ pub struct DbMetrics {
     pub cache_hit_ratio: f64,
     pub long_running_queries: Vec<(u32, String, String)>, // (pid, query, duration)
     pub locks_count: u32,
-    
+
     // MySQL/MariaDB specifics
     pub threads_connected: u32,
     pub threads_running: u32,
@@ -81,11 +81,11 @@ pub fn extract_port(cmd: &str, db_type: DatabaseType) -> u16 {
         DatabaseType::PostgreSQL => 5432,
         DatabaseType::MySqlMariaDb => 3306,
     };
-    
+
     let words: Vec<&str> = cmd.split_whitespace().collect();
     for i in 0..words.len() {
         if (words[i] == "-p" || words[i] == "-P" || words[i] == "--port") && i + 1 < words.len() {
-            if let Ok(port) = words[i+1].parse::<u16>() {
+            if let Ok(port) = words[i + 1].parse::<u16>() {
                 return port;
             }
         } else if words[i].starts_with("--port=") {
@@ -106,7 +106,9 @@ pub fn extract_container_host_port(ports: &[String], db_type: DatabaseType) -> u
     };
 
     for p in ports {
-        if p.contains(&format!("->{}", target_container_port)) || p.contains(&format!("->{}/tcp", target_container_port)) {
+        if p.contains(&format!("->{}", target_container_port))
+            || p.contains(&format!("->{}/tcp", target_container_port))
+        {
             if let Some(left) = p.split("->").next() {
                 let port_str = left.split(':').next_back().unwrap_or(left).trim();
                 if let Ok(port) = port_str.parse::<u16>() {
@@ -137,11 +139,9 @@ pub async fn poll_db_at_port(
                 .or_else(|| std::env::var("PGUSER").ok())
                 .or_else(|| std::env::var("USER").ok())
                 .unwrap_or_else(|| "postgres".to_string());
-            let password = pass_override
-                .or_else(|| std::env::var("PGPASSWORD").ok());
-            let dbname = dbname_override
-                .or_else(|| std::env::var("PGDATABASE").ok());
-            
+            let password = pass_override.or_else(|| std::env::var("PGPASSWORD").ok());
+            let dbname = dbname_override.or_else(|| std::env::var("PGDATABASE").ok());
+
             let mut config = tokio_postgres::Config::new();
             config.host("127.0.0.1");
             config.port(port);
@@ -173,28 +173,26 @@ pub async fn poll_db_at_port(
                     let err_msg = e.to_string();
                     if err_msg.contains("password") || err_msg.contains("authentication") {
                         DbConnectionStatus::AuthRequired(format!(
-                            "PGUSER={} PGPASSWORD=*** (Error: {})", user, err_msg
+                            "PGUSER={} PGPASSWORD=*** (Error: {})",
+                            user, err_msg
                         ))
                     } else {
                         DbConnectionStatus::Error(format!("Connection failed: {}", err_msg))
                     }
                 }
-                Err(_) => {
-                    DbConnectionStatus::Error("Connection timed out (1.5s)".to_string())
-                }
+                Err(_) => DbConnectionStatus::Error("Connection timed out (1.5s)".to_string()),
             }
         }
         DatabaseType::MySqlMariaDb => {
             let user = user_override
                 .or_else(|| std::env::var("MYSQL_USER").ok())
                 .unwrap_or_else(|| "root".to_string());
-            let password = pass_override
-                .or_else(|| std::env::var("MYSQL_PWD").ok());
-            let dbname = dbname_override
-                .or_else(|| std::env::var("MYSQL_DATABASE").ok());
+            let password = pass_override.or_else(|| std::env::var("MYSQL_PWD").ok());
+            let dbname = dbname_override.or_else(|| std::env::var("MYSQL_DATABASE").ok());
 
             let mut opts = mysql_async::OptsBuilder::default();
-            opts = opts.ip_or_hostname("127.0.0.1")
+            opts = opts
+                .ip_or_hostname("127.0.0.1")
                 .tcp_port(port)
                 .user(Some(&user));
             if let Some(ref pwd) = password {
@@ -203,7 +201,7 @@ pub async fn poll_db_at_port(
             if let Some(ref db) = dbname {
                 opts = opts.db_name(Some(db));
             }
-            
+
             let pool = mysql_async::Pool::new(opts);
             let status = match timeout(Duration::from_millis(1500), pool.get_conn()).await {
                 Ok(Ok(mut conn)) => {
@@ -217,15 +215,14 @@ pub async fn poll_db_at_port(
                     let err_msg = e.to_string();
                     if err_msg.contains("Access denied") || err_msg.contains("password") {
                         DbConnectionStatus::AuthRequired(format!(
-                            "MYSQL_USER={} MYSQL_PWD=*** (Error: {})", user, err_msg
+                            "MYSQL_USER={} MYSQL_PWD=*** (Error: {})",
+                            user, err_msg
                         ))
                     } else {
                         DbConnectionStatus::Error(format!("Connection failed: {}", err_msg))
                     }
                 }
-                Err(_) => {
-                    DbConnectionStatus::Error("Connection timed out (1.5s)".to_string())
-                }
+                Err(_) => DbConnectionStatus::Error("Connection timed out (1.5s)".to_string()),
             };
             let _ = pool.disconnect().await;
             status
@@ -257,7 +254,7 @@ pub async fn poll_database_container(container: ContainerData) -> DbMonitorData 
     data.status = DbConnectionStatus::Connecting;
 
     let port = extract_container_host_port(&container.ports, db_type);
-    
+
     // Extract credentials from container environment variables
     let mut user_override = None;
     let mut pass_override = None;
@@ -280,7 +277,10 @@ pub async fn poll_database_container(container: ContainerData) -> DbMonitorData 
                 DatabaseType::MySqlMariaDb => {
                     if k == "MYSQL_USER" {
                         user_override = Some(v);
-                    } else if k == "MYSQL_PASSWORD" || k == "MYSQL_ROOT_PASSWORD" || k == "MYSQL_PWD" {
+                    } else if k == "MYSQL_PASSWORD"
+                        || k == "MYSQL_ROOT_PASSWORD"
+                        || k == "MYSQL_PWD"
+                    {
                         pass_override = Some(v);
                     } else if k == "MYSQL_DATABASE" {
                         dbname_override = Some(v);
@@ -294,14 +294,30 @@ pub async fn poll_database_container(container: ContainerData) -> DbMonitorData 
         user_override = Some("root".to_string());
     }
 
-
-    data.status = poll_db_at_port(db_type, port, user_override, pass_override, dbname_override, &mut data.metrics).await;
+    data.status = poll_db_at_port(
+        db_type,
+        port,
+        user_override,
+        pass_override,
+        dbname_override,
+        &mut data.metrics,
+    )
+    .await;
     data
 }
 
-async fn query_postgres_metrics(client: &tokio_postgres::Client, metrics: &mut DbMetrics) -> Result<(), tokio_postgres::Error> {
+async fn query_postgres_metrics(
+    client: &tokio_postgres::Client,
+    metrics: &mut DbMetrics,
+) -> Result<(), tokio_postgres::Error> {
     // 1. Connections active vs idle
-    if let Ok(rows) = client.query("SELECT state, count(*) FROM pg_stat_activity GROUP BY state", &[]).await {
+    if let Ok(rows) = client
+        .query(
+            "SELECT state, count(*) FROM pg_stat_activity GROUP BY state",
+            &[],
+        )
+        .await
+    {
         metrics.connections_idle = 0;
         metrics.connections_active = 0;
         for row in rows {
@@ -328,7 +344,10 @@ async fn query_postgres_metrics(client: &tokio_postgres::Client, metrics: &mut D
     }
 
     // 3. Locks
-    if let Ok(rows) = client.query("SELECT count(*) FROM pg_locks WHERE NOT granted", &[]).await {
+    if let Ok(rows) = client
+        .query("SELECT count(*) FROM pg_locks WHERE NOT granted", &[])
+        .await
+    {
         if let Some(row) = rows.first() {
             let count: Option<i64> = row.get(0);
             metrics.locks_count = count.unwrap_or(0) as u32;
@@ -374,7 +393,10 @@ async fn query_postgres_metrics(client: &tokio_postgres::Client, metrics: &mut D
     Ok(())
 }
 
-async fn query_mysql_metrics(conn: &mut mysql_async::Conn, metrics: &mut DbMetrics) -> Result<(), mysql_async::Error> {
+async fn query_mysql_metrics(
+    conn: &mut mysql_async::Conn,
+    metrics: &mut DbMetrics,
+) -> Result<(), mysql_async::Error> {
     use mysql_async::prelude::Queryable;
 
     // 1. Query global status variables (including network traffic bytes)
@@ -388,7 +410,7 @@ async fn query_mysql_metrics(conn: &mut mysql_async::Conn, metrics: &mut DbMetri
     metrics.raw_slow_queries = 0;
     metrics.raw_bytes_sent = 0;
     metrics.raw_bytes_received = 0;
-    
+
     for (name, val) in rows {
         match name.as_str() {
             "Threads_connected" => metrics.threads_connected = val.parse().unwrap_or(0),
@@ -484,10 +506,22 @@ mod tests {
 
     #[test]
     fn test_extract_port() {
-        assert_eq!(extract_port("postgres -p 5433", DatabaseType::PostgreSQL), 5433);
-        assert_eq!(extract_port("mysqld -P 3307", DatabaseType::MySqlMariaDb), 3307);
-        assert_eq!(extract_port("postgres --port=5434", DatabaseType::PostgreSQL), 5434);
-        assert_eq!(extract_port("postgres --port 5435", DatabaseType::PostgreSQL), 5435);
+        assert_eq!(
+            extract_port("postgres -p 5433", DatabaseType::PostgreSQL),
+            5433
+        );
+        assert_eq!(
+            extract_port("mysqld -P 3307", DatabaseType::MySqlMariaDb),
+            3307
+        );
+        assert_eq!(
+            extract_port("postgres --port=5434", DatabaseType::PostgreSQL),
+            5434
+        );
+        assert_eq!(
+            extract_port("postgres --port 5435", DatabaseType::PostgreSQL),
+            5435
+        );
         assert_eq!(extract_port("postgres", DatabaseType::PostgreSQL), 5432);
     }
 
@@ -498,12 +532,24 @@ mod tests {
             "127.0.0.1:3307->3306/tcp".to_string(),
             "5432/tcp".to_string(),
         ];
-        assert_eq!(extract_container_host_port(&ports, DatabaseType::PostgreSQL), 5433);
-        assert_eq!(extract_container_host_port(&ports, DatabaseType::MySqlMariaDb), 3307);
-        
+        assert_eq!(
+            extract_container_host_port(&ports, DatabaseType::PostgreSQL),
+            5433
+        );
+        assert_eq!(
+            extract_container_host_port(&ports, DatabaseType::MySqlMariaDb),
+            3307
+        );
+
         let empty_ports: Vec<String> = vec![];
-        assert_eq!(extract_container_host_port(&empty_ports, DatabaseType::PostgreSQL), 5432);
-        assert_eq!(extract_container_host_port(&empty_ports, DatabaseType::MySqlMariaDb), 3306);
+        assert_eq!(
+            extract_container_host_port(&empty_ports, DatabaseType::PostgreSQL),
+            5432
+        );
+        assert_eq!(
+            extract_container_host_port(&empty_ports, DatabaseType::MySqlMariaDb),
+            3306
+        );
     }
 
     #[test]
@@ -565,7 +611,10 @@ mod tests {
                     DatabaseType::MySqlMariaDb => {
                         if k == "MYSQL_USER" {
                             user_override = Some(v);
-                        } else if k == "MYSQL_PASSWORD" || k == "MYSQL_ROOT_PASSWORD" || k == "MYSQL_PWD" {
+                        } else if k == "MYSQL_PASSWORD"
+                            || k == "MYSQL_ROOT_PASSWORD"
+                            || k == "MYSQL_PWD"
+                        {
                             pass_override = Some(v);
                         } else if k == "MYSQL_DATABASE" {
                             dbname_override = Some(v);
@@ -623,7 +672,7 @@ mod tests {
         config.user("vox");
         config.password("voxpasswordsecret");
         config.dbname("Vocellia");
-        
+
         match config.connect(tokio_postgres::NoTls).await {
             Ok((_client, _connection)) => println!("POSTGRES CONNECT RES: Connected successfully"),
             Err(e) => println!("POSTGRES CONNECT RES: Error: {:?}", e),
@@ -666,6 +715,3 @@ mod tests {
         println!("POSTGRES REAL POLL RESULT: {:?}", res.status);
     }
 }
-
-
-

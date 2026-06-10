@@ -202,7 +202,12 @@ pub fn render(
     let count_text = if filtered.len() == processes.len() {
         format!(" {} {} ", filtered.len(), t("processes"))
     } else {
-        format!(" {}/{} {} ", filtered.len(), processes.len(), t("processes"))
+        format!(
+            " {}/{} {} ",
+            filtered.len(),
+            processes.len(),
+            t("processes")
+        )
     };
     let count_widget = Paragraph::new(Line::from(Span::styled(
         count_text,
@@ -259,7 +264,9 @@ pub fn render(
     let is_name = state.sort_col == ProcessSortColumn::Name;
 
     // Only show network columns when at least one process has network data
-    let show_net = processes.iter().any(|p| p.net_rx_per_sec.is_some() || p.net_rx_total.is_some());
+    let show_net = processes
+        .iter()
+        .any(|p| p.net_rx_per_sec.is_some() || p.net_rx_total.is_some());
 
     let header_style = Style::default()
         .fg(theme.accent)

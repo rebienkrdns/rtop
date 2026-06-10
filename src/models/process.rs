@@ -78,4 +78,3 @@ pub struct ProcessData {
     pub cwd: String,
     pub database_type: Option<DatabaseType>,
 }
-

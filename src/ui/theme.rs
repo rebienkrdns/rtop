@@ -92,15 +92,15 @@ impl Theme {
                 selected_fg: Color::Rgb(0, 32, 29),     // #00201d
             },
             ThemeMode::Light => Self {
-                ok: Color::Rgb(46, 125, 50),           // green
-                warn: Color::Rgb(245, 124, 0),         // orange
-                crit: Color::Rgb(211, 47, 47),         // red
-                accent: Color::Rgb(25, 118, 210),      // blue
-                accent_dim: Color::Rgb(30, 136, 229),  // lighter blue
-                disk_fill: Color::Rgb(171, 71, 188),   // purple
-                text: Color::Rgb(33, 33, 33),          // dark gray/black
-                muted: Color::Rgb(117, 117, 117),      // gray
-                bg: Color::Rgb(245, 245, 245),         // very light gray background
+                ok: Color::Rgb(46, 125, 50),          // green
+                warn: Color::Rgb(245, 124, 0),        // orange
+                crit: Color::Rgb(211, 47, 47),        // red
+                accent: Color::Rgb(25, 118, 210),     // blue
+                accent_dim: Color::Rgb(30, 136, 229), // lighter blue
+                disk_fill: Color::Rgb(171, 71, 188),  // purple
+                text: Color::Rgb(33, 33, 33),         // dark gray/black
+                muted: Color::Rgb(117, 117, 117),     // gray
+                bg: Color::Rgb(245, 245, 245),        // very light gray background
                 selected_bg: Color::Rgb(25, 118, 210),
                 selected_fg: Color::Rgb(255, 255, 255),
             },
@@ -118,68 +118,68 @@ impl Theme {
                 selected_fg: Color::Rgb(46, 52, 64),
             },
             ThemeMode::Matrix => Self {
-                ok: Color::Rgb(34, 179, 34),            // soft forest green
-                warn: Color::Rgb(138, 179, 34),          // soft yellow-green
-                crit: Color::Rgb(194, 48, 48),           // soft red
-                accent: Color::Rgb(57, 194, 57),         // classic matrix green
-                accent_dim: Color::Rgb(23, 115, 23),     // dark green
-                disk_fill: Color::Rgb(46, 163, 46),      // muted green fill
-                text: Color::Rgb(77, 219, 77),           // readable terminal green
-                muted: Color::Rgb(23, 115, 23),          // dark muted green
-                bg: Color::Rgb(10, 15, 10),              // very deep forest black
+                ok: Color::Rgb(34, 179, 34),         // soft forest green
+                warn: Color::Rgb(138, 179, 34),      // soft yellow-green
+                crit: Color::Rgb(194, 48, 48),       // soft red
+                accent: Color::Rgb(57, 194, 57),     // classic matrix green
+                accent_dim: Color::Rgb(23, 115, 23), // dark green
+                disk_fill: Color::Rgb(46, 163, 46),  // muted green fill
+                text: Color::Rgb(77, 219, 77),       // readable terminal green
+                muted: Color::Rgb(23, 115, 23),      // dark muted green
+                bg: Color::Rgb(10, 15, 10),          // very deep forest black
                 selected_bg: Color::Rgb(34, 139, 34),
                 selected_fg: Color::Rgb(255, 255, 255),
             },
             ThemeMode::Sunset => Self {
-                ok: Color::Rgb(233, 150, 122),         // soft dark salmon
-                warn: Color::Rgb(220, 118, 51),        // warm muted orange
-                crit: Color::Rgb(203, 67, 53),          // soft brick red
-                accent: Color::Rgb(244, 208, 111),     // pastel yellow
+                ok: Color::Rgb(233, 150, 122),     // soft dark salmon
+                warn: Color::Rgb(220, 118, 51),    // warm muted orange
+                crit: Color::Rgb(203, 67, 53),     // soft brick red
+                accent: Color::Rgb(244, 208, 111), // pastel yellow
                 accent_dim: Color::Rgb(220, 118, 51),
                 disk_fill: Color::Rgb(211, 84, 0),
-                text: Color::Rgb(250, 243, 224),       // cream warm white
-                muted: Color::Rgb(147, 172, 149),      // soft sage
+                text: Color::Rgb(250, 243, 224),  // cream warm white
+                muted: Color::Rgb(147, 172, 149), // soft sage
                 bg: Color::Reset,
                 selected_bg: Color::Rgb(244, 208, 111),
                 selected_fg: Color::Rgb(46, 64, 87),
             },
             ThemeMode::Dracula => Self {
-                ok: Color::Rgb(106, 224, 137),         // soft pastel green
-                warn: Color::Rgb(240, 245, 170),       // soft pastel yellow
-                crit: Color::Rgb(245, 120, 120),       // soft pastel red
-                accent: Color::Rgb(189, 147, 249),     // dracula purple
-                accent_dim: Color::Rgb(98, 114, 164),  // dracula blue-gray
-                disk_fill: Color::Rgb(245, 150, 200),  // soft pink
-                text: Color::Rgb(248, 248, 242),       // warm white
-                muted: Color::Rgb(139, 155, 204),      // lighter blue-gray
+                ok: Color::Rgb(106, 224, 137),        // soft pastel green
+                warn: Color::Rgb(240, 245, 170),      // soft pastel yellow
+                crit: Color::Rgb(245, 120, 120),      // soft pastel red
+                accent: Color::Rgb(189, 147, 249),    // dracula purple
+                accent_dim: Color::Rgb(98, 114, 164), // dracula blue-gray
+                disk_fill: Color::Rgb(245, 150, 200), // soft pink
+                text: Color::Rgb(248, 248, 242),      // warm white
+                muted: Color::Rgb(139, 155, 204),     // lighter blue-gray
                 bg: Color::Reset,
                 selected_bg: Color::Rgb(68, 71, 90),
                 selected_fg: Color::Rgb(248, 248, 242),
             },
             ThemeMode::Gruvbox => Self {
-                ok: Color::Rgb(184, 187, 38),          // gruvbox green
-                warn: Color::Rgb(250, 189, 47),        // gruvbox yellow
-                crit: Color::Rgb(251, 73, 52),         // gruvbox red
-                accent: Color::Rgb(254, 128, 25),      // gruvbox orange
-                accent_dim: Color::Rgb(214, 93, 14),   // gruvbox dark orange
-                disk_fill: Color::Rgb(177, 98, 134),   // gruvbox purple
-                text: Color::Rgb(235, 219, 178),       // gruvbox cream text
-                muted: Color::Rgb(146, 131, 116),      // gruvbox gray
+                ok: Color::Rgb(184, 187, 38),        // gruvbox green
+                warn: Color::Rgb(250, 189, 47),      // gruvbox yellow
+                crit: Color::Rgb(251, 73, 52),       // gruvbox red
+                accent: Color::Rgb(254, 128, 25),    // gruvbox orange
+                accent_dim: Color::Rgb(214, 93, 14), // gruvbox dark orange
+                disk_fill: Color::Rgb(177, 98, 134), // gruvbox purple
+                text: Color::Rgb(235, 219, 178),     // gruvbox cream text
+                muted: Color::Rgb(146, 131, 116),    // gruvbox gray
                 bg: Color::Reset,
-                selected_bg: Color::Rgb(80, 73, 69),   // gruvbox dark gray bg
+                selected_bg: Color::Rgb(80, 73, 69), // gruvbox dark gray bg
                 selected_fg: Color::Rgb(235, 219, 178),
             },
             ThemeMode::TokyoNight => Self {
-                ok: Color::Rgb(158, 206, 106),         // tokyo night green
-                warn: Color::Rgb(224, 175, 104),       // tokyo night yellow
-                crit: Color::Rgb(247, 118, 142),       // tokyo night red
-                accent: Color::Rgb(122, 162, 247),     // tokyo night blue
-                accent_dim: Color::Rgb(61, 89, 161),   // tokyo night dark blue
-                disk_fill: Color::Rgb(187, 154, 247),  // tokyo night purple
-                text: Color::Rgb(169, 177, 214),       // tokyo night foreground gray
-                muted: Color::Rgb(86, 95, 137),        // tokyo night muted blue-gray
+                ok: Color::Rgb(158, 206, 106),        // tokyo night green
+                warn: Color::Rgb(224, 175, 104),      // tokyo night yellow
+                crit: Color::Rgb(247, 118, 142),      // tokyo night red
+                accent: Color::Rgb(122, 162, 247),    // tokyo night blue
+                accent_dim: Color::Rgb(61, 89, 161),  // tokyo night dark blue
+                disk_fill: Color::Rgb(187, 154, 247), // tokyo night purple
+                text: Color::Rgb(169, 177, 214),      // tokyo night foreground gray
+                muted: Color::Rgb(86, 95, 137),       // tokyo night muted blue-gray
                 bg: Color::Reset,
-                selected_bg: Color::Rgb(51, 70, 124),  // tokyo night dark selection bg
+                selected_bg: Color::Rgb(51, 70, 124), // tokyo night dark selection bg
                 selected_fg: Color::Rgb(192, 202, 245),
             },
         }

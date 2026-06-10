@@ -61,4 +61,3 @@ pub struct ContainerData {
     pub compose_project: Option<String>,
     pub database_type: Option<super::DatabaseType>,
 }
-

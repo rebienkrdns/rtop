@@ -283,7 +283,10 @@ pub fn render_with_cursor(
                 let style = if selected {
                     row_style
                 } else {
-                    Style::default().bg(group_header_bg).fg(group_header_fg).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .bg(group_header_bg)
+                        .fg(group_header_fg)
+                        .add_modifier(Modifier::BOLD)
                 };
 
                 // Put header text in the Name column (Min constraint) so it isn't truncated

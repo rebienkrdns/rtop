@@ -75,7 +75,10 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
 
             f.render_widget(
                 Paragraph::new(Line::from(vec![
-                    Span::styled(format!("{}  ", state.t("Network")), Style::default().fg(theme.muted)),
+                    Span::styled(
+                        format!("{}  ", state.t("Network")),
+                        Style::default().fg(theme.muted),
+                    ),
                     Span::styled(
                         label,
                         Style::default()
@@ -149,10 +152,16 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 let sent_total = format!("{}", ByteSize(data.total_sent_bytes));
                 f.render_widget(
                     Paragraph::new(Line::from(vec![
-                        Span::styled(format!("↓ {}: ", state.t("Net Tot")), Style::default().fg(theme.muted)),
+                        Span::styled(
+                            format!("↓ {}: ", state.t("Net Tot")),
+                            Style::default().fg(theme.muted),
+                        ),
                         Span::styled(recv_total, Style::default().fg(theme.ok)),
                         Span::raw("     "),
-                        Span::styled(format!("↑ {}: ", state.t("Net Tot")), Style::default().fg(theme.muted)),
+                        Span::styled(
+                            format!("↑ {}: ", state.t("Net Tot")),
+                            Style::default().fg(theme.muted),
+                        ),
                         Span::styled(sent_total, Style::default().fg(theme.accent_dim)),
                     ])),
                     chunks[3],

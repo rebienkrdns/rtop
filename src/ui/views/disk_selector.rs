@@ -28,8 +28,7 @@ pub fn render(f: &mut Frame, state: &AppState) {
     f.render_widget(block, area);
 
     if state.selector_entries.is_empty() {
-        let msg = Paragraph::new(state.t("NoDisks"))
-            .style(Style::default().fg(Color::DarkGray));
+        let msg = Paragraph::new(state.t("NoDisks")).style(Style::default().fg(Color::DarkGray));
         f.render_widget(msg, inner);
         return;
     }
@@ -81,7 +80,11 @@ pub fn render(f: &mut Frame, state: &AppState) {
         } else {
             "?".to_string()
         };
-        let sel_mark = if is_selected { format!("  ({})", state.t("Selected")) } else { String::new() };
+        let sel_mark = if is_selected {
+            format!("  ({})", state.t("Selected"))
+        } else {
+            String::new()
+        };
 
         let base_style = if is_cursor {
             Style::default()

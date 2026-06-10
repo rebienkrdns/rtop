@@ -1,4 +1,6 @@
 use bytesize::ByteSize;
+use ratatui::symbols::Marker;
+use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
@@ -6,10 +8,6 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
     Frame,
 };
-use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
-use ratatui::symbols::Marker;
-
-
 
 use crate::localization::{translate, Language};
 use crate::ui::history::{HistoryRange, MetricSample};
@@ -69,13 +67,16 @@ pub fn render_history_canvas_dual<T>(
 }
 
 fn max_bps(samples: &[&MetricSample], f: impl Fn(&MetricSample) -> f64) -> f64 {
-    samples
-        .iter()
-        .map(|s| f(s))
-        .fold(0.0_f64, f64::max)
+    samples.iter().map(|s| f(s)).fold(0.0_f64, f64::max)
 }
 
-pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange, lang: Language) {
+pub fn render_cpu_ram(
+    f: &mut Frame,
+    area: Rect,
+    samples: &[&MetricSample],
+    range: HistoryRange,
+    lang: Language,
+) {
     if area.height < 4 {
         return;
     }
@@ -101,7 +102,12 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
         Paragraph::new(Line::from(vec![
             Span::styled("CPU", Style::default().fg(theme.accent)),
             Span::styled(
-                format!("  {:.1}%  [h] {} · [t] {}", cpu_last, translate("History", lang), range.label()),
+                format!(
+                    "  {:.1}%  [h] {} · [t] {}",
+                    cpu_last,
+                    translate("History", lang),
+                    range.label()
+                ),
                 Style::default().fg(theme.muted),
             ),
         ])),
@@ -147,7 +153,13 @@ pub fn render_cpu_ram(f: &mut Frame, area: Rect, samples: &[&MetricSample], rang
     );
 }
 
-pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], range: HistoryRange, lang: Language) {
+pub fn render_disk_net(
+    f: &mut Frame,
+    area: Rect,
+    samples: &[&MetricSample],
+    range: HistoryRange,
+    lang: Language,
+) {
     if area.height < 4 {
         return;
     }
@@ -196,13 +208,18 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
         disk_max,
         theme.disk_fill,
         |s: &MetricSample| s.disk_read_bps,
-        Some((Color::Rgb(244, 143, 177), |s: &MetricSample| s.disk_write_bps)),
+        Some((Color::Rgb(244, 143, 177), |s: &MetricSample| {
+            s.disk_write_bps
+        })),
     );
 
     // Red label
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(translate("Network", lang), Style::default().fg(theme.accent)),
+            Span::styled(
+                translate("Network", lang),
+                Style::default().fg(theme.accent),
+            ),
             Span::styled(
                 format!(
                     "  ↓{}/s  ↑{}/s",
@@ -228,7 +245,6 @@ pub fn render_disk_net(f: &mut Frame, area: Rect, samples: &[&MetricSample], ran
         Some((theme.accent, |s: &MetricSample| s.net_sent_bps)),
     );
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -258,14 +274,24 @@ mod tests {
         let low = make_sample(10.0);
         let high = make_sample(90.0);
         // alternate low/high to have visible data across all positions
-        let owned: Vec<MetricSample> = (0..30).map(|i| if i % 2 == 0 { make_sample(10.0) } else { make_sample(90.0) }).collect();
+        let owned: Vec<MetricSample> = (0..30)
+            .map(|i| {
+                if i % 2 == 0 {
+                    make_sample(10.0)
+                } else {
+                    make_sample(90.0)
+                }
+            })
+            .collect();
         let _ = (low, high);
         let refs: Vec<&MetricSample> = owned.iter().collect();
 
-        terminal.draw(|f| {
-            let area = f.size();
-            render_cpu_ram(f, area, &refs, HistoryRange::OneMin);
-        }).unwrap();
+        terminal
+            .draw(|f| {
+                let area = f.size();
+                render_cpu_ram(f, area, &refs, HistoryRange::OneMin);
+            })
+            .unwrap();
 
         let buffer = terminal.backend().buffer();
         for y in 0..10 {
@@ -282,7 +308,9 @@ mod tests {
         for y in 1..5u16 {
             for x in 0..100u16 {
                 if buffer.get(x, y).symbol() != " " {
-                    if leftmost.is_none() { leftmost = Some(x); }
+                    if leftmost.is_none() {
+                        leftmost = Some(x);
+                    }
                     rightmost = Some(x);
                 }
             }
@@ -305,10 +333,12 @@ mod tests {
         let s2 = make_sample(80.0);
         let samples = vec![&s1, &s2]; // oldest to newest
 
-        terminal.draw(|f| {
-            let area = f.size();
-            render_cpu_ram(f, area, &samples, HistoryRange::OneMin);
-        }).unwrap();
+        terminal
+            .draw(|f| {
+                let area = f.size();
+                render_cpu_ram(f, area, &samples, HistoryRange::OneMin);
+            })
+            .unwrap();
 
         let buffer = terminal.backend().buffer();
         for y in 0..5 {
@@ -337,4 +367,3 @@ mod tests {
         );
     }
 }
-

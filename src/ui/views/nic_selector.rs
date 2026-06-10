@@ -133,21 +133,30 @@ pub fn render(f: &mut Frame, state: &AppState) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!(" {}  ", state.t("Navigate")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!(" {}  ", state.t("Navigate")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled(
             "Enter",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!(" {}  ", state.t("Selected")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!(" {}  ", state.t("Selected")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled(
             "ESC",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!(" {}", state.t("Cancel")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!(" {}", state.t("Cancel")),
+            Style::default().fg(theme.muted),
+        ),
     ]));
     f.render_widget(footer, layout[1]);
 }

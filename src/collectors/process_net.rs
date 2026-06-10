@@ -107,10 +107,7 @@ fn build_inode_pid_map(pids: &[u32]) -> HashMap<u64, u32> {
                 continue;
             };
             let s = target.to_string_lossy();
-            if let Some(inner) = s
-                .strip_prefix("socket:[")
-                .and_then(|s| s.strip_suffix("]"))
-            {
+            if let Some(inner) = s.strip_prefix("socket:[").and_then(|s| s.strip_suffix("]")) {
                 if let Ok(inode) = inner.parse::<u64>() {
                     map.entry(inode).or_insert(pid);
                 }
@@ -274,20 +271,17 @@ fn query_tcp_bytes() -> std::io::Result<HashMap<u64, (u64, u64)>> {
                         if payload_start + mem::size_of::<InetDiagMsg>() <= pos + msg_len {
                             let diag: InetDiagMsg = unsafe {
                                 ptr::read_unaligned(
-                                    buf.as_ptr().add(payload_start) as *const InetDiagMsg,
+                                    buf.as_ptr().add(payload_start) as *const InetDiagMsg
                                 )
                             };
                             let inode = diag.inode as u64;
 
                             // Walk NLA attributes for INET_DIAG_INFO
-                            let mut apos =
-                                payload_start + mem::size_of::<InetDiagMsg>();
+                            let mut apos = payload_start + mem::size_of::<InetDiagMsg>();
                             let msg_end = pos + msg_len;
                             while apos + mem::size_of::<NlAttr>() <= msg_end {
                                 let attr: NlAttr = unsafe {
-                                    ptr::read_unaligned(
-                                        buf.as_ptr().add(apos) as *const NlAttr,
-                                    )
+                                    ptr::read_unaligned(buf.as_ptr().add(apos) as *const NlAttr)
                                 };
                                 let alen = attr.len as usize;
                                 if alen < mem::size_of::<NlAttr>() {
@@ -296,7 +290,8 @@ fn query_tcp_bytes() -> std::io::Result<HashMap<u64, (u64, u64)>> {
                                 if attr.attr_type == INET_DIAG_INFO {
                                     let data = apos + mem::size_of::<NlAttr>();
                                     let data_len = alen - mem::size_of::<NlAttr>();
-                                    let rx = read_u64(&buf, data, TCPI_BYTES_RECEIVED_OFF, data_len);
+                                    let rx =
+                                        read_u64(&buf, data, TCPI_BYTES_RECEIVED_OFF, data_len);
                                     let tx = read_u64(&buf, data, TCPI_BYTES_ACKED_OFF, data_len);
                                     if rx.is_some() || tx.is_some() {
                                         let e = result.entry(inode).or_insert((0, 0));

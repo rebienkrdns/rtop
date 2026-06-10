@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use ratatui::symbols::Marker;
+use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -7,8 +9,6 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
     Frame,
 };
-use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
-use ratatui::symbols::Marker;
 
 use crate::app::AppState;
 use crate::ui::theme::Theme;
@@ -52,9 +52,15 @@ fn render_psi_chart_single(
 
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(label, Style::default().fg(color).add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!("  avg10:{:.2}%  60s:{:.2}%  300s:{:.2}%", avg10, avg60, avg300),
+                label,
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(
+                    "  avg10:{:.2}%  60s:{:.2}%  300s:{:.2}%",
+                    avg10, avg60, avg300
+                ),
                 Style::default().fg(theme.muted),
             ),
         ])),
@@ -95,15 +101,24 @@ fn render_psi_chart_dual(
 
     // Header: etiqueta | some values (izq) | full values (der)
     let header = Line::from(vec![
-        Span::styled(label, Style::default().fg(color_some).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            label,
+            Style::default().fg(color_some).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("  some ", Style::default().fg(color_some)),
         Span::styled(
-            format!("avg10:{:.2}% 60s:{:.2}% 300s:{:.2}%", some_avg10, some_avg60, some_avg300),
+            format!(
+                "avg10:{:.2}% 60s:{:.2}% 300s:{:.2}%",
+                some_avg10, some_avg60, some_avg300
+            ),
             Style::default().fg(theme.muted),
         ),
         Span::styled("   full ", Style::default().fg(COLOR_FULL)),
         Span::styled(
-            format!("avg10:{:.2}% 60s:{:.2}% 300s:{:.2}%", full_avg10, full_avg60, full_avg300),
+            format!(
+                "avg10:{:.2}% 60s:{:.2}% 300s:{:.2}%",
+                full_avg10, full_avg60, full_avg300
+            ),
             Style::default().fg(theme.muted),
         ),
     ]);
@@ -174,14 +189,19 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 Line::from(""),
                 Line::from(Span::styled(
                     "PSI no disponible",
-                    Style::default().fg(theme.muted).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme.muted)
+                        .add_modifier(Modifier::BOLD),
                 )),
                 Line::from(Span::styled(
                     "(Solo Linux con CONFIG_PSI=y)",
                     Style::default().fg(theme.muted),
                 )),
             ];
-            f.render_widget(Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center), area);
+            f.render_widget(
+                Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center),
+                area,
+            );
         }
         Some(psi) => {
             let chunks = Layout::default()

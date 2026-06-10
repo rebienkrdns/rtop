@@ -74,7 +74,10 @@ pub fn render(f: &mut Frame, area: Rect, state: &LogsViewState) {
                 .add_modifier(Modifier::BOLD),
         )
     } else {
-        Span::styled(format!(" [{}] ", t("Scroll logs")), Style::default().fg(theme.muted))
+        Span::styled(
+            format!(" [{}] ", t("Scroll logs")),
+            Style::default().fg(theme.muted),
+        )
     };
 
     let block = Block::default()
@@ -131,21 +134,30 @@ pub fn render(f: &mut Frame, area: Rect, state: &LogsViewState) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("{}  ", t("BackLabel")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("{}  ", t("BackLabel")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled(
             "[F] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("{}  ", t("Toggle auto-scroll")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("{}  ", t("Toggle auto-scroll")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled(
             "[↑↓] ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("{}  ", t("Scroll logs")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("{}  ", t("Scroll logs")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled(
             format!(
                 " {}/{}",
