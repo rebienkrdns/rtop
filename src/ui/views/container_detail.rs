@@ -315,7 +315,7 @@ pub fn render(
             net_max,
             Color::Cyan,
             |s: &ContainerHistorySample| s.net_recv_bps,
-            Some((Color::Rgb(100, 220, 255), |s: &ContainerHistorySample| {
+            Some((Color::Rgb(255, 80, 80), |s: &ContainerHistorySample| {
                 s.net_sent_bps
             })),
         );

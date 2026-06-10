@@ -42,22 +42,30 @@ pub fn render_history_canvas_dual<T>(
                     }
                     let x1_clamped = x1.max(0.0);
 
-                    ctx.draw(&CanvasLine {
-                        x1: x1_clamped,
-                        y1: extract1(samples[i]),
-                        x2,
-                        y2: extract1(samples[i + 1]),
-                        color: color1,
-                    });
-
-                    if let Some((c2, e2)) = line2 {
+                    let y1_a = extract1(samples[i]);
+                    let y2_a = extract1(samples[i + 1]);
+                    if y1_a != 0.0 || y2_a != 0.0 {
                         ctx.draw(&CanvasLine {
                             x1: x1_clamped,
-                            y1: e2(samples[i]),
+                            y1: y1_a,
                             x2,
-                            y2: e2(samples[i + 1]),
-                            color: c2,
+                            y2: y2_a,
+                            color: color1,
                         });
+                    }
+
+                    if let Some((c2, e2)) = line2 {
+                        let y1_b = e2(samples[i]);
+                        let y2_b = e2(samples[i + 1]);
+                        if y1_b != 0.0 || y2_b != 0.0 {
+                            ctx.draw(&CanvasLine {
+                                x1: x1_clamped,
+                                y1: y1_b,
+                                x2,
+                                y2: y2_b,
+                                color: c2,
+                            });
+                        }
                     }
                 }
             }
