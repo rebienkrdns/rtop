@@ -1093,13 +1093,12 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     format!(" RPS  {:.1} req/s ", m.rps), rps_color);
 
                 let total_req = (m.status_1xx + m.status_2xx + m.status_3xx + m.status_4xx + m.status_5xx).max(1) as f64;
-                let s5xx_color = if m.status_5xx > 0 { theme.crit } else { Color::DarkGray };
                 let hist_status: [(&std::collections::VecDeque<u64>, u64, Color, usize, &str); 5] = [
                     (&monitor_data.s1xx_history, m.status_1xx, Color::Blue,   1, "1xx  Info"),
                     (&monitor_data.s2xx_history, m.status_2xx, theme.ok,      2, "2xx  Success"),
                     (&monitor_data.s3xx_history, m.status_3xx, Color::Cyan,   3, "3xx  Redirect"),
                     (&monitor_data.s4xx_history, m.status_4xx, Color::Yellow, 4, "4xx  Client"),
-                    (&monitor_data.s5xx_history, m.status_5xx, s5xx_color,    5, "5xx  Server"),
+                    (&monitor_data.s5xx_history, m.status_5xx, theme.crit,    5, "5xx  Server"),
                 ];
                 for (hist, count, color, slot, label) in hist_status {
                     let pct = count as f64 / total_req * 100.0;
@@ -1133,7 +1132,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     (m.status_2xx, "2xx  Success",  theme.ok,       1),
                     (m.status_3xx, "3xx  Redirect", Color::Cyan,    2),
                     (m.status_4xx, "4xx  Client",   Color::Yellow,  3),
-                    (m.status_5xx, "5xx  Server",   if m.status_5xx > 0 { theme.crit } else { Color::DarkGray }, 4),
+                    (m.status_5xx, "5xx  Server",   theme.crit, 4),
                 ];
                 for (count, label, color, slot) in status_bars {
                     let pct = count as f64 / total_req * 100.0;
