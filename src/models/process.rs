@@ -63,6 +63,23 @@ pub enum HttpProxyType {
     Apache,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeRuntimeType {
+    Node,
+    Bun,
+    Deno,
+}
+
+impl NodeRuntimeType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NodeRuntimeType::Node => "Node.js",
+            NodeRuntimeType::Bun => "Bun",
+            NodeRuntimeType::Deno => "Deno",
+        }
+    }
+}
+
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct ProcessData {
@@ -86,4 +103,5 @@ pub struct ProcessData {
     pub cwd: String,
     pub database_type: Option<DatabaseType>,
     pub proxy_type: Option<HttpProxyType>,
+    pub node_runtime_type: Option<NodeRuntimeType>,
 }

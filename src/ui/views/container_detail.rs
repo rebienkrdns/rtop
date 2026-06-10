@@ -57,7 +57,7 @@ pub fn render(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let has_right_panel = container.database_type.is_some() || container.proxy_type.is_some();
+    let has_right_panel = container.database_type.is_some() || container.proxy_type.is_some() || container.node_runtime_type.is_some();
     let (left_area, db_area) = if has_right_panel {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
@@ -601,6 +601,13 @@ pub fn render(
             crate::ui::views::process_detail::render_db_panel(f, db_rect, state, &theme);
         } else if container.proxy_type.is_some() {
             crate::ui::views::process_detail::render_proxy_panel(f, db_rect, state, &theme);
+        } else if let Some(node_type) = container.node_runtime_type {
+            crate::ui::views::node_runtime_panel::render_node_panel(
+                f,
+                db_rect,
+                state,
+                node_type.as_str(),
+            );
         }
     }
 

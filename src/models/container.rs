@@ -61,4 +61,5 @@ pub struct ContainerData {
     pub compose_project: Option<String>,
     pub database_type: Option<super::DatabaseType>,
     pub proxy_type: Option<super::HttpProxyType>,
+    pub node_runtime_type: Option<super::NodeRuntimeType>,
 }

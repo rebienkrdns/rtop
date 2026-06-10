@@ -140,6 +140,12 @@ pub struct AppState {
     current_proxy_monitored_pid: Option<u32>,
     current_proxy_monitored_cid: Option<String>,
 
+    pub node_monitor: Option<crate::collectors::node_runtime::NodeMonitorData>,
+    node_tx: mpsc::Sender<crate::collectors::node_runtime::NodeMonitorData>,
+    node_rx: mpsc::Receiver<crate::collectors::node_runtime::NodeMonitorData>,
+    current_node_monitored_pid: Option<u32>,
+    current_node_monitored_cid: Option<String>,
+
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -238,6 +244,17 @@ impl AppState {
             },
             current_proxy_monitored_pid: None,
             current_proxy_monitored_cid: None,
+            node_monitor: None,
+            node_tx: {
+                let (tx, _) = mpsc::channel(8);
+                tx
+            },
+            node_rx: {
+                let (_, rx) = mpsc::channel(8);
+                rx
+            },
+            current_node_monitored_pid: None,
+            current_node_monitored_cid: None,
             metrics_rx: rx,
             interval_tx,
         }
@@ -874,6 +891,124 @@ impl AppState {
                 }
                 self.current_proxy_monitored_pid = None;
                 self.current_proxy_monitored_cid = None;
+            }
+
+            // Node.js runtime monitor: receive updates
+            while let Ok(node_data) = self.node_rx.try_recv() {
+                if let Some(pid) = node_data.pid {
+                    if Some(pid) == self.detail_process_pid {
+                        let mut nd = node_data;
+                        if let Some(ref prev) = self.node_monitor {
+                            nd.elu_history = prev.elu_history.clone();
+                            nd.delay_history = prev.delay_history.clone();
+                            nd.heap_used_history = prev.heap_used_history.clone();
+                            nd.minor_gc_history = prev.minor_gc_history.clone();
+                            nd.major_gc_history = prev.major_gc_history.clone();
+                        }
+                        nd.push_history();
+                        self.node_monitor = Some(nd);
+                    }
+                } else if let Some(ref cid) = node_data.container_id {
+                    if self.detail_container_id.as_ref() == Some(cid) {
+                        let mut nd = node_data;
+                        if let Some(ref prev) = self.node_monitor {
+                            nd.elu_history = prev.elu_history.clone();
+                            nd.delay_history = prev.delay_history.clone();
+                            nd.heap_used_history = prev.heap_used_history.clone();
+                            nd.minor_gc_history = prev.minor_gc_history.clone();
+                            nd.major_gc_history = prev.major_gc_history.clone();
+                        }
+                        nd.push_history();
+                        self.node_monitor = Some(nd);
+                    }
+                }
+            }
+
+            // Node.js runtime monitor: spawn task when needed
+            if self.current_view == View::ProcessDetail {
+                if let Some(pid) = self.detail_process_pid {
+                    if let Some(proc) = self.processes.iter().find(|p| p.pid == pid) {
+                        if proc.node_runtime_type.is_some() {
+                            if self.current_node_monitored_pid != Some(pid) {
+                                self.current_node_monitored_pid = Some(pid);
+                                self.current_node_monitored_cid = None;
+                                self.node_monitor = Some(
+                                    crate::collectors::node_runtime::NodeMonitorData::new(pid),
+                                );
+                                let (tx, rx) = mpsc::channel(8);
+                                self.node_rx = rx;
+                                self.node_tx = tx.clone();
+                                tokio::spawn(async move {
+                                    let mut ticker =
+                                        tokio::time::interval(std::time::Duration::from_secs(2));
+                                    loop {
+                                        ticker.tick().await;
+                                        let data =
+                                            crate::collectors::node_runtime::poll_node_inspector(pid).await;
+                                        if tx.send(data).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+                        } else {
+                            self.node_monitor = None;
+                            self.current_node_monitored_pid = None;
+                            self.current_node_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.node_monitor = None;
+                    self.current_node_monitored_pid = None;
+                    self.current_node_monitored_cid = None;
+                }
+            } else if self.current_view == View::ContainerDetail {
+                if let Some(ref cid) = self.detail_container_id.clone() {
+                    if let Some(container) = self.containers.iter().find(|c| &c.id == cid) {
+                        if container.node_runtime_type.is_some() {
+                            if self.current_node_monitored_cid.as_ref() != Some(cid) {
+                                self.current_node_monitored_cid = Some(cid.clone());
+                                self.current_node_monitored_pid = None;
+                                self.node_monitor = Some(
+                                    crate::collectors::node_runtime::NodeMonitorData::new_container(
+                                        cid.clone(),
+                                    ),
+                                );
+                                let (tx, rx) = mpsc::channel(8);
+                                self.node_rx = rx;
+                                self.node_tx = tx.clone();
+                                let cid_clone = cid.clone();
+                                tokio::spawn(async move {
+                                    let mut ticker =
+                                        tokio::time::interval(std::time::Duration::from_secs(2));
+                                    loop {
+                                        ticker.tick().await;
+                                        let data =
+                                            crate::collectors::node_runtime::poll_node_inspector_container(
+                                                &cid_clone,
+                                            )
+                                            .await;
+                                        if tx.send(data).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+                        } else {
+                            self.node_monitor = None;
+                            self.current_node_monitored_pid = None;
+                            self.current_node_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.node_monitor = None;
+                    self.current_node_monitored_pid = None;
+                    self.current_node_monitored_cid = None;
+                }
+            } else {
+                self.node_monitor = None;
+                self.current_node_monitored_pid = None;
+                self.current_node_monitored_cid = None;
             }
 
             // If the detailed process or container no longer exists, exit the detail view.

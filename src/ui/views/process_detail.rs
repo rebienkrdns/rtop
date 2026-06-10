@@ -52,7 +52,8 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let (left_area, db_area) = if process.database_type.is_some() {
+    let has_right_panel = process.database_type.is_some() || process.node_runtime_type.is_some();
+    let (left_area, db_area) = if has_right_panel {
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
@@ -412,8 +413,17 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     ]);
     f.render_widget(Paragraph::new(hint), chunks[5]);
 
-    if let Some(db_rect) = db_area {
-        render_db_panel(f, db_rect, state, &theme);
+    if let Some(right_rect) = db_area {
+        if process.database_type.is_some() {
+            render_db_panel(f, right_rect, state, &theme);
+        } else if let Some(node_type) = process.node_runtime_type {
+            crate::ui::views::node_runtime_panel::render_node_panel(
+                f,
+                right_rect,
+                state,
+                node_type.as_str(),
+            );
+        }
     }
 }
 

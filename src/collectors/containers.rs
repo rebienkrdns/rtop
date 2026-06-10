@@ -239,6 +239,8 @@ impl ContainerCollector {
                     None
                 };
 
+            let node_runtime_type = detect_node_runtime(&inspect_opt, &name_lower, &image_lower);
+
             result.push(ContainerData {
                 id: full_id.chars().take(12).collect(),
                 name,
@@ -268,6 +270,7 @@ impl ContainerCollector {
                 compose_project,
                 database_type,
                 proxy_type,
+                node_runtime_type,
             });
         }
 
@@ -346,6 +349,65 @@ fn extract_env_vars(inspect: &Option<bollard::models::ContainerInspectResponse>)
         return vec![];
     };
     config.env.clone().unwrap_or_default()
+}
+
+fn detect_node_runtime(
+    inspect: &Option<bollard::models::ContainerInspectResponse>,
+    name_lower: &str,
+    image_lower: &str,
+) -> Option<crate::models::NodeRuntimeType> {
+    // detect by image/name first
+    let by_image = if image_lower.contains("node") || name_lower.contains("node") {
+        Some(crate::models::NodeRuntimeType::Node)
+    } else if image_lower.contains("bun") || name_lower.contains("bun") {
+        Some(crate::models::NodeRuntimeType::Bun)
+    } else if image_lower.contains("deno") || name_lower.contains("deno") {
+        Some(crate::models::NodeRuntimeType::Deno)
+    } else {
+        None
+    };
+
+    if by_image.is_some() {
+        return by_image;
+    }
+
+    // detect by env vars (NODE_ENV, NODE_VERSION, etc.) or entrypoint cmd
+    let Some(resp) = inspect else { return None };
+    let config = resp.config.as_ref()?;
+
+    let has_node_env = config.env.as_ref().is_some_and(|env| {
+        env.iter().any(|e| {
+            e.starts_with("NODE_ENV=")
+                || e.starts_with("NODE_VERSION=")
+                || e.starts_with("NPM_")
+        })
+    });
+
+    let node_cmd_keywords = ["node", "npm", "yarn", "pm2", "nest", "bun", "deno", "tsx", "ts-node"];
+    let cmd_str = config
+        .cmd
+        .as_ref()
+        .map(|c| c.join(" ").to_lowercase())
+        .unwrap_or_default();
+    let entrypoint_str = config
+        .entrypoint
+        .as_ref()
+        .map(|c| c.join(" ").to_lowercase())
+        .unwrap_or_default();
+    let combined = format!("{} {}", cmd_str, entrypoint_str);
+    let has_node_cmd = node_cmd_keywords.iter().any(|k| combined.contains(k));
+
+    if has_node_env || has_node_cmd {
+        if combined.contains("bun") {
+            Some(crate::models::NodeRuntimeType::Bun)
+        } else if combined.contains("deno") {
+            Some(crate::models::NodeRuntimeType::Deno)
+        } else {
+            Some(crate::models::NodeRuntimeType::Node)
+        }
+    } else {
+        None
+    }
 }
 
 fn map_status(state: &str, status: &str) -> ContainerStatus {

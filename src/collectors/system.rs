@@ -257,6 +257,16 @@ impl SystemCollector {
                     None
                 };
 
+                let node_runtime_type = if name_lower == "node" || name_lower.starts_with("node ") || exe_path.contains("/node") {
+                    Some(crate::models::NodeRuntimeType::Node)
+                } else if name_lower == "bun" || exe_path.contains("/bun") {
+                    Some(crate::models::NodeRuntimeType::Bun)
+                } else if name_lower == "deno" || exe_path.contains("/deno") {
+                    Some(crate::models::NodeRuntimeType::Deno)
+                } else {
+                    None
+                };
+
                 ProcessData {
                     pid,
                     name,
@@ -278,6 +288,7 @@ impl SystemCollector {
                     cwd,
                     database_type,
                     proxy_type,
+                    node_runtime_type,
                 }
             })
             .collect();
