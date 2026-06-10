@@ -1237,6 +1237,11 @@ fn render_proxy_braille_chart(
                 let y = vals[0];
                 ctx.draw(&CanvasLine { x1: 0.0, y1: y, x2: max_samples, y2: y, color });
             } else {
+                // Extender el primer valor hacia la izquierda para llenar el espacio vacío
+                let x_first = (max_samples - (s_len - 1) as f64).max(0.0);
+                if x_first > 0.0 {
+                    ctx.draw(&CanvasLine { x1: 0.0, y1: vals[0], x2: x_first, y2: vals[0], color });
+                }
                 for i in 0..(s_len - 1) {
                     let x1 = (max_samples - (s_len - 1 - i) as f64).max(0.0);
                     let x2 = max_samples - (s_len - 2 - i) as f64;
