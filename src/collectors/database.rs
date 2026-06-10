@@ -275,14 +275,17 @@ pub async fn poll_database_container(container: ContainerData) -> DbMonitorData 
                     }
                 }
                 DatabaseType::MySqlMariaDb => {
-                    if k == "MYSQL_USER" {
+                    // Support both MYSQL_* (MySQL Docker image) and MARIADB_* (MariaDB official image)
+                    if k == "MYSQL_USER" || k == "MARIADB_USER" {
                         user_override = Some(v);
                     } else if k == "MYSQL_PASSWORD"
                         || k == "MYSQL_ROOT_PASSWORD"
                         || k == "MYSQL_PWD"
+                        || k == "MARIADB_PASSWORD"
+                        || k == "MARIADB_ROOT_PASSWORD"
                     {
                         pass_override = Some(v);
-                    } else if k == "MYSQL_DATABASE" {
+                    } else if k == "MYSQL_DATABASE" || k == "MARIADB_DATABASE" {
                         dbname_override = Some(v);
                     }
                 }
