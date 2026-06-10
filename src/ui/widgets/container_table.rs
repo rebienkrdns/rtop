@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Cell, Paragraph, Row, Table},
+    widgets::{Cell, Paragraph, Row, Table, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 
@@ -43,6 +43,7 @@ pub fn render_with_cursor(
     area: Rect,
     containers: &[ContainerData],
     cursor: usize,
+    scroll: usize,
     sort_col: ContainerSortColumn,
     sort_asc: bool,
     collapsed_groups: &HashSet<String>,
@@ -252,9 +253,22 @@ pub fn render_with_cursor(
     let group_header_bg = Color::Rgb(40, 44, 52);
     let group_header_fg = Color::Rgb(180, 190, 200);
 
+    let visible_rows = (container_area.height as usize).saturating_sub(1); // minus header
+    let mut scroll_offset = scroll;
+    if cursor < scroll_offset {
+        scroll_offset = cursor;
+    } else if cursor >= scroll_offset + visible_rows {
+        scroll_offset = cursor.saturating_sub(visible_rows - 1);
+    }
+    if scroll_offset + visible_rows > visual_rows.len() {
+        scroll_offset = visual_rows.len().saturating_sub(visible_rows);
+    }
+    let visible_end = (scroll_offset + visible_rows).min(visual_rows.len());
+
     let mut rows = Vec::new();
-    for (row_idx, visual_row) in visual_rows.iter().enumerate() {
-        let selected = row_idx == cursor;
+    for (row_idx, visual_row) in visual_rows[scroll_offset..visible_end].iter().enumerate() {
+        let abs_idx = scroll_offset + row_idx;
+        let selected = abs_idx == cursor;
         let row_style = if selected {
             Style::default().bg(theme.selected_bg).fg(theme.selected_fg)
         } else {
@@ -449,4 +463,18 @@ pub fn render_with_cursor(
         .column_spacing(2);
 
     f.render_widget(table, container_area);
+
+    if visual_rows.len() > visible_rows {
+        let max_scroll = visual_rows.len().saturating_sub(visible_rows);
+        let mut scrollbar_state = ScrollbarState::new(max_scroll).position(scroll_offset);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(None)
+                .thumb_symbol("┃"),
+            container_area,
+            &mut scrollbar_state,
+        );
+    }
 }

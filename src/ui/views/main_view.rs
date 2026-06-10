@@ -247,6 +247,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     inner,
                     &state.containers,
                     state.container_cursor,
+                    state.container_scroll,
                     state.container_sort_col,
                     state.container_sort_asc,
                     &state.collapsed_compose_groups,
