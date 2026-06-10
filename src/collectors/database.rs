@@ -459,8 +459,8 @@ async fn query_mysql_metrics(
     // Requires PROCESS privilege — optional, falls back to hardcoded typical values.
     if let Ok(rows) = conn.query::<(String, String, String), _>("SHOW ENGINE INNODB STATUS").await {
         if let Some((_, _, status_text)) = rows.first() {
-            metrics.buffer_pool_util_pct = parse_innodb_buffer_util(&status_text);
-            metrics.buffer_pool_hit_rate = parse_innodb_hit_rate(&status_text);
+            metrics.buffer_pool_util_pct = parse_innodb_buffer_util(status_text);
+            metrics.buffer_pool_hit_rate = parse_innodb_hit_rate(status_text);
         }
     }
 
@@ -602,6 +602,7 @@ mod tests {
             ],
             compose_project: None,
             database_type: Some(DatabaseType::MySqlMariaDb),
+            proxy_type: None,
         };
 
         // Let's test the env vars extraction directly
@@ -665,6 +666,7 @@ mod tests {
             ],
             compose_project: None,
             database_type: Some(DatabaseType::MySqlMariaDb),
+            proxy_type: None,
         };
 
         let res = poll_database_container(container).await;
@@ -716,6 +718,7 @@ mod tests {
             ],
             compose_project: None,
             database_type: Some(DatabaseType::PostgreSQL),
+            proxy_type: None,
         };
 
         let res = poll_database_container(container).await;

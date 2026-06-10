@@ -1267,17 +1267,9 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
     // Background task for container metrics collection
     let shared_containers_clone = std::sync::Arc::clone(&shared_containers);
     tokio::spawn(async move {
-        let container_collector = timeout(Duration::from_secs(1), ContainerCollector::new())
-            .await
-            .ok();
-
-        let Some(mut cc) = container_collector else {
-            let mut lock = shared_containers_clone.lock().unwrap();
-            lock.1 = ContainerBackendState {
-                available: false,
-                message: Some("Docker/Podman no disponible".to_string()),
-            };
-            return;
+        let mut cc = match timeout(Duration::from_secs(1), ContainerCollector::new()).await {
+            Ok(collector) => collector,
+            Err(_) => ContainerCollector::new_empty(),
         };
 
         // Seed initial state
@@ -1296,6 +1288,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                 Err(_) => {
                     cc.state.available = false;
                     cc.state.message = Some("Contenedores no responden a tiempo".to_string());
+                    cc.reset_client();
                     vec![]
                 }
             };
