@@ -611,22 +611,6 @@ pub enum ConfirmAction {
     Stop(String),
 }
 
-impl ConfirmAction {
-    pub fn label(&self) -> &str {
-        match self {
-            ConfirmAction::Restart(_) => "reiniciar",
-            ConfirmAction::Stop(_) => "detener",
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn container_id(&self) -> &str {
-        match self {
-            ConfirmAction::Restart(id) | ConfirmAction::Stop(id) => id,
-        }
-    }
-}
-
 fn render_confirm_dialog(f: &mut Frame, area: Rect, action: &ConfirmAction, state: &AppState) {
     let theme = Theme::default_theme();
 
