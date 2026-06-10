@@ -1,18 +1,26 @@
 use crate::models::{ContainerData, HttpProxyType, ProcessData};
+use std::collections::VecDeque;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
+
+pub const PROXY_HISTORY_LEN: usize = 60;
 
 #[derive(Clone, Debug, Default)]
 pub struct ProxyMetrics {
     pub active_connections: u32,
     pub requests_total: u64,
     pub rps: f64,
+    pub status_1xx: u64,
     pub status_2xx: u64,
     pub status_3xx: u64,
     pub status_4xx: u64,
     pub status_5xx: u64,
+    pub error_rate: f64,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
     pub reading: u32,
     pub writing: u32,
     pub waiting: u32,
@@ -35,33 +43,74 @@ pub struct ProxyMonitorData {
     pub proxy_type: HttpProxyType,
     pub status: ProxyConnectionStatus,
     pub metrics: ProxyMetrics,
+    pub rps_history: VecDeque<u64>,
+    pub conn_history: VecDeque<u64>,
+    pub s1xx_history: VecDeque<u64>,
+    pub s2xx_history: VecDeque<u64>,
+    pub s3xx_history: VecDeque<u64>,
+    pub s4xx_history: VecDeque<u64>,
+    pub s5xx_history: VecDeque<u64>,
+    pub p50_history: VecDeque<u64>,
+    pub p95_history: VecDeque<u64>,
+    pub p99_history: VecDeque<u64>,
 }
 
 impl ProxyMonitorData {
-    pub fn new(pid: u32, proxy_type: HttpProxyType) -> Self {
+    fn new_inner(proxy_type: HttpProxyType) -> Self {
         Self {
-            pid: Some(pid),
+            pid: None,
             container_id: None,
             proxy_type,
             status: ProxyConnectionStatus::Disconnected,
             metrics: ProxyMetrics::default(),
+            rps_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            conn_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            s1xx_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            s2xx_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            s3xx_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            s4xx_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            s5xx_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            p50_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            p95_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            p99_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
         }
     }
 
+    pub fn push_history(&mut self) {
+        let push = |dq: &mut VecDeque<u64>, v: u64| {
+            if dq.len() >= PROXY_HISTORY_LEN {
+                dq.pop_front();
+            }
+            dq.push_back(v);
+        };
+        push(&mut self.rps_history,  self.metrics.rps as u64);
+        push(&mut self.conn_history, self.metrics.active_connections as u64);
+        push(&mut self.s1xx_history, self.metrics.status_1xx);
+        push(&mut self.s2xx_history, self.metrics.status_2xx);
+        push(&mut self.s3xx_history, self.metrics.status_3xx);
+        push(&mut self.s4xx_history, self.metrics.status_4xx);
+        push(&mut self.s5xx_history, self.metrics.status_5xx);
+        push(&mut self.p50_history,  self.metrics.p50_ms as u64);
+        push(&mut self.p95_history,  self.metrics.p95_ms as u64);
+        push(&mut self.p99_history,  self.metrics.p99_ms as u64);
+    }
+
+    pub fn new(pid: u32, proxy_type: HttpProxyType) -> Self {
+        let mut s = Self::new_inner(proxy_type);
+        s.pid = Some(pid);
+        s
+    }
+
     pub fn new_container(container_id: String, proxy_type: HttpProxyType) -> Self {
-        Self {
-            pid: None,
-            container_id: Some(container_id),
-            proxy_type,
-            status: ProxyConnectionStatus::Disconnected,
-            metrics: ProxyMetrics::default(),
-        }
+        let mut s = Self::new_inner(proxy_type);
+        s.container_id = Some(container_id);
+        s
     }
 }
 
 pub fn extract_proxy_port(cmd: &str, proxy_type: HttpProxyType) -> u16 {
     let default_port = match proxy_type {
-        HttpProxyType::Traefik => 8080,
+        HttpProxyType::Traefik => 9090,
         HttpProxyType::Nginx => 80,
         HttpProxyType::Apache => 80,
     };
@@ -81,7 +130,7 @@ pub fn extract_proxy_port(cmd: &str, proxy_type: HttpProxyType) -> u16 {
 
 pub fn extract_proxy_container_port(ports: &[String], proxy_type: HttpProxyType) -> u16 {
     let candidates: &[u16] = match proxy_type {
-        HttpProxyType::Traefik => &[8080, 80, 443],
+        HttpProxyType::Traefik => &[9090, 8082, 8080, 80, 443],
         HttpProxyType::Nginx => &[80, 8080, 443],
         HttpProxyType::Apache => &[80, 8080, 443],
     };
@@ -105,7 +154,7 @@ pub fn extract_proxy_container_port(ports: &[String], proxy_type: HttpProxyType)
     }
 
     match proxy_type {
-        HttpProxyType::Traefik => 8080,
+        HttpProxyType::Traefik => 9090,
         HttpProxyType::Nginx => 80,
         HttpProxyType::Apache => 80,
     }
@@ -207,24 +256,26 @@ fn parse_apache_status(body: &str, metrics: &mut ProxyMetrics) {
 }
 
 fn parse_traefik_metrics(body: &str, metrics: &mut ProxyMetrics) {
-    // Prometheus format:
-    // traefik_entrypoint_requests_total{code="200",...} 42.0
-    // traefik_entrypoint_open_connections{...} 5.0
+    let mut total_1xx: u64 = 0;
     let mut total_2xx: u64 = 0;
     let mut total_3xx: u64 = 0;
     let mut total_4xx: u64 = 0;
     let mut total_5xx: u64 = 0;
     let mut open_conns: u32 = 0;
 
+    // histogram buckets: (le_bound, cumulative_count)
+    let mut hist_buckets: Vec<(f64, u64)> = Vec::new();
+    let mut hist_count: u64 = 0;
+
     for line in body.lines() {
         if line.starts_with('#') {
             continue;
         }
         if line.contains("traefik_entrypoint_requests_total") {
-            // Extract code label
             let code = extract_label(line, "code").unwrap_or_default();
             let value = parse_prometheus_value(line);
             match code.as_str() {
+                c if c.starts_with('1') => total_1xx += value,
                 c if c.starts_with('2') => total_2xx += value,
                 c if c.starts_with('3') => total_3xx += value,
                 c if c.starts_with('4') => total_4xx += value,
@@ -233,15 +284,58 @@ fn parse_traefik_metrics(body: &str, metrics: &mut ProxyMetrics) {
             }
         } else if line.contains("traefik_entrypoint_open_connections") {
             open_conns += parse_prometheus_value(line) as u32;
+        } else if line.contains("traefik_entrypoint_request_duration_seconds_bucket") {
+            if let Some(le) = extract_label(line, "le") {
+                if le == "+Inf" {
+                    hist_count = parse_prometheus_value(line);
+                } else if let Ok(bound) = le.parse::<f64>() {
+                    let count = parse_prometheus_value(line);
+                    hist_buckets.push((bound * 1000.0, count)); // convert to ms
+                }
+            }
         }
     }
 
+    // compute p50/p95/p99 from cumulative histogram
+    if hist_count > 0 && !hist_buckets.is_empty() {
+        hist_buckets.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        metrics.p50_ms = percentile_from_buckets(&hist_buckets, hist_count, 0.50);
+        metrics.p95_ms = percentile_from_buckets(&hist_buckets, hist_count, 0.95);
+        metrics.p99_ms = percentile_from_buckets(&hist_buckets, hist_count, 0.99);
+    }
+
+    let total = total_1xx + total_2xx + total_3xx + total_4xx + total_5xx;
+    metrics.error_rate = if total > 0 {
+        (total_5xx as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    metrics.status_1xx = total_1xx;
     metrics.status_2xx = total_2xx;
     metrics.status_3xx = total_3xx;
     metrics.status_4xx = total_4xx;
     metrics.status_5xx = total_5xx;
-    metrics.requests_total = total_2xx + total_3xx + total_4xx + total_5xx;
+    metrics.requests_total = total;
     metrics.active_connections = open_conns;
+}
+
+fn percentile_from_buckets(buckets: &[(f64, u64)], total: u64, pct: f64) -> f64 {
+    let target = (total as f64 * pct) as u64;
+    let mut prev_bound = 0.0_f64;
+    let mut prev_count = 0_u64;
+    for &(bound, count) in buckets {
+        if count >= target {
+            if count == prev_count {
+                return bound;
+            }
+            let frac = (target - prev_count) as f64 / (count - prev_count) as f64;
+            return prev_bound + frac * (bound - prev_bound);
+        }
+        prev_bound = bound;
+        prev_count = count;
+    }
+    prev_bound
 }
 
 fn extract_label(line: &str, label: &str) -> Option<String> {
