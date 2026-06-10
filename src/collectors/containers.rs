@@ -196,6 +196,21 @@ impl ContainerCollector {
                     None
                 };
 
+            let proxy_type =
+                if name_lower.contains("traefik") || image_lower.contains("traefik") {
+                    Some(crate::models::HttpProxyType::Traefik)
+                } else if name_lower.contains("nginx") || image_lower.contains("nginx") {
+                    Some(crate::models::HttpProxyType::Nginx)
+                } else if name_lower.contains("httpd")
+                    || image_lower.contains("httpd")
+                    || name_lower.contains("apache")
+                    || image_lower.contains("apache")
+                {
+                    Some(crate::models::HttpProxyType::Apache)
+                } else {
+                    None
+                };
+
             result.push(ContainerData {
                 id: full_id.chars().take(12).collect(),
                 name,
@@ -224,6 +239,7 @@ impl ContainerCollector {
                 env_vars: extract_env_vars(&inspect_opt),
                 compose_project,
                 database_type,
+                proxy_type,
             });
         }
 

@@ -60,4 +60,5 @@ pub struct ContainerData {
     pub env_vars: Vec<String>,
     pub compose_project: Option<String>,
     pub database_type: Option<super::DatabaseType>,
+    pub proxy_type: Option<super::HttpProxyType>,
 }

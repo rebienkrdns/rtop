@@ -57,7 +57,8 @@ pub fn render(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let (left_area, db_area) = if container.database_type.is_some() {
+    let has_right_panel = container.database_type.is_some() || container.proxy_type.is_some();
+    let (left_area, db_area) = if has_right_panel {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
@@ -596,7 +597,11 @@ pub fn render(
     f.render_widget(Paragraph::new(hint), chunks[6]);
 
     if let Some(db_rect) = db_area {
-        crate::ui::views::process_detail::render_db_panel(f, db_rect, state, &theme);
+        if container.database_type.is_some() {
+            crate::ui::views::process_detail::render_db_panel(f, db_rect, state, &theme);
+        } else if container.proxy_type.is_some() {
+            crate::ui::views::process_detail::render_proxy_panel(f, db_rect, state, &theme);
+        }
     }
 
     // Confirmation overlay

@@ -993,3 +993,169 @@ fn format_uptime(secs: u64) -> String {
         format!("{}h {}m", h, m)
     }
 }
+
+pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    use crate::collectors::proxy::ProxyConnectionStatus;
+
+    let proxy_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent_dim))
+        .title(Span::styled(
+            " HTTP Proxy Dashboard ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+    let inner_rect = proxy_block.inner(area);
+    f.render_widget(proxy_block, area);
+
+    let monitor_data = match &state.proxy_monitor {
+        Some(data) => data,
+        None => {
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Proxy Initializing...]",
+                    Style::default().fg(theme.muted),
+                )),
+            ]);
+            f.render_widget(paragraph, inner_rect);
+            return;
+        }
+    };
+
+    let proxy_name = match monitor_data.proxy_type {
+        crate::models::HttpProxyType::Traefik => "Traefik",
+        crate::models::HttpProxyType::Nginx => "Nginx",
+        crate::models::HttpProxyType::Apache => "Apache",
+    };
+
+    match &monitor_data.status {
+        ProxyConnectionStatus::Connecting => {
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  [{}] Connecting...", proxy_name),
+                    Style::default().fg(theme.warn),
+                )),
+            ]);
+            f.render_widget(paragraph, inner_rect);
+        }
+        ProxyConnectionStatus::Disconnected | ProxyConnectionStatus::Error(_) => {
+            let err = match &monitor_data.status {
+                ProxyConnectionStatus::Error(e) => e.clone(),
+                _ => "Disconnected".to_string(),
+            };
+            let endpoint = match monitor_data.proxy_type {
+                crate::models::HttpProxyType::Nginx => "/nginx_status",
+                crate::models::HttpProxyType::Apache => "/server-status?auto",
+                crate::models::HttpProxyType::Traefik => "/metrics (port 8080)",
+            };
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  [{}] Unreachable", proxy_name),
+                    Style::default().fg(theme.crit).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(format!("  Error: {}", err)),
+                Line::from(""),
+                Line::from(format!("  Enable stats endpoint: {}", endpoint)),
+            ];
+            let paragraph = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
+            f.render_widget(paragraph, inner_rect);
+        }
+        ProxyConnectionStatus::Connected => {
+            let m = &monitor_data.metrics;
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                ])
+                .split(inner_rect);
+
+            let rps_label = format!(" RPS  {:.1} req/s ", m.rps);
+            let rps_gauge = Gauge::default()
+                .block(
+                    Block::default()
+                        .title(Span::styled(rps_label, Style::default().fg(theme.accent)))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme.accent_dim)),
+                )
+                .gauge_style(Style::default().fg(theme.ok).bg(Color::Rgb(51, 52, 61)))
+                .ratio((m.rps / 1000.0).clamp(0.0, 1.0));
+            f.render_widget(rps_gauge, chunks[0]);
+
+            let conn_label = format!(" Connections  {} active ", m.active_connections);
+            let conn_gauge = Gauge::default()
+                .block(
+                    Block::default()
+                        .title(Span::styled(conn_label, Style::default().fg(theme.accent)))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme.accent_dim)),
+                )
+                .gauge_style(
+                    Style::default()
+                        .fg(theme.accent_dim)
+                        .bg(Color::Rgb(51, 52, 61)),
+                )
+                .ratio((m.active_connections as f64 / 500.0).clamp(0.0, 1.0));
+            f.render_widget(conn_gauge, chunks[1]);
+
+            let total_status =
+                (m.status_2xx + m.status_3xx + m.status_4xx + m.status_5xx).max(1) as f64;
+            let status_color = if m.status_5xx > 0 {
+                theme.crit
+            } else {
+                theme.ok
+            };
+            let status_label = format!(
+                " 2xx:{} 3xx:{} 4xx:{} 5xx:{} ",
+                m.status_2xx, m.status_3xx, m.status_4xx, m.status_5xx
+            );
+            let status_gauge = Gauge::default()
+                .block(
+                    Block::default()
+                        .title(Span::styled(
+                            status_label,
+                            Style::default().fg(theme.accent),
+                        ))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme.accent_dim)),
+                )
+                .gauge_style(
+                    Style::default()
+                        .fg(status_color)
+                        .bg(Color::Rgb(51, 52, 61)),
+                )
+                .ratio((m.status_2xx as f64 / total_status).clamp(0.0, 1.0));
+            f.render_widget(status_gauge, chunks[2]);
+
+            let extra = match monitor_data.proxy_type {
+                crate::models::HttpProxyType::Nginx => vec![
+                    Line::from(format!(
+                        "  Reading: {}  Writing: {}  Waiting: {}",
+                        m.reading, m.writing, m.waiting
+                    )),
+                    Line::from(format!("  Total Requests: {}", m.requests_total)),
+                ],
+                crate::models::HttpProxyType::Apache => vec![
+                    Line::from(format!(
+                        "  Busy Workers: {}  Idle Workers: {}",
+                        m.busy_workers, m.idle_workers
+                    )),
+                    Line::from(format!("  Total Accesses: {}", m.requests_total)),
+                ],
+                crate::models::HttpProxyType::Traefik => vec![
+                    Line::from(format!("  Total Requests: {}", m.requests_total)),
+                    Line::from(format!("  Open Connections: {}", m.active_connections)),
+                ],
+            };
+            f.render_widget(Paragraph::new(extra), chunks[3]);
+        }
+    }
+}
