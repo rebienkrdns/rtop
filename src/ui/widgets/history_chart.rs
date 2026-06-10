@@ -289,7 +289,7 @@ mod tests {
         terminal
             .draw(|f| {
                 let area = f.size();
-                render_cpu_ram(f, area, &refs, HistoryRange::OneMin);
+                render_cpu_ram(f, area, &refs, HistoryRange::OneMin, Language::English);
             })
             .unwrap();
 
@@ -336,7 +336,7 @@ mod tests {
         terminal
             .draw(|f| {
                 let area = f.size();
-                render_cpu_ram(f, area, &samples, HistoryRange::OneMin);
+                render_cpu_ram(f, area, &samples, HistoryRange::OneMin, Language::English);
             })
             .unwrap();
 
