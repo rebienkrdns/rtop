@@ -403,7 +403,8 @@ async fn query_mysql_metrics(
     use mysql_async::prelude::Queryable;
 
     // 1. Query global status variables (including network traffic bytes)
-    let rows: Vec<(String, String)> = conn.query("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected', 'Threads_running', 'Slow_queries', 'Com_select', 'Com_insert', 'Com_update', 'Com_delete', 'Bytes_sent', 'Bytes_received')").await?;
+    // SHOW GLOBAL STATUS requires no special privilege in MariaDB 10.5.1+ / MySQL 8.0+
+    // but may be restricted in older versions — treat as optional.
     metrics.read_queries = 0;
     metrics.write_queries = 0;
     metrics.raw_com_select = 0;
@@ -414,50 +415,53 @@ async fn query_mysql_metrics(
     metrics.raw_bytes_sent = 0;
     metrics.raw_bytes_received = 0;
 
-    for (name, val) in rows {
-        match name.as_str() {
-            "Threads_connected" => metrics.threads_connected = val.parse().unwrap_or(0),
-            "Threads_running" => metrics.threads_running = val.parse().unwrap_or(0),
-            "Slow_queries" => {
-                metrics.slow_queries = val.parse().unwrap_or(0);
-                metrics.raw_slow_queries = metrics.slow_queries as u64;
+    if let Ok(rows) = conn.query::<(String, String), _>("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected', 'Threads_running', 'Slow_queries', 'Com_select', 'Com_insert', 'Com_update', 'Com_delete', 'Bytes_sent', 'Bytes_received')").await {
+        for (name, val) in rows {
+            match name.as_str() {
+                "Threads_connected" => metrics.threads_connected = val.parse().unwrap_or(0),
+                "Threads_running" => metrics.threads_running = val.parse().unwrap_or(0),
+                "Slow_queries" => {
+                    metrics.slow_queries = val.parse().unwrap_or(0);
+                    metrics.raw_slow_queries = metrics.slow_queries as u64;
+                }
+                "Com_select" => {
+                    let parsed = val.parse::<u64>().unwrap_or(0);
+                    metrics.read_queries += parsed;
+                    metrics.raw_com_select = parsed;
+                }
+                "Com_insert" => {
+                    let parsed = val.parse::<u64>().unwrap_or(0);
+                    metrics.write_queries += parsed;
+                    metrics.raw_com_insert = parsed;
+                }
+                "Com_update" => {
+                    let parsed = val.parse::<u64>().unwrap_or(0);
+                    metrics.write_queries += parsed;
+                    metrics.raw_com_update = parsed;
+                }
+                "Com_delete" => {
+                    let parsed = val.parse::<u64>().unwrap_or(0);
+                    metrics.write_queries += parsed;
+                    metrics.raw_com_delete = parsed;
+                }
+                "Bytes_sent" => {
+                    metrics.raw_bytes_sent = val.parse::<u64>().unwrap_or(0);
+                }
+                "Bytes_received" => {
+                    metrics.raw_bytes_received = val.parse::<u64>().unwrap_or(0);
+                }
+                _ => {}
             }
-            "Com_select" => {
-                let parsed = val.parse::<u64>().unwrap_or(0);
-                metrics.read_queries += parsed;
-                metrics.raw_com_select = parsed;
-            }
-            "Com_insert" => {
-                let parsed = val.parse::<u64>().unwrap_or(0);
-                metrics.write_queries += parsed;
-                metrics.raw_com_insert = parsed;
-            }
-            "Com_update" => {
-                let parsed = val.parse::<u64>().unwrap_or(0);
-                metrics.write_queries += parsed;
-                metrics.raw_com_update = parsed;
-            }
-            "Com_delete" => {
-                let parsed = val.parse::<u64>().unwrap_or(0);
-                metrics.write_queries += parsed;
-                metrics.raw_com_delete = parsed;
-            }
-            "Bytes_sent" => {
-                metrics.raw_bytes_sent = val.parse::<u64>().unwrap_or(0);
-            }
-            "Bytes_received" => {
-                metrics.raw_bytes_received = val.parse::<u64>().unwrap_or(0);
-            }
-            _ => {}
         }
     }
 
     // 2. Buffer pool utilization and hit rate from SHOW ENGINE INNODB STATUS
-    let rows: Vec<(String, String, String)> = conn.query("SHOW ENGINE INNODB STATUS").await?;
-    if let Some((_, _, status_text)) = rows.first() {
-        // Parse InnoDB Buffer pool utilization & hit rate
-        metrics.buffer_pool_util_pct = parse_innodb_buffer_util(status_text);
-        metrics.buffer_pool_hit_rate = parse_innodb_hit_rate(status_text);
+    // Requires PROCESS privilege — optional, falls back to hardcoded typical values.
+    if let Ok(rows) = conn.query::<(String, String, String), _>("SHOW ENGINE INNODB STATUS").await {
+        if let Some((_, _, status_text)) = rows.first() {
+            metrics.buffer_pool_util_pct = parse_innodb_buffer_util(&status_text);
+            metrics.buffer_pool_hit_rate = parse_innodb_hit_rate(&status_text);
+        }
     }
 
     Ok(())
