@@ -938,18 +938,11 @@ impl AppState {
                                 let (tx, rx) = mpsc::channel(8);
                                 self.node_rx = rx;
                                 self.node_tx = tx.clone();
-                                tokio::spawn(async move {
-                                    let mut ticker =
-                                        tokio::time::interval(std::time::Duration::from_secs(2));
-                                    loop {
-                                        ticker.tick().await;
-                                        let data =
-                                            crate::collectors::node_runtime::poll_node_inspector(pid).await;
-                                        if tx.send(data).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                });
+                                tokio::spawn(
+                                    crate::collectors::node_runtime::run_inspector_session_process(
+                                        pid, tx,
+                                    ),
+                                );
                             }
                         } else {
                             self.node_monitor = None;
@@ -978,21 +971,11 @@ impl AppState {
                                 self.node_rx = rx;
                                 self.node_tx = tx.clone();
                                 let cid_clone = cid.clone();
-                                tokio::spawn(async move {
-                                    let mut ticker =
-                                        tokio::time::interval(std::time::Duration::from_secs(2));
-                                    loop {
-                                        ticker.tick().await;
-                                        let data =
-                                            crate::collectors::node_runtime::poll_node_inspector_container(
-                                                &cid_clone,
-                                            )
-                                            .await;
-                                        if tx.send(data).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                });
+                                tokio::spawn(
+                                    crate::collectors::node_runtime::run_inspector_session_container(
+                                        cid_clone, tx,
+                                    ),
+                                );
                             }
                         } else {
                             self.node_monitor = None;

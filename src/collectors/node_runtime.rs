@@ -1,19 +1,18 @@
 use std::collections::VecDeque;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 pub const NODE_HISTORY_LEN: usize = 60;
 
-/// Telemetría del Event Loop de Node.js
 #[derive(Clone, Debug, Default)]
 pub struct EventLoopMetrics {
-    /// Latencia del event loop en milisegundos
     pub delay_ms: f64,
-    /// Event Loop Utilization (0.0 – 100.0 %)
     pub utilization_pct: f64,
 }
 
-/// Métricas del heap de la V8
 #[derive(Clone, Debug, Default)]
 pub struct HeapMetrics {
     pub used_bytes: u64,
@@ -22,13 +21,9 @@ pub struct HeapMetrics {
     pub old_space_bytes: u64,
     pub code_space_bytes: u64,
     pub map_space_bytes: u64,
-    /// Frecuencia de Minor GC por segundo (scavenge)
     pub minor_gc_rate: f64,
-    /// Latencia promedio de Minor GC en ms
     pub minor_gc_avg_ms: f64,
-    /// Frecuencia de Major GC por segundo (mark-sweep)
     pub major_gc_rate: f64,
-    /// Latencia promedio de Major GC en ms
     pub major_gc_avg_ms: f64,
 }
 
@@ -42,7 +37,6 @@ impl HeapMetrics {
     }
 }
 
-/// Métricas del subsistema I/O de Libuv
 #[derive(Clone, Debug, Default)]
 pub struct LibuvMetrics {
     pub active_handles: u32,
@@ -50,7 +44,6 @@ pub struct LibuvMetrics {
     pub threadpool_queue: u32,
 }
 
-/// Snapshot completo de métricas de un proceso/contenedor Node.js
 #[derive(Clone, Debug, Default)]
 pub struct NodeRuntimeMetrics {
     pub event_loop: EventLoopMetrics,
@@ -79,15 +72,10 @@ pub struct NodeMonitorData {
     pub container_id: Option<String>,
     pub status: NodeConnectionStatus,
     pub metrics: NodeRuntimeMetrics,
-    /// Historial de ELU (%)
     pub elu_history: VecDeque<u64>,
-    /// Historial de delay (ms × 10 para preservar décimas)
     pub delay_history: VecDeque<u64>,
-    /// Historial de heap used (KB)
     pub heap_used_history: VecDeque<u64>,
-    /// Historial de minor GC rate (× 10)
     pub minor_gc_history: VecDeque<u64>,
-    /// Historial de major GC rate (× 10)
     pub major_gc_history: VecDeque<u64>,
 }
 
@@ -130,342 +118,246 @@ impl NodeMonitorData {
         push(&mut self.elu_history, self.metrics.event_loop.utilization_pct as u64);
         push(&mut self.delay_history, (self.metrics.event_loop.delay_ms * 10.0) as u64);
         push(&mut self.heap_used_history, self.metrics.heap.used_bytes / 1024);
-        push(&mut self.minor_gc_history, (self.metrics.event_loop.delay_ms * 10.0) as u64);
+        push(&mut self.minor_gc_history, (self.metrics.heap.minor_gc_rate * 10.0) as u64);
         push(&mut self.major_gc_history, (self.metrics.heap.major_gc_rate * 10.0) as u64);
     }
 }
 
-// ─── V8 Inspector WebSocket client ──────────────────────────────────────────
+// ─── Expresión JS única que extrae todas las métricas necesarias ──────────────
 
-/// Detecta el puerto de inspección V8 de un proceso Node.js leyendo /proc/<pid>/net/tcp
-/// o netstat. En macOS usa lsof. Retorna el primer puerto en rango 9229–9239.
-pub async fn discover_inspector_port(_pid: u32) -> Option<u16> {
-    // Rango convencional de Node.js inspector
-    for port in 9229u16..=9239 {
-        if probe_tcp_port(port).await {
-            return Some(port);
+/// Una sola evaluación que devuelve JSON con todos los campos de métricas.
+/// Usa try/catch para que `require('v8')` no rompa si no está disponible.
+/// `require` no es global en el contexto del inspector V8 (no hay module wrapper).
+/// Usamos `process.mainModule.require` como alternativa portable, con fallbacks.
+const METRICS_EXPRESSION: &str = r#"(function(){
+  var m=process.memoryUsage();
+  var elu=(typeof performance!=='undefined'&&performance.eventLoopUtilization)?performance.eventLoopUtilization():{utilization:0};
+  var spaces={};
+  try{
+    var req=typeof require!=='undefined'?require:(process.mainModule?process.mainModule.require:null);
+    if(req){req('v8').getHeapSpaceStatistics().forEach(function(s){spaces[s.space_name]=s.space_used_size;});}
+  }catch(e){}
+  return JSON.stringify({
+    heapUsed:m.heapUsed,heapTotal:m.heapTotal,
+    elu:elu.utilization,
+    newSpace:spaces['new_space']||0,
+    oldSpace:spaces['old_space']||0,
+    codeSpace:spaces['code_space']||0,
+    mapSpace:spaces['map_space']||0
+  });
+})()"#;
+
+// ─── Sesión persistente de WebSocket al V8 Inspector ─────────────────────────
+
+struct InspectorSession {
+    stream: TcpStream,
+    msg_id: u32,
+}
+
+impl InspectorSession {
+    /// Establece la conexión WebSocket con el inspector de Node.js en el puerto dado.
+    async fn connect(port: u16) -> Option<Self> {
+        let ws_url = get_inspector_ws_url(port).await?;
+        let parsed = url_mod::parse_simple(&ws_url)?;
+        let addr = format!("{}:{}", parsed.host, parsed.port);
+
+        let mut stream = timeout(Duration::from_millis(1500), TcpStream::connect(&addr))
+            .await
+            .ok()?
+            .ok()?;
+
+        let path = match parsed.query {
+            Some(ref q) if !q.is_empty() => format!("{}?{}", parsed.path, q),
+            _ => parsed.path.clone(),
+        };
+        let key = "dEdJuAx5DkXel2KQQQYQJQ==";
+        let handshake = format!(
+            "GET {} HTTP/1.1\r\nHost: {}:{}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n\r\n",
+            if path.starts_with('/') { path } else { format!("/{}", path) },
+            parsed.host,
+            parsed.port,
+            key
+        );
+        stream.write_all(handshake.as_bytes()).await.ok()?;
+
+        let mut buf = [0u8; 4096];
+        let n = timeout(Duration::from_millis(1500), stream.read(&mut buf))
+            .await
+            .ok()?
+            .ok()?;
+        let header = String::from_utf8_lossy(&buf[..n]);
+        if !header.contains("101") {
+            return None;
         }
+
+        Some(Self { stream, msg_id: 1 })
     }
-    // Intentar leer /proc/<pid>/cmdline para extraer --inspect-port=XXXX
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(cmdline) = tokio::fs::read_to_string(format!("/proc/{}/cmdline", _pid)).await {
-            let parts: Vec<&str> = cmdline.split('\0').collect();
-            for part in &parts {
-                if let Some(rest) = part.strip_prefix("--inspect-port=").or_else(|| part.strip_prefix("--inspect=")) {
-                    if let Ok(p) = rest.trim_end_matches('\0').parse::<u16>() {
-                        if probe_tcp_port(p).await {
-                            return Some(p);
-                        }
-                    }
+
+    /// Envía un Runtime.evaluate y devuelve el string resultado o None si la conexión falló.
+    async fn eval(&mut self, expression: &str) -> Option<String> {
+        let id = self.msg_id;
+        self.msg_id += 1;
+
+        let cmd = serde_json::json!({
+            "id": id,
+            "method": "Runtime.evaluate",
+            "params": {
+                "expression": expression,
+                "returnByValue": true
+            }
+        });
+
+        let frame = encode_ws_frame(cmd.to_string().as_bytes());
+        self.stream.write_all(&frame).await.ok()?;
+
+        // Leer respuesta — puede llegar en varios fragmentos TCP.
+        // Leemos hasta tener un frame WS completo.
+        let mut buf = vec![0u8; 65536];
+        let n = timeout(Duration::from_secs(3), self.stream.read(&mut buf))
+            .await
+            .ok()?
+            .ok()?;
+        if n == 0 {
+            return None;
+        }
+
+        let payload = decode_ws_frame(&buf[..n])?;
+        let resp: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+
+        // El inspector puede enviar eventos no solicitados (Runtime.executionContextCreated, etc.)
+        // antes del resultado. Si el `id` no coincide, descartamos y no intentamos releer
+        // (el siguiente poll obtendrá el valor correcto).
+        if resp.get("id").and_then(|v| v.as_u64()) != Some(id as u64) {
+            // Era un evento, no el resultado de nuestro eval
+            return None;
+        }
+
+        resp.pointer("/result/result/value")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    }
+
+    /// Envía un frame de cierre WebSocket (opcode 0x08) antes de cerrar.
+    async fn close(mut self) {
+        let close_frame = vec![0x88u8, 0x80, 0x00, 0x00, 0x00, 0x00]; // FIN+close, masked empty
+        let _ = self.stream.write_all(&close_frame).await;
+    }
+}
+
+// ─── Loop de sesión persistente (llamado desde app.rs via tokio::spawn) ──────
+
+/// Arranca un loop de monitoreo persistente para un proceso Node.js.
+/// Mantiene la conexión WebSocket abierta entre polls.
+/// Solo reconecta cuando la conexión se rompe.
+pub async fn run_inspector_session_process(
+    pid: u32,
+    tx: mpsc::Sender<NodeMonitorData>,
+) {
+    run_session_loop(move || NodeMonitorData::new(pid), None, Some(pid), tx).await;
+}
+
+pub async fn run_inspector_session_container(
+    container_id: String,
+    tx: mpsc::Sender<NodeMonitorData>,
+) {
+    let cid_for_loop = container_id.clone();
+    run_session_loop(
+        move || NodeMonitorData::new_container(container_id.clone()),
+        Some(cid_for_loop),
+        None,
+        tx,
+    )
+    .await;
+}
+
+async fn run_session_loop<F>(
+    make_data: F,
+    container_id: Option<String>,
+    pid: Option<u32>,
+    tx: mpsc::Sender<NodeMonitorData>,
+) where
+    F: Fn() -> NodeMonitorData,
+{
+    let mut ticker = tokio::time::interval(Duration::from_secs(2));
+    let mut session: Option<InspectorSession> = None;
+
+    loop {
+        ticker.tick().await;
+
+        // Si no hay sesión, intentar conectar
+        if session.is_none() {
+            let port = find_inspector_port(pid, container_id.as_deref()).await;
+            if let Some(p) = port {
+                let mut data = make_data();
+                data.status = NodeConnectionStatus::Connecting;
+                let _ = tx.send(data).await;
+
+                session = InspectorSession::connect(p).await;
+            }
+
+            if session.is_none() {
+                let mut data = make_data();
+                data.status = NodeConnectionStatus::Unavailable;
+                if tx.send(data).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+        }
+
+        // Evaluar métricas en la sesión existente
+        let metrics_opt = if let Some(ref mut sess) = session {
+            match sess.eval(METRICS_EXPRESSION).await {
+                Some(val_str) => parse_metrics_json(&val_str),
+                None => None,
+            }
+        } else {
+            None
+        };
+
+        match metrics_opt {
+            Some(metrics) => {
+                let mut data = make_data();
+                data.status = NodeConnectionStatus::Connected;
+                data.metrics = metrics;
+                if tx.send(data).await.is_err() {
+                    break;
+                }
+            }
+            None => {
+                // Conexión rota — cerrar limpiamente y marcar para reconexión
+                if let Some(sess) = session.take() {
+                    sess.close().await;
+                }
+                let mut data = make_data();
+                data.status = NodeConnectionStatus::Unavailable;
+                if tx.send(data).await.is_err() {
+                    break;
                 }
             }
         }
     }
-    None
-}
 
-async fn probe_tcp_port(port: u16) -> bool {
-    let addr = format!("127.0.0.1:{}", port);
-    timeout(
-        Duration::from_millis(150),
-        tokio::net::TcpStream::connect(&addr),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())
-    .is_some()
-}
-
-// ─── HTTP scraping del endpoint /json del V8 Inspector ───────────────────────
-
-/// Obtiene las métricas del Node.js Inspector HTTP endpoint (/json/runtime)
-/// Parsea la respuesta del inspector para extraer métricas básicas.
-pub async fn poll_node_inspector(pid: u32) -> NodeMonitorData {
-    let mut data = NodeMonitorData::new(pid);
-
-    let Some(port) = discover_inspector_port(pid).await else {
-        data.status = NodeConnectionStatus::Unavailable;
-        return data;
-    };
-
-    data.status = NodeConnectionStatus::Connecting;
-
-    // Intentar conectar al endpoint HTTP del inspector para obtener el websocket URL
-    let ws_url = match get_inspector_ws_url(port).await {
-        Some(url) => url,
-        None => {
-            data.status = NodeConnectionStatus::Unavailable;
-            return data;
-        }
-    };
-
-    // Conectar via WebSocket y ejecutar Runtime.evaluate para leer métricas
-    match collect_metrics_via_ws(&ws_url).await {
-        Some(metrics) => {
-            data.status = NodeConnectionStatus::Connected;
-            data.metrics = metrics;
-        }
-        None => {
-            data.status = NodeConnectionStatus::Unavailable;
-        }
-    }
-
-    data
-}
-
-pub async fn poll_node_inspector_container(container_id: &str) -> NodeMonitorData {
-    let mut data = NodeMonitorData::new_container(container_id.to_string());
-
-    // Para contenedores intentamos el mismo mecanismo: Node.js expone el inspector
-    // en un puerto mapeado al host. Escaneamos puertos convencionales.
-    let Some(port) = find_mapped_inspector_port(container_id).await else {
-        data.status = NodeConnectionStatus::Unavailable;
-        return data;
-    };
-
-    let ws_url = match get_inspector_ws_url(port).await {
-        Some(url) => url,
-        None => {
-            data.status = NodeConnectionStatus::Unavailable;
-            return data;
-        }
-    };
-
-    match collect_metrics_via_ws(&ws_url).await {
-        Some(metrics) => {
-            data.status = NodeConnectionStatus::Connected;
-            data.metrics = metrics;
-        }
-        None => {
-            data.status = NodeConnectionStatus::Unavailable;
-        }
-    }
-
-    data
-}
-
-async fn find_mapped_inspector_port(_container_id: &str) -> Option<u16> {
-    // Probar puertos convencionales del inspector
-    for port in [9229u16, 9230, 9231, 9232] {
-        if probe_tcp_port(port).await {
-            return Some(port);
-        }
-    }
-    None
-}
-
-async fn get_inspector_ws_url(port: u16) -> Option<String> {
-    let url = format!("http://127.0.0.1:{}/json", port);
-    let Ok(resp) = timeout(Duration::from_millis(800), fetch_http(&url, port)).await else {
-        return None;
-    };
-    let body = resp?;
-
-    // Parsear JSON array de targets: [{"webSocketDebuggerUrl": "ws://..."}]
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) else {
-        return None;
-    };
-
-    let raw_url = parsed
-        .as_array()?
-        .first()?
-        .get("webSocketDebuggerUrl")?
-        .as_str()?;
-
-    // Algunos runtimes devuelven la URL sin puerto (cuando usan HTTP/1.1 con Host sin puerto).
-    // Nos aseguramos de que siempre tenga host:port correcto.
-    let normalized = normalize_ws_url(raw_url, port);
-    Some(normalized)
-}
-
-/// Garantiza que la URL WS tenga el puerto explícito. Por ejemplo:
-/// "ws://127.0.0.1/abc" → "ws://127.0.0.1:9229/abc"
-fn normalize_ws_url(url: &str, fallback_port: u16) -> String {
-    // Si ya tiene puerto explícito, devolver tal cual
-    let without_scheme = url
-        .strip_prefix("ws://")
-        .or_else(|| url.strip_prefix("wss://"))
-        .unwrap_or(url);
-
-    let has_explicit_port = without_scheme
-        .split('/')
-        .next()
-        .map(|host_part| host_part.contains(':'))
-        .unwrap_or(false);
-
-    if has_explicit_port {
-        return url.to_string();
-    }
-
-    // Inyectar el puerto antes del path
-    if let Some(path_start) = without_scheme.find('/') {
-        let host = &without_scheme[..path_start];
-        let path = &without_scheme[path_start..];
-        let scheme = if url.starts_with("wss://") { "wss" } else { "ws" };
-        format!("{}://{}:{}{}", scheme, host, fallback_port, path)
-    } else {
-        // sin path
-        let scheme = if url.starts_with("wss://") { "wss" } else { "ws" };
-        format!("{}://{}:{}", scheme, without_scheme, fallback_port)
+    // Cerrar sesión al terminar
+    if let Some(sess) = session {
+        sess.close().await;
     }
 }
 
-/// Hace un GET HTTP/1.1 al endpoint del inspector.
-/// `port` se necesita para construir el Host header correcto (Node.js lo usa para generar la wsURL).
-async fn fetch_http(url: &str, port: u16) -> Option<String> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpStream;
-
-    let url_parsed = url::parse_simple(url)?;
-    let addr = format!("{}:{}", url_parsed.host, url_parsed.port);
-    let path = url_parsed.path;
-
-    let mut stream = timeout(Duration::from_millis(800), TcpStream::connect(&addr))
-        .await
-        .ok()?
-        .ok()?;
-
-    // HTTP/1.1 con Host incluyendo puerto — necesario para que el inspector
-    // genere la webSocketDebuggerUrl con el puerto correcto.
-    let request = format!(
-        "GET {} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
-        path, url_parsed.host, port
-    );
-    stream.write_all(request.as_bytes()).await.ok()?;
-
-    let mut buf = Vec::new();
-    let _ = timeout(Duration::from_millis(800), stream.read_to_end(&mut buf)).await;
-    let response = String::from_utf8_lossy(&buf);
-
-    // Separar cabeceras del cuerpo (CRLF o LF)
-    response
-        .split_once("\r\n\r\n")
-        .or_else(|| response.split_once("\n\n"))
-        .map(|(_, body)| body.to_string())
-}
-
-/// Conecta via WebSocket al Inspector V8 y ejecuta comandos para obtener métricas de heap,
-/// event loop y GC.
-async fn collect_metrics_via_ws(ws_url: &str) -> Option<NodeRuntimeMetrics> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpStream;
-
-    let parsed = url::parse_simple(ws_url)?;
-    let addr = format!("{}:{}", parsed.host, parsed.port);
-    // Construir el path sin `?` colgante cuando no hay query string
-    let path = match parsed.query {
-        Some(ref q) if !q.is_empty() => format!("{}?{}", parsed.path, q),
-        _ => parsed.path.clone(),
-    };
-
-    let mut stream = timeout(Duration::from_millis(1500), TcpStream::connect(&addr))
-        .await
-        .ok()?
-        .ok()?;
-
-    // WebSocket handshake (RFC 6455) — Host debe incluir el puerto
-    let key = "dEdJuAx5DkXel2KQQQYQJQ==";
-    let handshake = format!(
-        "GET {} HTTP/1.1\r\nHost: {}:{}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n\r\n",
-        if path.starts_with('/') { path.clone() } else { format!("/{}", path) },
-        parsed.host,
-        parsed.port,
-        key
-    );
-    stream.write_all(handshake.as_bytes()).await.ok()?;
-
-    // Leer hasta doble CRLF (fin de cabeceras del handshake)
-    let mut header_buf = [0u8; 4096];
-    let n = timeout(Duration::from_millis(800), stream.read(&mut header_buf))
-        .await
-        .ok()?
-        .ok()?;
-    let header_str = String::from_utf8_lossy(&header_buf[..n]);
-    if !header_str.contains("101") {
-        return None;
-    }
-
-    // Enviar Runtime.evaluate para obtener process.memoryUsage() y performance.eventLoopUtilization()
-    let eval_cmd = serde_json::json!({
-        "id": 1,
-        "method": "Runtime.evaluate",
-        "params": {
-            "expression": "(function() { var m = process.memoryUsage(); var elu = (typeof performance !== 'undefined' && performance.eventLoopUtilization) ? performance.eventLoopUtilization() : {utilization: 0}; return JSON.stringify({heapUsed: m.heapUsed, heapTotal: m.heapTotal, rss: m.rss, external: m.external, elu: elu.utilization}); })()",
-            "returnByValue": true
-        }
-    });
-
-    let cmd_str = eval_cmd.to_string();
-    let frame = encode_ws_frame(cmd_str.as_bytes());
-    stream.write_all(&frame).await.ok()?;
-
-    // Leer respuesta
-    let mut resp_buf = vec![0u8; 8192];
-    let n = timeout(Duration::from_secs(2), stream.read(&mut resp_buf))
-        .await
-        .ok()?
-        .ok()?;
-
-    let ws_payload = decode_ws_frame(&resp_buf[..n])?;
-    let resp_json: serde_json::Value = serde_json::from_slice(&ws_payload).ok()?;
-
-    let result_str = resp_json
-        .pointer("/result/result/value")
-        .and_then(|v| v.as_str())?;
-    let result: serde_json::Value = serde_json::from_str(result_str).ok()?;
-
-    let heap_used = result["heapUsed"].as_u64().unwrap_or(0);
-    let heap_total = result["heapTotal"].as_u64().unwrap_or(0);
-    let elu = result["elu"].as_f64().unwrap_or(0.0) * 100.0;
-
-    // Segunda llamada: getHeapSpaceStatistics
-    let heap_spaces_cmd = serde_json::json!({
-        "id": 2,
-        "method": "Runtime.evaluate",
-        "params": {
-            "expression": "JSON.stringify(require('v8').getHeapSpaceStatistics())",
-            "returnByValue": true
-        }
-    });
-    let cmd2 = heap_spaces_cmd.to_string();
-    let frame2 = encode_ws_frame(cmd2.as_bytes());
-    let _ = stream.write_all(&frame2).await;
-
-    let mut resp2_buf = vec![0u8; 16384];
-    let spaces_result = if let Ok(Ok(n2)) = timeout(Duration::from_secs(2), stream.read(&mut resp2_buf)).await {
-        let payload2 = decode_ws_frame(&resp2_buf[..n2]).unwrap_or_default();
-        let resp2: serde_json::Value = serde_json::from_slice(&payload2).unwrap_or_default();
-        let spaces_str = resp2
-            .pointer("/result/result/value")
-            .and_then(|v| v.as_str())
-            .unwrap_or("[]");
-        serde_json::from_str::<serde_json::Value>(spaces_str).unwrap_or_default()
-    } else {
-        serde_json::Value::Null
-    };
-
-    let get_space = |name: &str| -> u64 {
-        spaces_result.as_array().map_or(0, |arr| {
-            arr.iter()
-                .find(|s| s["space_name"].as_str() == Some(name))
-                .and_then(|s| s["space_used_size"].as_u64())
-                .unwrap_or(0)
-        })
-    };
-
+fn parse_metrics_json(val_str: &str) -> Option<NodeRuntimeMetrics> {
+    let v: serde_json::Value = serde_json::from_str(val_str).ok()?;
     Some(NodeRuntimeMetrics {
         event_loop: EventLoopMetrics {
-            delay_ms: 0.0, // no disponible sin perf_hooks activos; se puede añadir con otra eval
-            utilization_pct: elu,
+            delay_ms: 0.0,
+            utilization_pct: v["elu"].as_f64().unwrap_or(0.0) * 100.0,
         },
         heap: HeapMetrics {
-            used_bytes: heap_used,
-            total_bytes: heap_total,
-            new_space_bytes: get_space("new_space"),
-            old_space_bytes: get_space("old_space"),
-            code_space_bytes: get_space("code_space"),
-            map_space_bytes: get_space("map_space"),
+            used_bytes: v["heapUsed"].as_u64().unwrap_or(0),
+            total_bytes: v["heapTotal"].as_u64().unwrap_or(0),
+            new_space_bytes: v["newSpace"].as_u64().unwrap_or(0),
+            old_space_bytes: v["oldSpace"].as_u64().unwrap_or(0),
+            code_space_bytes: v["codeSpace"].as_u64().unwrap_or(0),
+            map_space_bytes: v["mapSpace"].as_u64().unwrap_or(0),
             minor_gc_rate: 0.0,
             minor_gc_avg_ms: 0.0,
             major_gc_rate: 0.0,
@@ -475,16 +367,131 @@ async fn collect_metrics_via_ws(ws_url: &str) -> Option<NodeRuntimeMetrics> {
     })
 }
 
-/// Encodifica un frame WebSocket sin máscara (servidor → cliente usa sin máscara)
-/// Para cliente → servidor la máscara es obligatoria.
+// ─── Descubrimiento de puerto ────────────────────────────────────────────────
+
+async fn find_inspector_port(_pid: Option<u32>, _container_id: Option<&str>) -> Option<u16> {
+    // Rango convencional de Node.js inspector
+    for port in 9229u16..=9239 {
+        if probe_tcp_port(port).await {
+            return Some(port);
+        }
+    }
+
+    // En Linux: leer cmdline del proceso para extraer --inspect-port
+    #[cfg(target_os = "linux")]
+    if let Some(p) = _pid {
+        if let Ok(cmdline) = tokio::fs::read_to_string(format!("/proc/{}/cmdline", p)).await {
+            for part in cmdline.split('\0') {
+                if let Some(rest) = part
+                    .strip_prefix("--inspect-port=")
+                    .or_else(|| part.strip_prefix("--inspect=127.0.0.1:"))
+                    .or_else(|| part.strip_prefix("--inspect=0.0.0.0:"))
+                {
+                    if let Ok(port) = rest.trim_end_matches('\0').parse::<u16>() {
+                        if probe_tcp_port(port).await {
+                            return Some(port);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+async fn probe_tcp_port(port: u16) -> bool {
+    let addr = format!("127.0.0.1:{}", port);
+    timeout(
+        Duration::from_millis(200),
+        TcpStream::connect(&addr),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .is_some()
+}
+
+// ─── HTTP GET al endpoint /json del inspector ─────────────────────────────────
+
+async fn get_inspector_ws_url(port: u16) -> Option<String> {
+    let body = timeout(
+        Duration::from_millis(800),
+        fetch_http_json(port),
+    )
+    .await
+    .ok()??;
+
+    let parsed: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let raw_url = parsed
+        .as_array()?
+        .first()?
+        .get("webSocketDebuggerUrl")?
+        .as_str()?;
+
+    Some(normalize_ws_url(raw_url, port))
+}
+
+async fn fetch_http_json(port: u16) -> Option<String> {
+    let addr = format!("127.0.0.1:{}", port);
+    let mut stream = timeout(Duration::from_millis(800), TcpStream::connect(&addr))
+        .await
+        .ok()?
+        .ok()?;
+
+    // HTTP/1.1 con Host incluyendo puerto — Node.js lo usa para construir la wsURL
+    let req = format!(
+        "GET /json HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+        port
+    );
+    stream.write_all(req.as_bytes()).await.ok()?;
+
+    let mut buf = Vec::new();
+    let _ = timeout(Duration::from_millis(800), stream.read_to_end(&mut buf)).await;
+    let response = String::from_utf8_lossy(&buf);
+
+    response
+        .split_once("\r\n\r\n")
+        .or_else(|| response.split_once("\n\n"))
+        .map(|(_, body)| body.to_string())
+}
+
+/// Garantiza que la URL WS tenga el puerto explícito.
+fn normalize_ws_url(url: &str, fallback_port: u16) -> String {
+    let without_scheme = url
+        .strip_prefix("ws://")
+        .or_else(|| url.strip_prefix("wss://"))
+        .unwrap_or(url);
+
+    let has_port = without_scheme
+        .split('/')
+        .next()
+        .map(|h| h.contains(':'))
+        .unwrap_or(false);
+
+    if has_port {
+        return url.to_string();
+    }
+
+    let scheme = if url.starts_with("wss://") { "wss" } else { "ws" };
+    if let Some(slash) = without_scheme.find('/') {
+        let host = &without_scheme[..slash];
+        let path = &without_scheme[slash..];
+        format!("{}://{}:{}{}", scheme, host, fallback_port, path)
+    } else {
+        format!("{}://{}:{}", scheme, without_scheme, fallback_port)
+    }
+}
+
+// ─── Framing WebSocket (RFC 6455) ─────────────────────────────────────────────
+
 fn encode_ws_frame(payload: &[u8]) -> Vec<u8> {
     let mut frame = Vec::new();
-    // FIN=1, opcode=1 (text)
-    frame.push(0x81);
+    frame.push(0x81); // FIN=1, opcode=1 (text)
 
     let len = payload.len();
-    // MASK bit = 1 (cliente → servidor siempre enmascarado)
     let mask_key: [u8; 4] = [0x37, 0xfa, 0x21, 0x3d];
+
     if len < 126 {
         frame.push(0x80 | len as u8);
     } else if len < 65536 {
@@ -501,7 +508,6 @@ fn encode_ws_frame(payload: &[u8]) -> Vec<u8> {
     frame
 }
 
-/// Decodifica el payload de un frame WebSocket (sin máscara, desde servidor)
 fn decode_ws_frame(data: &[u8]) -> Option<Vec<u8>> {
     if data.len() < 2 {
         return None;
@@ -511,34 +517,46 @@ fn decode_ws_frame(data: &[u8]) -> Option<Vec<u8>> {
     let mut offset = 2usize;
 
     if len == 126 {
-        if data.len() < 4 { return None; }
+        if data.len() < 4 {
+            return None;
+        }
         len = u16::from_be_bytes([data[2], data[3]]) as usize;
         offset = 4;
     } else if len == 127 {
-        if data.len() < 10 { return None; }
+        if data.len() < 10 {
+            return None;
+        }
         len = u64::from_be_bytes(data[2..10].try_into().ok()?) as usize;
         offset = 10;
     }
 
     if masked {
-        if data.len() < offset + 4 { return None; }
+        if data.len() < offset + 4 {
+            return None;
+        }
         let mask = &data[offset..offset + 4];
         offset += 4;
-        if data.len() < offset + len { return None; }
-        let payload: Vec<u8> = data[offset..offset + len]
-            .iter()
-            .enumerate()
-            .map(|(i, b)| b ^ mask[i % 4])
-            .collect();
-        Some(payload)
+        if data.len() < offset + len {
+            return None;
+        }
+        Some(
+            data[offset..offset + len]
+                .iter()
+                .enumerate()
+                .map(|(i, b)| b ^ mask[i % 4])
+                .collect(),
+        )
     } else {
-        if data.len() < offset + len { return None; }
+        if data.len() < offset + len {
+            return None;
+        }
         Some(data[offset..offset + len].to_vec())
     }
 }
 
-/// Parser de URL mínimo para evitar dependencias extra
-mod url {
+// ─── Parser de URL mínimo ─────────────────────────────────────────────────────
+
+mod url_mod {
     pub struct SimpleUrl {
         pub host: String,
         pub port: u16,
@@ -553,9 +571,15 @@ mod url {
             .or_else(|| url.strip_prefix("wss://"))
             .or_else(|| url.strip_prefix("https://"))?;
 
-        let (host_port, rest) = without_scheme.split_once('/').unwrap_or((without_scheme, ""));
+        let (host_port, rest) = without_scheme
+            .split_once('/')
+            .unwrap_or((without_scheme, ""));
         let path = format!("/{}", rest.split('?').next().unwrap_or(""));
-        let query = rest.contains('?').then(|| rest.split_once('?').map(|(_, q)| q.to_string())).flatten();
+        let query = if rest.contains('?') {
+            rest.split_once('?').map(|(_, q)| q.to_string())
+        } else {
+            None
+        };
 
         let (host, port_str) = if host_port.contains(':') {
             host_port.split_once(':')?
