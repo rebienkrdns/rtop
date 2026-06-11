@@ -257,7 +257,7 @@ async fn find_mapped_inspector_port(_container_id: &str) -> Option<u16> {
 
 async fn get_inspector_ws_url(port: u16) -> Option<String> {
     let url = format!("http://127.0.0.1:{}/json", port);
-    let Ok(resp) = timeout(Duration::from_millis(500), fetch_http(&url)).await else {
+    let Ok(resp) = timeout(Duration::from_millis(800), fetch_http(&url, port)).await else {
         return None;
     };
     let body = resp?;
@@ -266,15 +266,54 @@ async fn get_inspector_ws_url(port: u16) -> Option<String> {
     let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) else {
         return None;
     };
-    parsed
+
+    let raw_url = parsed
         .as_array()?
         .first()?
         .get("webSocketDebuggerUrl")?
-        .as_str()
-        .map(String::from)
+        .as_str()?;
+
+    // Algunos runtimes devuelven la URL sin puerto (cuando usan HTTP/1.1 con Host sin puerto).
+    // Nos aseguramos de que siempre tenga host:port correcto.
+    let normalized = normalize_ws_url(raw_url, port);
+    Some(normalized)
 }
 
-async fn fetch_http(url: &str) -> Option<String> {
+/// Garantiza que la URL WS tenga el puerto explícito. Por ejemplo:
+/// "ws://127.0.0.1/abc" → "ws://127.0.0.1:9229/abc"
+fn normalize_ws_url(url: &str, fallback_port: u16) -> String {
+    // Si ya tiene puerto explícito, devolver tal cual
+    let without_scheme = url
+        .strip_prefix("ws://")
+        .or_else(|| url.strip_prefix("wss://"))
+        .unwrap_or(url);
+
+    let has_explicit_port = without_scheme
+        .split('/')
+        .next()
+        .map(|host_part| host_part.contains(':'))
+        .unwrap_or(false);
+
+    if has_explicit_port {
+        return url.to_string();
+    }
+
+    // Inyectar el puerto antes del path
+    if let Some(path_start) = without_scheme.find('/') {
+        let host = &without_scheme[..path_start];
+        let path = &without_scheme[path_start..];
+        let scheme = if url.starts_with("wss://") { "wss" } else { "ws" };
+        format!("{}://{}:{}{}", scheme, host, fallback_port, path)
+    } else {
+        // sin path
+        let scheme = if url.starts_with("wss://") { "wss" } else { "ws" };
+        format!("{}://{}:{}", scheme, without_scheme, fallback_port)
+    }
+}
+
+/// Hace un GET HTTP/1.1 al endpoint del inspector.
+/// `port` se necesita para construir el Host header correcto (Node.js lo usa para generar la wsURL).
+async fn fetch_http(url: &str, port: u16) -> Option<String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
@@ -282,20 +321,27 @@ async fn fetch_http(url: &str) -> Option<String> {
     let addr = format!("{}:{}", url_parsed.host, url_parsed.port);
     let path = url_parsed.path;
 
-    let mut stream = TcpStream::connect(&addr).await.ok()?;
+    let mut stream = timeout(Duration::from_millis(800), TcpStream::connect(&addr))
+        .await
+        .ok()?
+        .ok()?;
+
+    // HTTP/1.1 con Host incluyendo puerto — necesario para que el inspector
+    // genere la webSocketDebuggerUrl con el puerto correcto.
     let request = format!(
-        "GET {} HTTP/1.0\r\nHost: {}\r\nConnection: close\r\n\r\n",
-        path, url_parsed.host
+        "GET {} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
+        path, url_parsed.host, port
     );
     stream.write_all(request.as_bytes()).await.ok()?;
 
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).await.ok()?;
+    let _ = timeout(Duration::from_millis(800), stream.read_to_end(&mut buf)).await;
     let response = String::from_utf8_lossy(&buf);
 
-    // Separar cabeceras del cuerpo
+    // Separar cabeceras del cuerpo (CRLF o LF)
     response
         .split_once("\r\n\r\n")
+        .or_else(|| response.split_once("\n\n"))
         .map(|(_, body)| body.to_string())
 }
 
@@ -307,19 +353,24 @@ async fn collect_metrics_via_ws(ws_url: &str) -> Option<NodeRuntimeMetrics> {
 
     let parsed = url::parse_simple(ws_url)?;
     let addr = format!("{}:{}", parsed.host, parsed.port);
-    let path = format!("{}?{}", parsed.path, parsed.query.unwrap_or_default());
+    // Construir el path sin `?` colgante cuando no hay query string
+    let path = match parsed.query {
+        Some(ref q) if !q.is_empty() => format!("{}?{}", parsed.path, q),
+        _ => parsed.path.clone(),
+    };
 
-    let mut stream = timeout(Duration::from_millis(800), TcpStream::connect(&addr))
+    let mut stream = timeout(Duration::from_millis(1500), TcpStream::connect(&addr))
         .await
         .ok()?
         .ok()?;
 
-    // WebSocket handshake manual
-    let key = "dEdJuAx5DkXel2KQQQYQJQ=="; // base64 de 16 bytes random fijo para el handshake
+    // WebSocket handshake (RFC 6455) — Host debe incluir el puerto
+    let key = "dEdJuAx5DkXel2KQQQYQJQ==";
     let handshake = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n\r\n",
+        "GET {} HTTP/1.1\r\nHost: {}:{}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n\r\n",
         if path.starts_with('/') { path.clone() } else { format!("/{}", path) },
         parsed.host,
+        parsed.port,
         key
     );
     stream.write_all(handshake.as_bytes()).await.ok()?;
