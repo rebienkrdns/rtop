@@ -127,8 +127,10 @@ impl NodeMonitorData {
 
 /// Una sola evaluación que devuelve JSON con todos los campos de métricas.
 /// Usa try/catch para que `require('v8')` no rompa si no está disponible.
-/// `require` no es global en el contexto del inspector V8 (no hay module wrapper).
-/// Usamos `process.mainModule.require` como alternativa portable, con fallbacks.
+/// Expresión única que extrae todas las métricas en un solo eval.
+/// - `require` no es global en el inspector: usamos `process.mainModule.require` como fallback.
+/// - GC stats: leídos desde `global.__rtop_gc` si el app usa el observer de rtop.
+/// - Libuv handles: `process._getActiveHandles()` y `process._getActiveRequests()`.
 const METRICS_EXPRESSION: &str = r#"(function(){
   var m=process.memoryUsage();
   var elu=(typeof performance!=='undefined'&&performance.eventLoopUtilization)?performance.eventLoopUtilization():{utilization:0};
@@ -137,13 +139,21 @@ const METRICS_EXPRESSION: &str = r#"(function(){
     var req=typeof require!=='undefined'?require:(process.mainModule?process.mainModule.require:null);
     if(req){req('v8').getHeapSpaceStatistics().forEach(function(s){spaces[s.space_name]=s.space_used_size;});}
   }catch(e){}
+  var gc=typeof __rtop_gc!=='undefined'?__rtop_gc:{minorCount:0,minorTotalMs:0,majorCount:0,majorTotalMs:0,startTime:Date.now()};
+  var elapsedSec=Math.max((Date.now()-(gc.startTime||Date.now()))/1000,1);
+  var handles=0,requests=0;
+  try{handles=process._getActiveHandles?process._getActiveHandles().length:0;}catch(e){}
+  try{requests=process._getActiveRequests?process._getActiveRequests().length:0;}catch(e){}
   return JSON.stringify({
     heapUsed:m.heapUsed,heapTotal:m.heapTotal,
     elu:elu.utilization,
     newSpace:spaces['new_space']||0,
     oldSpace:spaces['old_space']||0,
     codeSpace:spaces['code_space']||0,
-    mapSpace:spaces['map_space']||0
+    mapSpace:spaces['map_space']||0,
+    minorGcRate:gc.minorCount/elapsedSec,minorGcAvgMs:gc.minorCount>0?gc.minorTotalMs/gc.minorCount:0,
+    majorGcRate:gc.majorCount/elapsedSec,majorGcAvgMs:gc.majorCount>0?gc.majorTotalMs/gc.majorCount:0,
+    handles:handles,requests:requests
   });
 })()"#;
 
@@ -346,6 +356,11 @@ async fn run_session_loop<F>(
 
 fn parse_metrics_json(val_str: &str) -> Option<NodeRuntimeMetrics> {
     let v: serde_json::Value = serde_json::from_str(val_str).ok()?;
+
+    // GC rates ya calculadas en JS: eventos/s promediados sobre elapsed desde startTime del observer.
+    let minor_gc_avg_ms = v["minorGcAvgMs"].as_f64().unwrap_or(0.0);
+    let major_gc_avg_ms = v["majorGcAvgMs"].as_f64().unwrap_or(0.0);
+
     Some(NodeRuntimeMetrics {
         event_loop: EventLoopMetrics {
             delay_ms: 0.0,
@@ -358,12 +373,16 @@ fn parse_metrics_json(val_str: &str) -> Option<NodeRuntimeMetrics> {
             old_space_bytes: v["oldSpace"].as_u64().unwrap_or(0),
             code_space_bytes: v["codeSpace"].as_u64().unwrap_or(0),
             map_space_bytes: v["mapSpace"].as_u64().unwrap_or(0),
-            minor_gc_rate: 0.0,
-            minor_gc_avg_ms: 0.0,
-            major_gc_rate: 0.0,
-            major_gc_avg_ms: 0.0,
+            minor_gc_rate: v["minorGcRate"].as_f64().unwrap_or(0.0),
+            minor_gc_avg_ms,
+            major_gc_rate: v["majorGcRate"].as_f64().unwrap_or(0.0),
+            major_gc_avg_ms,
         },
-        libuv: LibuvMetrics::default(),
+        libuv: LibuvMetrics {
+            active_handles: v["handles"].as_u64().unwrap_or(0) as u32,
+            active_requests: v["requests"].as_u64().unwrap_or(0) as u32,
+            threadpool_queue: 0,
+        },
     })
 }
 
