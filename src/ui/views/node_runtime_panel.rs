@@ -354,8 +354,8 @@ fn build_detail_lines<'a>(
         Span::styled("  Code Space: ", Style::default().fg(theme.muted)),
         Span::styled(format_bytes(m.heap.code_space_bytes), Style::default().fg(Color::White)),
         Span::raw("   "),
-        Span::styled("Map Space:  ", Style::default().fg(theme.muted)),
-        Span::styled(format_bytes(m.heap.map_space_bytes), Style::default().fg(Color::White)),
+        Span::styled("Large Obj:  ", Style::default().fg(theme.muted)),
+        Span::styled(format_bytes(m.heap.large_object_space_bytes), Style::default().fg(Color::White)),
     ]));
 
     // GC Activity
