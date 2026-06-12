@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Cell, Paragraph, Row, Table},
+    widgets::{Cell, Paragraph, Row, Table, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 
@@ -383,12 +383,20 @@ pub fn render(
     let header_row = Row::new(header_cells).height(1);
 
     let visible_rows = (table_area.height as usize).saturating_sub(1); // minus header
-    let scroll = state.scroll;
-    let visible_end = (scroll + visible_rows).min(filtered.len());
+    let mut scroll_offset = state.scroll;
+    if state.cursor < scroll_offset {
+        scroll_offset = state.cursor;
+    } else if state.cursor >= scroll_offset + visible_rows {
+        scroll_offset = state.cursor.saturating_sub(visible_rows - 1);
+    }
+    if scroll_offset + visible_rows > filtered.len() {
+        scroll_offset = filtered.len().saturating_sub(visible_rows);
+    }
+    let visible_end = (scroll_offset + visible_rows).min(filtered.len());
 
     let mut rows = Vec::new();
-    for (i, p) in filtered[scroll..visible_end].iter().enumerate() {
-        let abs_idx = scroll + i;
+    for (i, p) in filtered[scroll_offset..visible_end].iter().enumerate() {
+        let abs_idx = scroll_offset + i;
         let selected = abs_idx == state.cursor;
         let row_style = if selected {
             Style::default().bg(theme.selected_bg).fg(theme.selected_fg)
@@ -538,4 +546,18 @@ pub fn render(
         .column_spacing(2);
 
     f.render_widget(table, table_area);
+
+    if filtered.len() > visible_rows {
+        let max_scroll = filtered.len().saturating_sub(visible_rows);
+        let mut scrollbar_state = ScrollbarState::new(max_scroll).position(scroll_offset);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(None)
+                .thumb_symbol("┃"),
+            table_area,
+            &mut scrollbar_state,
+        );
+    }
 }

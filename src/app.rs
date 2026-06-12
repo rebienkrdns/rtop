@@ -92,6 +92,7 @@ pub struct AppState {
     #[allow(dead_code)]
     pub selected_container_idx: Option<usize>,
     pub container_cursor: usize,
+    pub container_scroll: usize,
     pub confirm_action: Option<ConfirmAction>,
     pub detail_meta_scroll: usize,
     pub logs_state: Option<LogsViewState>,
@@ -129,6 +130,15 @@ pub struct AppState {
     db_rx: mpsc::Receiver<crate::collectors::database::DbMonitorData>,
     current_db_monitored_pid: Option<u32>,
     current_db_monitored_cid: Option<String>,
+
+    pub proxy_monitor: Option<crate::collectors::proxy::ProxyMonitorData>,
+    pub proxy_history: std::sync::Arc<
+        std::sync::Mutex<std::collections::VecDeque<crate::collectors::proxy::ProxyMetrics>>,
+    >,
+    proxy_tx: mpsc::Sender<crate::collectors::proxy::ProxyMonitorData>,
+    proxy_rx: mpsc::Receiver<crate::collectors::proxy::ProxyMonitorData>,
+    current_proxy_monitored_pid: Option<u32>,
+    current_proxy_monitored_cid: Option<String>,
 
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
@@ -178,6 +188,7 @@ impl AppState {
             selected_process_idx: None,
             selected_container_idx: None,
             container_cursor: 0,
+            container_scroll: 0,
             confirm_action: None,
             detail_meta_scroll: 0,
             logs_state: None,
@@ -213,6 +224,20 @@ impl AppState {
             },
             current_db_monitored_pid: None,
             current_db_monitored_cid: None,
+            proxy_monitor: None,
+            proxy_history: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::VecDeque::new(),
+            )),
+            proxy_tx: {
+                let (tx, _) = mpsc::channel(8);
+                tx
+            },
+            proxy_rx: {
+                let (_, rx) = mpsc::channel(8);
+                rx
+            },
+            current_proxy_monitored_pid: None,
+            current_proxy_monitored_cid: None,
             metrics_rx: rx,
             interval_tx,
         }
@@ -660,6 +685,197 @@ impl AppState {
                 self.current_db_monitored_cid = None;
             }
 
+            // Proxy monitor: receive updates
+            while let Ok(proxy_data) = self.proxy_rx.try_recv() {
+                if let Some(pid) = proxy_data.pid {
+                    if Some(pid) == self.detail_process_pid {
+                        if let Ok(mut history) = self.proxy_history.lock() {
+                            history.push_back(proxy_data.metrics.clone());
+                            if history.len() > 60 {
+                                history.pop_front();
+                            }
+                        }
+                        // carry over history buffers from previous data
+                        let mut pd = proxy_data;
+                        if let Some(ref prev) = self.proxy_monitor {
+                            pd.rps_history  = prev.rps_history.clone();
+                            pd.conn_history = prev.conn_history.clone();
+                            pd.s1xx_history = prev.s1xx_history.clone();
+                            pd.s2xx_history = prev.s2xx_history.clone();
+                            pd.s3xx_history = prev.s3xx_history.clone();
+                            pd.s4xx_history = prev.s4xx_history.clone();
+                            pd.s5xx_history = prev.s5xx_history.clone();
+                            pd.p50_history  = prev.p50_history.clone();
+                            pd.p95_history  = prev.p95_history.clone();
+                            pd.p99_history  = prev.p99_history.clone();
+                        }
+                        pd.push_history();
+                        self.proxy_monitor = Some(pd);
+                    }
+                } else if let Some(ref cid) = proxy_data.container_id {
+                    if Some(cid.clone()) == self.detail_container_id {
+                        if let Ok(mut history) = self.proxy_history.lock() {
+                            history.push_back(proxy_data.metrics.clone());
+                            if history.len() > 60 {
+                                history.pop_front();
+                            }
+                        }
+                        let mut pd = proxy_data;
+                        if let Some(ref prev) = self.proxy_monitor {
+                            pd.rps_history = prev.rps_history.clone();
+                            pd.p50_history = prev.p50_history.clone();
+                            pd.p95_history = prev.p95_history.clone();
+                            pd.p99_history = prev.p99_history.clone();
+                        }
+                        pd.push_history();
+                        self.proxy_monitor = Some(pd);
+                    }
+                }
+            }
+
+            // Proxy monitor: spawn task when needed
+            if self.current_view == View::ProcessDetail {
+                if let Some(pid) = self.detail_process_pid {
+                    if let Some(proc) = self.processes.iter().find(|p| p.pid == pid) {
+                        if let Some(proxy_type) = proc.proxy_type {
+                            if self.current_proxy_monitored_pid != Some(pid) {
+                                self.current_proxy_monitored_pid = Some(pid);
+                                self.current_proxy_monitored_cid = None;
+                                self.proxy_monitor = Some(
+                                    crate::collectors::proxy::ProxyMonitorData::new(pid, proxy_type),
+                                );
+                                if let Ok(mut history) = self.proxy_history.lock() {
+                                    history.clear();
+                                }
+                                let (tx, rx) = mpsc::channel(8);
+                                self.proxy_rx = rx;
+                                self.proxy_tx = tx.clone();
+                                let proc_clone = proc.clone();
+                                tokio::spawn(async move {
+                                    let mut ticker =
+                                        tokio::time::interval(std::time::Duration::from_secs(1));
+                                    let mut prev_total: Option<u64> = None;
+                                    let mut last_poll_time = std::time::Instant::now();
+                                    loop {
+                                        ticker.tick().await;
+                                        let mut data =
+                                            crate::collectors::proxy::poll_proxy(proc_clone.clone())
+                                                .await;
+                                        let now = std::time::Instant::now();
+                                        let dt = now.duration_since(last_poll_time).as_secs_f64();
+                                        last_poll_time = now;
+                                        if let Some(prev) = prev_total {
+                                            if dt > 0.0 {
+                                                let diff = data
+                                                    .metrics
+                                                    .requests_total
+                                                    .saturating_sub(prev)
+                                                    as f64;
+                                                data.metrics.rps = diff / dt;
+                                            }
+                                        }
+                                        prev_total = Some(data.metrics.requests_total);
+                                        if tx.send(data).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+                        } else {
+                            self.proxy_monitor = None;
+                            if let Ok(mut history) = self.proxy_history.lock() {
+                                history.clear();
+                            }
+                            self.current_proxy_monitored_pid = None;
+                            self.current_proxy_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.proxy_monitor = None;
+                    if let Ok(mut history) = self.proxy_history.lock() {
+                        history.clear();
+                    }
+                    self.current_proxy_monitored_pid = None;
+                    self.current_proxy_monitored_cid = None;
+                }
+            } else if self.current_view == View::ContainerDetail {
+                if let Some(ref cid) = self.detail_container_id {
+                    if let Some(container) = self.containers.iter().find(|c| &c.id == cid) {
+                        if let Some(proxy_type) = container.proxy_type {
+                            if self.current_proxy_monitored_cid.as_ref() != Some(cid) {
+                                self.current_proxy_monitored_cid = Some(cid.clone());
+                                self.current_proxy_monitored_pid = None;
+                                self.proxy_monitor = Some(
+                                    crate::collectors::proxy::ProxyMonitorData::new_container(
+                                        cid.clone(),
+                                        proxy_type,
+                                    ),
+                                );
+                                if let Ok(mut history) = self.proxy_history.lock() {
+                                    history.clear();
+                                }
+                                let (tx, rx) = mpsc::channel(8);
+                                self.proxy_rx = rx;
+                                self.proxy_tx = tx.clone();
+                                let container_clone = container.clone();
+                                tokio::spawn(async move {
+                                    let mut ticker =
+                                        tokio::time::interval(std::time::Duration::from_secs(1));
+                                    let mut prev_total: Option<u64> = None;
+                                    let mut last_poll_time = std::time::Instant::now();
+                                    loop {
+                                        ticker.tick().await;
+                                        let mut data =
+                                            crate::collectors::proxy::poll_proxy_container(
+                                                container_clone.clone(),
+                                            )
+                                            .await;
+                                        let now = std::time::Instant::now();
+                                        let dt = now.duration_since(last_poll_time).as_secs_f64();
+                                        last_poll_time = now;
+                                        if let Some(prev) = prev_total {
+                                            if dt > 0.0 {
+                                                let diff = data
+                                                    .metrics
+                                                    .requests_total
+                                                    .saturating_sub(prev)
+                                                    as f64;
+                                                data.metrics.rps = diff / dt;
+                                            }
+                                        }
+                                        prev_total = Some(data.metrics.requests_total);
+                                        if tx.send(data).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+                        } else {
+                            self.proxy_monitor = None;
+                            if let Ok(mut history) = self.proxy_history.lock() {
+                                history.clear();
+                            }
+                            self.current_proxy_monitored_pid = None;
+                            self.current_proxy_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.proxy_monitor = None;
+                    if let Ok(mut history) = self.proxy_history.lock() {
+                        history.clear();
+                    }
+                    self.current_proxy_monitored_pid = None;
+                    self.current_proxy_monitored_cid = None;
+                }
+            } else {
+                self.proxy_monitor = None;
+                if let Ok(mut history) = self.proxy_history.lock() {
+                    history.clear();
+                }
+                self.current_proxy_monitored_pid = None;
+                self.current_proxy_monitored_cid = None;
+            }
+
             // If the detailed process or container no longer exists, exit the detail view.
             // Require 3 consecutive missing snapshots to avoid false exits from transient
             // Docker stats failures or momentarily empty lists.
@@ -886,6 +1102,7 @@ impl AppState {
         }
         self.sort_containers();
         self.container_cursor = 0;
+        self.container_scroll = 0;
     }
 
     pub fn container_visual_rows(&self) -> Vec<ContainerVisualRow> {
@@ -901,6 +1118,13 @@ impl AppState {
         let new_cursor =
             (self.container_cursor as i32 + delta).clamp(0, (count as i32) - 1) as usize;
         self.container_cursor = new_cursor;
+
+        let visible = 20usize;
+        if new_cursor < self.container_scroll {
+            self.container_scroll = new_cursor;
+        } else if new_cursor >= self.container_scroll + visible {
+            self.container_scroll = new_cursor.saturating_sub(visible - 1);
+        }
     }
 
     pub fn container_toggle_group_at_cursor(&mut self) {
@@ -914,11 +1138,14 @@ impl AppState {
             } else {
                 self.collapsed_compose_groups.insert(key);
             }
-            // Re-clamp cursor after visibility change
+            // Re-clamp cursor and scroll after visibility change
             let new_rows = self.container_visual_rows();
             let count = new_rows.len();
             if count > 0 && self.container_cursor >= count {
                 self.container_cursor = count - 1;
+            }
+            if self.container_scroll > self.container_cursor {
+                self.container_scroll = self.container_cursor;
             }
         }
     }
@@ -1063,17 +1290,9 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
     // Background task for container metrics collection
     let shared_containers_clone = std::sync::Arc::clone(&shared_containers);
     tokio::spawn(async move {
-        let container_collector = timeout(Duration::from_secs(1), ContainerCollector::new())
-            .await
-            .ok();
-
-        let Some(mut cc) = container_collector else {
-            let mut lock = shared_containers_clone.lock().unwrap();
-            lock.1 = ContainerBackendState {
-                available: false,
-                message: Some("Docker/Podman no disponible".to_string()),
-            };
-            return;
+        let mut cc = match timeout(Duration::from_secs(1), ContainerCollector::new()).await {
+            Ok(collector) => collector,
+            Err(_) => ContainerCollector::new_empty(),
         };
 
         // Seed initial state
@@ -1092,6 +1311,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                 Err(_) => {
                     cc.state.available = false;
                     cc.state.message = Some("Contenedores no responden a tiempo".to_string());
+                    cc.reset_client();
                     vec![]
                 }
             };

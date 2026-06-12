@@ -37,6 +37,21 @@ impl ContainerCollector {
         self.docker.clone()
     }
 
+    pub fn reset_client(&mut self) {
+        self.docker = None;
+    }
+
+    pub fn new_empty() -> Self {
+        Self {
+            docker: None,
+            prev: HashMap::new(),
+            state: ContainerBackendState {
+                available: false,
+                message: Some("Docker/Podman no disponible".to_string()),
+            },
+        }
+    }
+
     pub async fn new() -> Self {
         let docker = Self::connect().await;
         let state = if docker.is_some() {
@@ -82,6 +97,18 @@ impl ContainerCollector {
     }
 
     pub async fn refresh(&mut self) -> Vec<ContainerData> {
+        if self.docker.is_none() {
+            if let Some(docker) = Self::connect().await {
+                self.docker = Some(docker);
+                self.state.available = true;
+                self.state.message = None;
+            } else {
+                self.state.available = false;
+                self.state.message = Some("Docker/Podman no disponible".to_string());
+                return vec![];
+            }
+        }
+
         let Some(docker) = &self.docker else {
             return vec![];
         };
@@ -97,6 +124,7 @@ impl ContainerCollector {
             Err(e) => {
                 self.state.available = false;
                 self.state.message = Some(format!("Error leyendo contenedores: {e}"));
+                self.docker = None;
                 return vec![];
             }
         };
@@ -196,6 +224,21 @@ impl ContainerCollector {
                     None
                 };
 
+            let proxy_type =
+                if name_lower.contains("traefik") || image_lower.contains("traefik") {
+                    Some(crate::models::HttpProxyType::Traefik)
+                } else if name_lower.contains("nginx") || image_lower.contains("nginx") {
+                    Some(crate::models::HttpProxyType::Nginx)
+                } else if name_lower.contains("httpd")
+                    || image_lower.contains("httpd")
+                    || name_lower.contains("apache")
+                    || image_lower.contains("apache")
+                {
+                    Some(crate::models::HttpProxyType::Apache)
+                } else {
+                    None
+                };
+
             result.push(ContainerData {
                 id: full_id.chars().take(12).collect(),
                 name,
@@ -224,6 +267,7 @@ impl ContainerCollector {
                 env_vars: extract_env_vars(&inspect_opt),
                 compose_project,
                 database_type,
+                proxy_type,
             });
         }
 
@@ -539,5 +583,21 @@ mod tests {
         assert_eq!(res.8, 500); // disk_read_total
         assert!((res.9 - 400.0).abs() < 5.0); // disk_write_per_sec
         assert_eq!(res.10, 1200); // disk_write_total
+    }
+
+    #[tokio::test]
+    async fn test_new_empty_and_refresh() {
+        let mut cc = ContainerCollector::new_empty();
+        assert!(cc.docker.is_none());
+        assert!(!cc.state.available);
+        assert!(cc.state.message.is_some());
+
+        let res = cc.refresh().await;
+        if cc.docker.is_none() {
+            assert!(res.is_empty());
+            assert!(!cc.state.available);
+        } else {
+            assert!(cc.state.available);
+        }
     }
 }

@@ -55,6 +55,14 @@ pub enum DatabaseType {
     MySqlMariaDb,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum HttpProxyType {
+    Traefik,
+    Nginx,
+    Apache,
+}
+
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct ProcessData {
@@ -77,4 +85,5 @@ pub struct ProcessData {
     pub cmd: String,
     pub cwd: String,
     pub database_type: Option<DatabaseType>,
+    pub proxy_type: Option<HttpProxyType>,
 }

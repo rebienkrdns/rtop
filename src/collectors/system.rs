@@ -247,6 +247,16 @@ impl SystemCollector {
                     None
                 };
 
+                let proxy_type = if name_lower.contains("traefik") {
+                    Some(crate::models::HttpProxyType::Traefik)
+                } else if name_lower.contains("nginx") {
+                    Some(crate::models::HttpProxyType::Nginx)
+                } else if name_lower.contains("httpd") || name_lower.contains("apache") {
+                    Some(crate::models::HttpProxyType::Apache)
+                } else {
+                    None
+                };
+
                 ProcessData {
                     pid,
                     name,
@@ -267,6 +277,7 @@ impl SystemCollector {
                     cmd,
                     cwd,
                     database_type,
+                    proxy_type,
                 }
             })
             .collect();
