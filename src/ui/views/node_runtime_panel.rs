@@ -70,9 +70,7 @@ fn render_unavailable(f: &mut Frame, area: Rect, runtime_label: &str, theme: &Th
         Line::from(""),
         Line::from(Span::styled(
             format!("  [{}] V8 Inspector Unavailable", runtime_label),
-            Style::default()
-                .fg(theme.crit)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.crit).add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
@@ -189,9 +187,7 @@ fn render_live_mode(
     let heap_gauge = Gauge::default()
         .block(Block::default().borders(Borders::ALL).title(Span::styled(
             " V8 Heap ",
-            Style::default()
-                .fg(heap_color)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(heap_color).add_modifier(Modifier::BOLD),
         )))
         .gauge_style(Style::default().fg(heap_color))
         .ratio((heap_pct / 100.0).clamp(0.0, 1.0))
@@ -241,14 +237,30 @@ fn render_history_mode(
     );
 
     // Heap history chart
-    let heap_color = if oom_risk { Color::Red } else if heap_pct > 70.0 { Color::Yellow } else { Color::Green };
-    let max_heap = monitor.heap_used_history.iter().copied().max().unwrap_or(1).max(1);
+    let heap_color = if oom_risk {
+        Color::Red
+    } else if heap_pct > 70.0 {
+        Color::Yellow
+    } else {
+        Color::Green
+    };
+    let max_heap = monitor
+        .heap_used_history
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(1)
+        .max(1);
     render_node_braille_chart(
         f,
         chunks[1],
         &monitor.heap_used_history,
         &empty,
-        format!(" Heap {:.0}%  {} ", heap_pct, format_bytes(m.heap.used_bytes)),
+        format!(
+            " Heap {:.0}%  {} ",
+            heap_pct,
+            format_bytes(m.heap.used_bytes)
+        ),
         heap_color,
         max_heap,
     );
@@ -279,7 +291,10 @@ fn render_node_braille_chart(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(Span::styled(title, Style::default().fg(color).add_modifier(Modifier::BOLD)))
+                .title(Span::styled(
+                    title,
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ))
                 .border_style(Style::default().fg(color)),
         )
         .x_bounds([0.0, max_samples])
@@ -325,7 +340,10 @@ fn build_detail_lines<'a>(
                     .add_modifier(Modifier::BOLD | Modifier::RAPID_BLINK),
             ),
             Span::styled(
-                format!("ELU:{:.0}%  delay:{:.1}ms", m.event_loop.utilization_pct, m.event_loop.delay_ms),
+                format!(
+                    "ELU:{:.0}%  delay:{:.1}ms",
+                    m.event_loop.utilization_pct, m.event_loop.delay_ms
+                ),
                 Style::default().fg(Color::Red),
             ),
         ]));
@@ -333,57 +351,90 @@ fn build_detail_lines<'a>(
     if oom_risk {
         lines.push(Line::from(Span::styled(
             " [OOM RISK]  Major GC continuo + Heap >85% ",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )));
     }
 
     // Heap Spaces
-    lines.push(Line::from(vec![
-        Span::styled("Heap Spaces  ", Style::default().fg(theme.muted)),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        "Heap Spaces  ",
+        Style::default().fg(theme.muted),
+    )]));
     lines.push(Line::from(vec![
         Span::styled("  New Space:  ", Style::default().fg(theme.muted)),
-        Span::styled(format_bytes(m.heap.new_space_bytes), Style::default().fg(Color::White)),
+        Span::styled(
+            format_bytes(m.heap.new_space_bytes),
+            Style::default().fg(Color::White),
+        ),
         Span::raw("   "),
         Span::styled("Old Space:  ", Style::default().fg(theme.muted)),
-        Span::styled(format_bytes(m.heap.old_space_bytes), Style::default().fg(Color::White)),
+        Span::styled(
+            format_bytes(m.heap.old_space_bytes),
+            Style::default().fg(Color::White),
+        ),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  Code Space: ", Style::default().fg(theme.muted)),
-        Span::styled(format_bytes(m.heap.code_space_bytes), Style::default().fg(Color::White)),
+        Span::styled(
+            format_bytes(m.heap.code_space_bytes),
+            Style::default().fg(Color::White),
+        ),
         Span::raw("   "),
         Span::styled("Large Obj:  ", Style::default().fg(theme.muted)),
-        Span::styled(format_bytes(m.heap.large_object_space_bytes), Style::default().fg(Color::White)),
+        Span::styled(
+            format_bytes(m.heap.large_object_space_bytes),
+            Style::default().fg(Color::White),
+        ),
     ]));
 
     // GC Activity
-    lines.push(Line::from(vec![
-        Span::styled("GC Activity  ", Style::default().fg(theme.muted)),
-    ]));
-    let minor_color = if m.heap.minor_gc_rate > 10.0 { Color::Yellow } else { Color::Green };
-    let major_color = if m.heap.major_gc_rate > 2.0 { Color::Red } else if m.heap.major_gc_rate > 0.5 { Color::Yellow } else { Color::Green };
+    lines.push(Line::from(vec![Span::styled(
+        "GC Activity  ",
+        Style::default().fg(theme.muted),
+    )]));
+    let minor_color = if m.heap.minor_gc_rate > 10.0 {
+        Color::Yellow
+    } else {
+        Color::Green
+    };
+    let major_color = if m.heap.major_gc_rate > 2.0 {
+        Color::Red
+    } else if m.heap.major_gc_rate > 0.5 {
+        Color::Yellow
+    } else {
+        Color::Green
+    };
     lines.push(Line::from(vec![
         Span::styled("  Minor GC:   ", Style::default().fg(theme.muted)),
         Span::styled(
-            format!("{:.1}/s  avg {:.1}ms", m.heap.minor_gc_rate, m.heap.minor_gc_avg_ms),
+            format!(
+                "{:.1}/s  avg {:.1}ms",
+                m.heap.minor_gc_rate, m.heap.minor_gc_avg_ms
+            ),
             Style::default().fg(minor_color),
         ),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  Major GC:   ", Style::default().fg(theme.muted)),
         Span::styled(
-            format!("{:.1}/s  avg {:.1}ms", m.heap.major_gc_rate, m.heap.major_gc_avg_ms),
+            format!(
+                "{:.1}/s  avg {:.1}ms",
+                m.heap.major_gc_rate, m.heap.major_gc_avg_ms
+            ),
             Style::default().fg(major_color),
         ),
     ]));
 
     // Libuv
-    lines.push(Line::from(vec![
-        Span::styled("Libuv I/O  ", Style::default().fg(theme.muted)),
-    ]));
-    let handles_color = if m.libuv.active_handles > 1000 { Color::Yellow } else { Color::White };
+    lines.push(Line::from(vec![Span::styled(
+        "Libuv I/O  ",
+        Style::default().fg(theme.muted),
+    )]));
+    let handles_color = if m.libuv.active_handles > 1000 {
+        Color::Yellow
+    } else {
+        Color::White
+    };
     lines.push(Line::from(vec![
         Span::styled("  Handles:    ", Style::default().fg(theme.muted)),
         Span::styled(
@@ -397,7 +448,13 @@ fn build_detail_lines<'a>(
             Style::default().fg(Color::White),
         ),
     ]));
-    let tp_color = if m.libuv.threadpool_queue > 8 { Color::Red } else if m.libuv.threadpool_queue > 4 { Color::Yellow } else { Color::Green };
+    let tp_color = if m.libuv.threadpool_queue > 8 {
+        Color::Red
+    } else if m.libuv.threadpool_queue > 4 {
+        Color::Yellow
+    } else {
+        Color::Green
+    };
     lines.push(Line::from(vec![
         Span::styled("  Thread Pool:", Style::default().fg(theme.muted)),
         Span::styled(

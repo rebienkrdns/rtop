@@ -263,8 +263,17 @@ impl SystemCollector {
                     Some(crate::models::NodeRuntimeType::Deno)
                 } else if matches!(
                     name_lower.as_str(),
-                    "node" | "npm" | "npx" | "pnpm" | "pnpx" | "yarn" | "pm2"
-                        | "nest" | "tsx" | "ts-node" | "ts-node-esm"
+                    "node"
+                        | "npm"
+                        | "npx"
+                        | "pnpm"
+                        | "pnpx"
+                        | "yarn"
+                        | "pm2"
+                        | "nest"
+                        | "tsx"
+                        | "ts-node"
+                        | "ts-node-esm"
                 ) || exe_path.contains("/node")
                     || exe_path.contains("/.nvm/")
                     || exe_path.contains("/nvm/versions/")

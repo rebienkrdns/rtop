@@ -115,11 +115,26 @@ impl NodeMonitorData {
             }
             dq.push_back(v);
         };
-        push(&mut self.elu_history, self.metrics.event_loop.utilization_pct as u64);
-        push(&mut self.delay_history, (self.metrics.event_loop.delay_ms * 10.0) as u64);
-        push(&mut self.heap_used_history, self.metrics.heap.used_bytes / 1024);
-        push(&mut self.minor_gc_history, (self.metrics.heap.minor_gc_rate * 10.0) as u64);
-        push(&mut self.major_gc_history, (self.metrics.heap.major_gc_rate * 10.0) as u64);
+        push(
+            &mut self.elu_history,
+            self.metrics.event_loop.utilization_pct as u64,
+        );
+        push(
+            &mut self.delay_history,
+            (self.metrics.event_loop.delay_ms * 10.0) as u64,
+        );
+        push(
+            &mut self.heap_used_history,
+            self.metrics.heap.used_bytes / 1024,
+        );
+        push(
+            &mut self.minor_gc_history,
+            (self.metrics.heap.minor_gc_rate * 10.0) as u64,
+        );
+        push(
+            &mut self.major_gc_history,
+            (self.metrics.heap.major_gc_rate * 10.0) as u64,
+        );
     }
 }
 
@@ -259,10 +274,7 @@ impl InspectorSession {
 /// Arranca un loop de monitoreo persistente para un proceso Node.js.
 /// Mantiene la conexión WebSocket abierta entre polls.
 /// Solo reconecta cuando la conexión se rompe.
-pub async fn run_inspector_session_process(
-    pid: u32,
-    tx: mpsc::Sender<NodeMonitorData>,
-) {
+pub async fn run_inspector_session_process(pid: u32, tx: mpsc::Sender<NodeMonitorData>) {
     run_session_loop(move || NodeMonitorData::new(pid), None, Some(pid), tx).await;
 }
 
@@ -421,25 +433,19 @@ async fn find_inspector_port(_pid: Option<u32>, _container_id: Option<&str>) -> 
 
 async fn probe_tcp_port(port: u16) -> bool {
     let addr = format!("127.0.0.1:{}", port);
-    timeout(
-        Duration::from_millis(200),
-        TcpStream::connect(&addr),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())
-    .is_some()
+    timeout(Duration::from_millis(200), TcpStream::connect(&addr))
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .is_some()
 }
 
 // ─── HTTP GET al endpoint /json del inspector ─────────────────────────────────
 
 async fn get_inspector_ws_url(port: u16) -> Option<String> {
-    let body = timeout(
-        Duration::from_millis(800),
-        fetch_http_json(port),
-    )
-    .await
-    .ok()??;
+    let body = timeout(Duration::from_millis(800), fetch_http_json(port))
+        .await
+        .ok()??;
 
     let parsed: serde_json::Value = serde_json::from_str(&body).ok()?;
     let raw_url = parsed
@@ -492,7 +498,11 @@ fn normalize_ws_url(url: &str, fallback_port: u16) -> String {
         return url.to_string();
     }
 
-    let scheme = if url.starts_with("wss://") { "wss" } else { "ws" };
+    let scheme = if url.starts_with("wss://") {
+        "wss"
+    } else {
+        "ws"
+    };
     if let Some(slash) = without_scheme.find('/') {
         let host = &without_scheme[..slash];
         let path = &without_scheme[slash..];

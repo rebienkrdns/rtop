@@ -133,10 +133,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         format!(" {} ", state.t("Pressure PSI"))
     };
     let col2_block = Block::default()
-        .title(Span::styled(
-            col2_title,
-            Style::default().fg(theme.accent),
-        ))
+        .title(Span::styled(col2_title, Style::default().fg(theme.accent)))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent_dim));
     let col2_inner = col2_block.inner(metrics_cols[1]);

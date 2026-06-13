@@ -83,16 +83,19 @@ impl ProxyMonitorData {
             }
             dq.push_back(v);
         };
-        push(&mut self.rps_history,  self.metrics.rps as u64);
-        push(&mut self.conn_history, self.metrics.active_connections as u64);
+        push(&mut self.rps_history, self.metrics.rps as u64);
+        push(
+            &mut self.conn_history,
+            self.metrics.active_connections as u64,
+        );
         push(&mut self.s1xx_history, self.metrics.status_1xx);
         push(&mut self.s2xx_history, self.metrics.status_2xx);
         push(&mut self.s3xx_history, self.metrics.status_3xx);
         push(&mut self.s4xx_history, self.metrics.status_4xx);
         push(&mut self.s5xx_history, self.metrics.status_5xx);
-        push(&mut self.p50_history,  self.metrics.p50_ms as u64);
-        push(&mut self.p95_history,  self.metrics.p95_ms as u64);
-        push(&mut self.p99_history,  self.metrics.p99_ms as u64);
+        push(&mut self.p50_history, self.metrics.p50_ms as u64);
+        push(&mut self.p95_history, self.metrics.p95_ms as u64);
+        push(&mut self.p99_history, self.metrics.p99_ms as u64);
     }
 
     pub fn new(pid: u32, proxy_type: HttpProxyType) -> Self {
@@ -181,13 +184,10 @@ async fn http_get(host: &str, port: u16, path: &str) -> Result<String, String> {
     .map_err(|e| e.to_string())?;
 
     let mut buf = Vec::new();
-    timeout(
-        Duration::from_millis(1500),
-        reader.read_to_end(&mut buf),
-    )
-    .await
-    .map_err(|_| "read timeout".to_string())?
-    .map_err(|e| e.to_string())?;
+    timeout(Duration::from_millis(1500), reader.read_to_end(&mut buf))
+        .await
+        .map_err(|_| "read timeout".to_string())?
+        .map_err(|e| e.to_string())?;
 
     let resp = String::from_utf8_lossy(&buf).into_owned();
     if resp.starts_with("HTTP/") {
@@ -358,10 +358,7 @@ pub async fn poll_proxy_at_port(
     port: u16,
     metrics: &mut ProxyMetrics,
 ) -> ProxyConnectionStatus {
-    let (path, parse_fn): (
-        &str,
-        fn(&str, &mut ProxyMetrics),
-    ) = match proxy_type {
+    let (path, parse_fn): (&str, fn(&str, &mut ProxyMetrics)) = match proxy_type {
         HttpProxyType::Nginx => ("/nginx_status", parse_nginx_status),
         HttpProxyType::Apache => ("/server-status?auto", parse_apache_status),
         HttpProxyType::Traefik => ("/metrics", parse_traefik_metrics),
@@ -450,7 +447,13 @@ traefik_entrypoint_open_connections{entrypoint="web",protocol="http"} 3.0
             "0.0.0.0:8080->8080/tcp".to_string(),
             "0.0.0.0:80->80/tcp".to_string(),
         ];
-        assert_eq!(extract_proxy_container_port(&ports, HttpProxyType::Traefik), 8080);
-        assert_eq!(extract_proxy_container_port(&ports, HttpProxyType::Nginx), 80);
+        assert_eq!(
+            extract_proxy_container_port(&ports, HttpProxyType::Traefik),
+            8080
+        );
+        assert_eq!(
+            extract_proxy_container_port(&ports, HttpProxyType::Nginx),
+            80
+        );
     }
 }

@@ -35,27 +35,63 @@ pub fn render_history_canvas_dual<T>(
         .paint(|ctx| {
             if s_len == 0 {
                 // Sin datos: línea plana en cero de largo a largo
-                ctx.draw(&CanvasLine { x1: 0.0, y1: 0.0, x2: max_samples, y2: 0.0, color: color1 });
+                ctx.draw(&CanvasLine {
+                    x1: 0.0,
+                    y1: 0.0,
+                    x2: max_samples,
+                    y2: 0.0,
+                    color: color1,
+                });
                 if let Some((c2, _)) = line2 {
-                    ctx.draw(&CanvasLine { x1: 0.0, y1: 0.0, x2: max_samples, y2: 0.0, color: c2 });
+                    ctx.draw(&CanvasLine {
+                        x1: 0.0,
+                        y1: 0.0,
+                        x2: max_samples,
+                        y2: 0.0,
+                        color: c2,
+                    });
                 }
             } else if s_len == 1 {
                 // Un dato: línea horizontal en ese valor de largo a largo
                 let y = extract1(samples[0]);
-                ctx.draw(&CanvasLine { x1: 0.0, y1: y, x2: max_samples, y2: y, color: color1 });
+                ctx.draw(&CanvasLine {
+                    x1: 0.0,
+                    y1: y,
+                    x2: max_samples,
+                    y2: y,
+                    color: color1,
+                });
                 if let Some((c2, e2)) = line2 {
                     let yb = e2(samples[0]);
-                    ctx.draw(&CanvasLine { x1: 0.0, y1: yb, x2: max_samples, y2: yb, color: c2 });
+                    ctx.draw(&CanvasLine {
+                        x1: 0.0,
+                        y1: yb,
+                        x2: max_samples,
+                        y2: yb,
+                        color: c2,
+                    });
                 }
             } else {
                 // Extender el primer valor hacia la izquierda para llenar el espacio vacío
                 let x_first = (max_samples - (s_len - 1) as f64).max(0.0);
                 if x_first > 0.0 {
                     let y0 = extract1(samples[0]);
-                    ctx.draw(&CanvasLine { x1: 0.0, y1: y0, x2: x_first, y2: y0, color: color1 });
+                    ctx.draw(&CanvasLine {
+                        x1: 0.0,
+                        y1: y0,
+                        x2: x_first,
+                        y2: y0,
+                        color: color1,
+                    });
                     if let Some((c2, e2)) = line2 {
                         let y0b = e2(samples[0]);
-                        ctx.draw(&CanvasLine { x1: 0.0, y1: y0b, x2: x_first, y2: y0b, color: c2 });
+                        ctx.draw(&CanvasLine {
+                            x1: 0.0,
+                            y1: y0b,
+                            x2: x_first,
+                            y2: y0b,
+                            color: c2,
+                        });
                     }
                 }
                 // Segmentos de datos reales

@@ -719,16 +719,16 @@ impl AppState {
                         // carry over history buffers from previous data
                         let mut pd = proxy_data;
                         if let Some(ref prev) = self.proxy_monitor {
-                            pd.rps_history  = prev.rps_history.clone();
+                            pd.rps_history = prev.rps_history.clone();
                             pd.conn_history = prev.conn_history.clone();
                             pd.s1xx_history = prev.s1xx_history.clone();
                             pd.s2xx_history = prev.s2xx_history.clone();
                             pd.s3xx_history = prev.s3xx_history.clone();
                             pd.s4xx_history = prev.s4xx_history.clone();
                             pd.s5xx_history = prev.s5xx_history.clone();
-                            pd.p50_history  = prev.p50_history.clone();
-                            pd.p95_history  = prev.p95_history.clone();
-                            pd.p99_history  = prev.p99_history.clone();
+                            pd.p50_history = prev.p50_history.clone();
+                            pd.p95_history = prev.p95_history.clone();
+                            pd.p99_history = prev.p99_history.clone();
                         }
                         pd.push_history();
                         self.proxy_monitor = Some(pd);
@@ -762,9 +762,10 @@ impl AppState {
                             if self.current_proxy_monitored_pid != Some(pid) {
                                 self.current_proxy_monitored_pid = Some(pid);
                                 self.current_proxy_monitored_cid = None;
-                                self.proxy_monitor = Some(
-                                    crate::collectors::proxy::ProxyMonitorData::new(pid, proxy_type),
-                                );
+                                self.proxy_monitor =
+                                    Some(crate::collectors::proxy::ProxyMonitorData::new(
+                                        pid, proxy_type,
+                                    ));
                                 if let Ok(mut history) = self.proxy_history.lock() {
                                     history.clear();
                                 }
@@ -784,9 +785,10 @@ impl AppState {
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
-                                        let mut data =
-                                            crate::collectors::proxy::poll_proxy(proc_clone.clone())
-                                                .await;
+                                        let mut data = crate::collectors::proxy::poll_proxy(
+                                            proc_clone.clone(),
+                                        )
+                                        .await;
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
@@ -804,11 +806,16 @@ impl AppState {
                                                     as f64;
                                                 data.metrics.rps = diff / dt;
                                             }
-                                            data.metrics.status_1xx = cur_1xx.saturating_sub(prev_1xx);
-                                            data.metrics.status_2xx = cur_2xx.saturating_sub(prev_2xx);
-                                            data.metrics.status_3xx = cur_3xx.saturating_sub(prev_3xx);
-                                            data.metrics.status_4xx = cur_4xx.saturating_sub(prev_4xx);
-                                            data.metrics.status_5xx = cur_5xx.saturating_sub(prev_5xx);
+                                            data.metrics.status_1xx =
+                                                cur_1xx.saturating_sub(prev_1xx);
+                                            data.metrics.status_2xx =
+                                                cur_2xx.saturating_sub(prev_2xx);
+                                            data.metrics.status_3xx =
+                                                cur_3xx.saturating_sub(prev_3xx);
+                                            data.metrics.status_4xx =
+                                                cur_4xx.saturating_sub(prev_4xx);
+                                            data.metrics.status_5xx =
+                                                cur_5xx.saturating_sub(prev_5xx);
                                         } else {
                                             data.metrics.status_1xx = 0;
                                             data.metrics.status_2xx = 0;
@@ -899,11 +906,16 @@ impl AppState {
                                                     as f64;
                                                 data.metrics.rps = diff / dt;
                                             }
-                                            data.metrics.status_1xx = cur_1xx.saturating_sub(prev_1xx);
-                                            data.metrics.status_2xx = cur_2xx.saturating_sub(prev_2xx);
-                                            data.metrics.status_3xx = cur_3xx.saturating_sub(prev_3xx);
-                                            data.metrics.status_4xx = cur_4xx.saturating_sub(prev_4xx);
-                                            data.metrics.status_5xx = cur_5xx.saturating_sub(prev_5xx);
+                                            data.metrics.status_1xx =
+                                                cur_1xx.saturating_sub(prev_1xx);
+                                            data.metrics.status_2xx =
+                                                cur_2xx.saturating_sub(prev_2xx);
+                                            data.metrics.status_3xx =
+                                                cur_3xx.saturating_sub(prev_3xx);
+                                            data.metrics.status_4xx =
+                                                cur_4xx.saturating_sub(prev_4xx);
+                                            data.metrics.status_5xx =
+                                                cur_5xx.saturating_sub(prev_5xx);
                                         } else {
                                             data.metrics.status_1xx = 0;
                                             data.metrics.status_2xx = 0;
@@ -1286,9 +1298,7 @@ impl AppState {
         let f = self.container_filter.to_lowercase();
         self.containers
             .iter()
-            .filter(|c| {
-                c.name.to_lowercase().contains(&f) || c.id.to_lowercase().contains(&f)
-            })
+            .filter(|c| c.name.to_lowercase().contains(&f) || c.id.to_lowercase().contains(&f))
             .cloned()
             .collect()
     }

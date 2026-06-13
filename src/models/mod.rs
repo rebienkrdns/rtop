@@ -12,5 +12,8 @@ pub use disk::DiskData;
 pub use memory::MemoryData;
 pub use network::{NetworkData, NetworkInterface};
 #[allow(unused_imports)]
-pub use process::{DatabaseType, HttpProxyType, NodeRuntimeType, ProcessData, ProcessIoData, ProcessSortColumn, ProcessStatus};
+pub use process::{
+    DatabaseType, HttpProxyType, NodeRuntimeType, ProcessData, ProcessIoData, ProcessSortColumn,
+    ProcessStatus,
+};
 pub use psi::{PsiData, PsiValues};

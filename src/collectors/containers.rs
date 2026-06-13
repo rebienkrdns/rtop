@@ -224,20 +224,19 @@ impl ContainerCollector {
                     None
                 };
 
-            let proxy_type =
-                if name_lower.contains("traefik") || image_lower.contains("traefik") {
-                    Some(crate::models::HttpProxyType::Traefik)
-                } else if name_lower.contains("nginx") || image_lower.contains("nginx") {
-                    Some(crate::models::HttpProxyType::Nginx)
-                } else if name_lower.contains("httpd")
-                    || image_lower.contains("httpd")
-                    || name_lower.contains("apache")
-                    || image_lower.contains("apache")
-                {
-                    Some(crate::models::HttpProxyType::Apache)
-                } else {
-                    None
-                };
+            let proxy_type = if name_lower.contains("traefik") || image_lower.contains("traefik") {
+                Some(crate::models::HttpProxyType::Traefik)
+            } else if name_lower.contains("nginx") || image_lower.contains("nginx") {
+                Some(crate::models::HttpProxyType::Nginx)
+            } else if name_lower.contains("httpd")
+                || image_lower.contains("httpd")
+                || name_lower.contains("apache")
+                || image_lower.contains("apache")
+            {
+                Some(crate::models::HttpProxyType::Apache)
+            } else {
+                None
+            };
 
             let node_runtime_type = detect_node_runtime(&inspect_opt, &name_lower, &image_lower);
 
@@ -357,12 +356,20 @@ fn detect_node_runtime(
     image_lower: &str,
 ) -> Option<crate::models::NodeRuntimeType> {
     // detect by image/name first — bun/deno before node to avoid false positives
-    let node_image_keywords = ["node", "npm", "pnpm", "yarn", "nestjs", "next", "nuxt", "remix"];
-    let by_image = if image_lower.contains("oven/bun") || image_lower.contains("/bun:") || name_lower.contains("bun") {
+    let node_image_keywords = [
+        "node", "npm", "pnpm", "yarn", "nestjs", "next", "nuxt", "remix",
+    ];
+    let by_image = if image_lower.contains("oven/bun")
+        || image_lower.contains("/bun:")
+        || name_lower.contains("bun")
+    {
         Some(crate::models::NodeRuntimeType::Bun)
     } else if image_lower.contains("deno") || name_lower.contains("deno") {
         Some(crate::models::NodeRuntimeType::Deno)
-    } else if node_image_keywords.iter().any(|k| image_lower.contains(k) || name_lower.contains(k)) {
+    } else if node_image_keywords
+        .iter()
+        .any(|k| image_lower.contains(k) || name_lower.contains(k))
+    {
         Some(crate::models::NodeRuntimeType::Node)
     } else {
         None
@@ -377,7 +384,9 @@ fn detect_node_runtime(
     let config = resp.config.as_ref()?;
 
     let (has_node_env, is_bun_env) = config.env.as_ref().map_or((false, false), |env| {
-        let bun = env.iter().any(|e| e.starts_with("BUN_INSTALL") || e.starts_with("BUN_VERSION"));
+        let bun = env
+            .iter()
+            .any(|e| e.starts_with("BUN_INSTALL") || e.starts_with("BUN_VERSION"));
         let node = env.iter().any(|e| {
             e.starts_with("NODE_ENV=")
                 || e.starts_with("NODE_VERSION=")
@@ -391,8 +400,8 @@ fn detect_node_runtime(
     });
 
     let node_cmd_keywords = [
-        "node", "npm", "npx", "pnpm", "pnpx", "yarn",
-        "pm2", "nest", "bun", "bunx", "deno", "tsx", "ts-node",
+        "node", "npm", "npx", "pnpm", "pnpx", "yarn", "pm2", "nest", "bun", "bunx", "deno", "tsx",
+        "ts-node",
     ];
     let cmd_str = config
         .cmd
@@ -408,7 +417,10 @@ fn detect_node_runtime(
     let has_node_cmd = node_cmd_keywords.iter().any(|k| combined.contains(k));
 
     if has_node_env || has_node_cmd {
-        if is_bun_env || combined.contains("bunx") || combined.split_whitespace().next() == Some("bun") {
+        if is_bun_env
+            || combined.contains("bunx")
+            || combined.split_whitespace().next() == Some("bun")
+        {
             Some(crate::models::NodeRuntimeType::Bun)
         } else if combined.contains("deno") {
             Some(crate::models::NodeRuntimeType::Deno)

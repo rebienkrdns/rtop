@@ -57,7 +57,9 @@ pub fn render(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let has_right_panel = container.database_type.is_some() || container.proxy_type.is_some() || container.node_runtime_type.is_some();
+    let has_right_panel = container.database_type.is_some()
+        || container.proxy_type.is_some()
+        || container.node_runtime_type.is_some();
     let (left_area, db_area) = if has_right_panel {
         let cols = Layout::default()
             .direction(Direction::Horizontal)

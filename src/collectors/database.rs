@@ -457,7 +457,10 @@ async fn query_mysql_metrics(
 
     // 2. Buffer pool utilization and hit rate from SHOW ENGINE INNODB STATUS
     // Requires PROCESS privilege — optional, falls back to hardcoded typical values.
-    if let Ok(rows) = conn.query::<(String, String, String), _>("SHOW ENGINE INNODB STATUS").await {
+    if let Ok(rows) = conn
+        .query::<(String, String, String), _>("SHOW ENGINE INNODB STATUS")
+        .await
+    {
         if let Some((_, _, status_text)) = rows.first() {
             metrics.buffer_pool_util_pct = parse_innodb_buffer_util(status_text);
             metrics.buffer_pool_hit_rate = parse_innodb_hit_rate(status_text);
