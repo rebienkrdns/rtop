@@ -1082,6 +1082,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
             if state.history_mode {
                 // ── Historical mode: ALL charts as Braille over time ──
                 // Connections shown as plain number in SRE text, not as chart
+                let proxy_limit = state.history_range.samples();
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
@@ -1105,6 +1106,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     &monitor_data.rps_history,
                     format!(" RPS  {:.1} req/s ", m.rps),
                     rps_color,
+                    proxy_limit,
                 );
 
                 let total_req =
@@ -1156,6 +1158,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                         format!(" {}  {}  ({:.1}%) ", label, count, pct),
                         color,
                         100.0,
+                        proxy_limit,
                     );
                 }
 
@@ -1172,6 +1175,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     &monitor_data.p50_history,
                     format!(" p50  {:.0}ms ", m.p50_ms),
                     theme.ok,
+                    proxy_limit,
                 );
                 render_proxy_braille_chart(
                     f,
@@ -1179,6 +1183,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     &monitor_data.p95_history,
                     format!(" p95  {:.0}ms ", m.p95_ms),
                     theme.warn,
+                    proxy_limit,
                 );
                 render_proxy_braille_chart(
                     f,
@@ -1186,6 +1191,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     &monitor_data.p99_history,
                     format!(" p99  {:.0}ms ", m.p99_ms),
                     p99_color,
+                    proxy_limit,
                 );
 
                 render_proxy_sre_text(f, chunks[9], m, monitor_data.proxy_type, theme);
@@ -1289,8 +1295,9 @@ fn render_proxy_braille_chart(
     history: &std::collections::VecDeque<u64>,
     title: String,
     color: Color,
+    limit: usize,
 ) {
-    render_proxy_braille_chart_inner(f, area, history, title, color, None);
+    render_proxy_braille_chart_inner(f, area, history, title, color, None, limit);
 }
 
 fn render_proxy_braille_chart_fixed(
@@ -1300,8 +1307,9 @@ fn render_proxy_braille_chart_fixed(
     title: String,
     color: Color,
     fixed_max: f64,
+    limit: usize,
 ) {
-    render_proxy_braille_chart_inner(f, area, history, title, color, Some(fixed_max));
+    render_proxy_braille_chart_inner(f, area, history, title, color, Some(fixed_max), limit);
 }
 
 fn render_proxy_braille_chart_inner(
@@ -1311,6 +1319,7 @@ fn render_proxy_braille_chart_inner(
     title: String,
     color: Color,
     forced_max: Option<f64>,
+    limit: usize,
 ) {
     use ratatui::symbols::Marker;
     use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
@@ -1320,16 +1329,28 @@ fn render_proxy_braille_chart_inner(
         return;
     }
 
+    // Respect the selected time-range: show only the last `limit` samples.
+    let display_len = limit.min(history.len());
+    let vals: Vec<f64> = history
+        .iter()
+        .rev()
+        .take(display_len)
+        .copied()
+        .map(|v| v as f64)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
     let theme = crate::ui::theme::Theme::default_theme();
     let y_max = if let Some(fm) = forced_max {
         fm
     } else {
-        let data_max = history.iter().copied().max().unwrap_or(0) as f64;
+        let data_max = vals.iter().copied().fold(0.0_f64, f64::max);
         if data_max < 1.0 { 10.0 } else { data_max * 1.15 }
     };
-    let max_samples = 60.0_f64;
-    let s_len = history.len();
-    let vals: Vec<f64> = history.iter().map(|&v| v as f64).collect();
+    let max_samples = limit as f64;
+    let s_len = vals.len();
 
     let canvas = Canvas::default()
         .block(

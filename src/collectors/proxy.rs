@@ -5,7 +5,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-pub const PROXY_HISTORY_LEN: usize = 60;
+pub const PROXY_HISTORY_LEN: usize = 3600; // 1 hour at 1 sample/s — matches max HistoryRange
 
 /// Snapshot of Traefik's cumulative histogram buckets used to compute per-interval percentiles.
 #[derive(Clone, Debug, Default)]
