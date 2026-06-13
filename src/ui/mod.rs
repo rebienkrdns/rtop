@@ -58,5 +58,8 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 main_view::draw(f, state);
             }
         }
+        View::RouterLatency => {
+            views::router_latency::render(f, area, state);
+        }
     }
 }

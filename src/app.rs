@@ -33,6 +33,7 @@ pub enum View {
     ProcessDetail,
     ContainerDetail,
     ContainerLogs,
+    RouterLatency,
 }
 
 pub struct AppSnapshot {
@@ -98,6 +99,7 @@ pub struct AppState {
     pub confirm_action: Option<ConfirmAction>,
     pub detail_meta_scroll: usize,
     pub logs_state: Option<LogsViewState>,
+    pub router_cursor: usize,
     pub docker_client: Option<Docker>,
 
     pub data_loaded: bool,
@@ -202,6 +204,7 @@ impl AppState {
             confirm_action: None,
             detail_meta_scroll: 0,
             logs_state: None,
+            router_cursor: 0,
             docker_client: None,
             data_loaded: false,
             refresh_tick: false,
@@ -761,7 +764,7 @@ impl AppState {
             }
 
             // Proxy monitor: spawn task when needed
-            if self.current_view == View::ProcessDetail {
+            if self.current_view == View::ProcessDetail || (self.current_view == View::RouterLatency && self.detail_process_pid.is_some()) {
                 if let Some(pid) = self.detail_process_pid {
                     if let Some(proc) = self.processes.iter().find(|p| p.pid == pid) {
                         if let Some(proxy_type) = proc.proxy_type {
@@ -864,7 +867,7 @@ impl AppState {
                     self.current_proxy_monitored_pid = None;
                     self.current_proxy_monitored_cid = None;
                 }
-            } else if self.current_view == View::ContainerDetail {
+            } else if self.current_view == View::ContainerDetail || (self.current_view == View::RouterLatency && self.detail_container_id.is_some()) {
                 if let Some(ref cid) = self.detail_container_id {
                     if let Some(container) = self.containers.iter().find(|c| &c.id == cid) {
                         if let Some(proxy_type) = container.proxy_type {
@@ -1082,7 +1085,7 @@ impl AppState {
             // If the detailed process or container no longer exists, exit the detail view.
             // Require 3 consecutive missing snapshots to avoid false exits from transient
             // Docker stats failures or momentarily empty lists.
-            if self.current_view == View::ProcessDetail {
+            if self.current_view == View::ProcessDetail || (self.current_view == View::RouterLatency && self.detail_process_pid.is_some()) {
                 if let Some(pid) = self.detail_process_pid {
                     if !self.processes.is_empty() && !self.processes.iter().any(|p| p.pid == pid) {
                         self.detail_process_missing_count += 1;
@@ -1097,7 +1100,7 @@ impl AppState {
                     }
                 }
             }
-            if self.current_view == View::ContainerDetail {
+            if self.current_view == View::ContainerDetail || (self.current_view == View::RouterLatency && self.detail_container_id.is_some()) {
                 if let Some(ref cid) = self.detail_container_id {
                     if !self.containers.is_empty() && !self.containers.iter().any(|c| &c.id == cid)
                     {
@@ -1719,6 +1722,14 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 state.confirm_action = Some(ConfirmAction::Stop(c.id.clone()));
                             }
                         }
+                        (KeyCode::Char('p'), _) if state.current_view == View::ContainerDetail => {
+                            if let Some(ref monitor) = state.proxy_monitor {
+                                if monitor.proxy_type == crate::models::HttpProxyType::Traefik {
+                                    state.current_view = View::RouterLatency;
+                                    state.router_cursor = 0;
+                                }
+                            }
+                        }
 
                         // ── ProcessDetail view ────────────────────────────────
                         (KeyCode::Esc, _) if state.current_view == View::ProcessDetail => {
@@ -1726,6 +1737,38 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             state.detail_process_pid = None;
                             state.detail_process_missing_count = 0;
                             state.process_history.clear();
+                        }
+                        (KeyCode::Char('p'), _) if state.current_view == View::ProcessDetail => {
+                            if let Some(ref monitor) = state.proxy_monitor {
+                                if monitor.proxy_type == crate::models::HttpProxyType::Traefik {
+                                    state.current_view = View::RouterLatency;
+                                    state.router_cursor = 0;
+                                }
+                            }
+                        }
+
+                        // ── RouterLatency view ────────────────────────────────
+                        (KeyCode::Esc, _) if state.current_view == View::RouterLatency => {
+                            if state.detail_container_id.is_some() {
+                                state.current_view = View::ContainerDetail;
+                            } else if state.detail_process_pid.is_some() {
+                                state.current_view = View::ProcessDetail;
+                            } else {
+                                state.current_view = View::Main;
+                            }
+                        }
+                        (KeyCode::Up, _) if state.current_view == View::RouterLatency => {
+                            if state.router_cursor > 0 {
+                                state.router_cursor -= 1;
+                            }
+                        }
+                        (KeyCode::Down, _) if state.current_view == View::RouterLatency => {
+                            if let Some(ref monitor) = state.proxy_monitor {
+                                let num_routers = monitor.router_percentiles.len();
+                                if state.router_cursor + 1 < num_routers {
+                                    state.router_cursor += 1;
+                                }
+                            }
                         }
 
                         // ── Main view ─────────────────────────────────────────

@@ -1278,7 +1278,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
 /// - sub-ms values shown in µs (e.g. "800µs")
 /// - < 10ms shown with one decimal (e.g. "4.8ms")
 /// - otherwise integer ms (e.g. "25ms")
-fn fmt_latency(ms: f64) -> String {
+pub fn fmt_latency(ms: f64) -> String {
     if ms < 1.0 {
         format!("{:.0}µs", ms * 1000.0)
     } else if ms < 10.0 {

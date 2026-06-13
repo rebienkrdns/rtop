@@ -6,3 +6,4 @@ pub mod main_view;
 pub mod nic_selector;
 pub mod node_runtime_panel;
 pub mod process_detail;
+pub mod router_latency;
