@@ -88,11 +88,20 @@ impl ProxyMonitorData {
             &mut self.conn_history,
             self.metrics.active_connections as u64,
         );
-        push(&mut self.s1xx_history, self.metrics.status_1xx);
-        push(&mut self.s2xx_history, self.metrics.status_2xx);
-        push(&mut self.s3xx_history, self.metrics.status_3xx);
-        push(&mut self.s4xx_history, self.metrics.status_4xx);
-        push(&mut self.s5xx_history, self.metrics.status_5xx);
+        // Store percentage (0–100) so each chart tracks share-of-requests per interval
+        let total_delta = self.metrics.status_1xx
+            + self.metrics.status_2xx
+            + self.metrics.status_3xx
+            + self.metrics.status_4xx
+            + self.metrics.status_5xx;
+        let pct = |n: u64| -> u64 {
+            if total_delta > 0 { n * 100 / total_delta } else { 0 }
+        };
+        push(&mut self.s1xx_history, pct(self.metrics.status_1xx));
+        push(&mut self.s2xx_history, pct(self.metrics.status_2xx));
+        push(&mut self.s3xx_history, pct(self.metrics.status_3xx));
+        push(&mut self.s4xx_history, pct(self.metrics.status_4xx));
+        push(&mut self.s5xx_history, pct(self.metrics.status_5xx));
         push(&mut self.p50_history, self.metrics.p50_ms as u64);
         push(&mut self.p95_history, self.metrics.p95_ms as u64);
         push(&mut self.p99_history, self.metrics.p99_ms as u64);
