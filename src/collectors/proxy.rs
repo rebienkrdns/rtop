@@ -317,6 +317,23 @@ fn parse_traefik_metrics(
 
     hist_buckets.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
+    // Multiple Traefik entrypoints emit separate histogram lines for the same `le` value.
+    // Aggregate them by summing counts per bound so interpolation works correctly
+    // (duplicate bounds cause `bound - prev_bound = 0`, pinning percentiles to the boundary).
+    let hist_buckets: Vec<(f64, u64)> = {
+        let mut agg: Vec<(f64, u64)> = Vec::with_capacity(hist_buckets.len());
+        for (bound, count) in hist_buckets {
+            if let Some(last) = agg.last_mut() {
+                if (last.0 - bound).abs() < 0.001 {
+                    last.1 += count;
+                    continue;
+                }
+            }
+            agg.push((bound, count));
+        }
+        agg
+    };
+
     // Compute p50/p95/p99 from delta histogram when prev state is available,
     // falling back to cumulative on the first poll.
     if hist_count > 0 && !hist_buckets.is_empty() {
