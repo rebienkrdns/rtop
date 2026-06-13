@@ -47,12 +47,14 @@ pub fn render_with_cursor(
     sort_col: ContainerSortColumn,
     sort_asc: bool,
     collapsed_groups: &HashSet<String>,
+    filter: &str,
+    filter_active: bool,
     lang: crate::localization::Language,
 ) {
     let theme = Theme::default_theme();
     let t = |key: &'static str| crate::localization::translate(key, lang);
 
-    // Split: counter bar (1 line) + table
+    // Split: filter bar (1 line) + table
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(0)])
@@ -60,17 +62,87 @@ pub fn render_with_cursor(
 
     let container_area = chunks[1];
 
-    if containers.is_empty() {
-        let msg = Paragraph::new(Line::from(Span::styled(
-            format!("  {}", t("NoContainers")),
-            Style::default().fg(Color::DarkGray),
-        )));
-        f.render_widget(msg, container_area);
-        return;
-    }
+    // Filter bar
+    let filter_line = if filter_active {
+        Line::from(vec![
+            Span::styled(
+                format!("{}: /", t("Filter")),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(filter, Style::default().fg(Color::White)),
+            Span::styled("█", Style::default().fg(theme.accent)),
+        ])
+    } else if !filter.is_empty() {
+        Line::from(vec![
+            Span::styled(
+                format!("{}: ", t("Filter")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(filter, Style::default().fg(Color::White)),
+            Span::styled(
+                format!("  {}  ", t("Clean filter")),
+                Style::default().fg(theme.muted),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("/ ", Style::default().fg(theme.accent)),
+            Span::styled(
+                format!("{}  ", t("PressSlashToFilter")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled("c", Style::default().fg(theme.accent)),
+            Span::styled(" CPU  ", Style::default().fg(theme.muted)),
+            Span::styled("m", Style::default().fg(theme.accent)),
+            Span::styled(" RAM  ", Style::default().fg(theme.muted)),
+            Span::styled("i", Style::default().fg(theme.accent)),
+            Span::styled(" Net↓  ", Style::default().fg(theme.muted)),
+            Span::styled("o", Style::default().fg(theme.accent)),
+            Span::styled(" Net↑  ", Style::default().fg(theme.muted)),
+            Span::styled("r", Style::default().fg(theme.accent)),
+            Span::styled(" DiskR  ", Style::default().fg(theme.muted)),
+            Span::styled("w", Style::default().fg(theme.accent)),
+            Span::styled(
+                format!(" DiskW  ↑↓ {}  Enter {}", t("Navigate"), t("EnterDetail")),
+                Style::default().fg(theme.muted),
+            ),
+        ])
+    };
+    f.render_widget(Paragraph::new(filter_line), chunks[0]);
 
-    // Render container count (right-aligned) in the counter bar
-    let count_text = format!(" {} {} ", containers.len(), t("containers"));
+    // Apply filter to containers
+    let filter_lower = filter.to_lowercase();
+    let filtered_containers: Vec<&ContainerData> = containers
+        .iter()
+        .filter(|c| {
+            filter_lower.is_empty()
+                || c.name.to_lowercase().contains(&filter_lower)
+                || c.id.to_lowercase().contains(&filter_lower)
+        })
+        .collect();
+    let display_containers: &[ContainerData] = if filter_lower.is_empty() {
+        containers
+    } else {
+        // Rebuild owned vec for display when filtering
+        // We pass a slice reference trick: collect refs and render from those
+        // Instead, we build a filtered owned vec
+        &[]
+    };
+    let _ = display_containers; // handled below
+
+    // Render container count (right-aligned) in the counter/filter bar
+    let count_text = if filter_lower.is_empty() {
+        format!(" {} {} ", containers.len(), t("containers"))
+    } else {
+        format!(
+            " {}/{} {} ",
+            filtered_containers.len(),
+            containers.len(),
+            t("containers")
+        )
+    };
     let count_widget = Paragraph::new(Line::from(Span::styled(
         count_text,
         Style::default()
@@ -79,6 +151,24 @@ pub fn render_with_cursor(
     )))
     .alignment(ratatui::layout::Alignment::Right);
     f.render_widget(count_widget, chunks[0]);
+
+    // Build the container slice to display (owned filtered vec or original)
+    let owned_filtered: Vec<ContainerData>;
+    let containers_to_show: &[ContainerData] = if filter_lower.is_empty() {
+        containers
+    } else {
+        owned_filtered = filtered_containers.into_iter().cloned().collect();
+        &owned_filtered
+    };
+
+    if containers_to_show.is_empty() {
+        let msg = Paragraph::new(Line::from(Span::styled(
+            format!("  {}", t("NoContainers")),
+            Style::default().fg(Color::DarkGray),
+        )));
+        f.render_widget(msg, container_area);
+        return;
+    }
 
     let is_wide = f.size().width >= 120;
 
@@ -249,7 +339,7 @@ pub fn render_with_cursor(
     ];
     let header_row = Row::new(header_cells).height(1);
 
-    let visual_rows = build_container_visual_rows(containers, collapsed_groups);
+    let visual_rows = build_container_visual_rows(containers_to_show, collapsed_groups);
     let group_header_bg = Color::Rgb(40, 44, 52);
     let group_header_fg = Color::Rgb(180, 190, 200);
 
@@ -318,7 +408,7 @@ pub fn render_with_cursor(
                 rows.push(Row::new(cells).style(style));
             }
             ContainerVisualRow::Container { real_idx } => {
-                let c = &containers[*real_idx];
+                let c = &containers_to_show[*real_idx];
                 let sel_fg = theme.selected_fg;
                 let normal_fg = theme.text;
 

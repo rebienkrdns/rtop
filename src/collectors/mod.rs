@@ -2,6 +2,7 @@ pub mod containers;
 pub mod database;
 pub mod disk;
 pub mod network;
+pub mod node_runtime;
 pub mod process_net;
 pub mod proxy;
 pub mod psi;

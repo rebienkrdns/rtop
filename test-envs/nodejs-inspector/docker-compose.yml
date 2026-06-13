@@ -1,0 +1,15 @@
+services:
+  node-app:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./app.js:/app/app.js:ro
+    command: node --inspect=0.0.0.0:9229 --expose-gc /app/app.js
+    ports:
+      - "3000:3000"
+      - "9229:9229"
+    environment:
+      - NODE_ENV=development
+      - NODE_VERSION=20
+    restart: unless-stopped
+    mem_limit: 256m

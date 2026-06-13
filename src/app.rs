@@ -79,6 +79,8 @@ pub struct AppState {
     pub container_state: ContainerBackendState,
     pub container_sort_col: ContainerSortColumn,
     pub container_sort_asc: bool,
+    pub container_filter: String,
+    pub container_filter_active: bool,
     pub collapsed_compose_groups: HashSet<String>,
 
     // View navigation
@@ -140,6 +142,12 @@ pub struct AppState {
     current_proxy_monitored_pid: Option<u32>,
     current_proxy_monitored_cid: Option<String>,
 
+    pub node_monitor: Option<crate::collectors::node_runtime::NodeMonitorData>,
+    node_tx: mpsc::Sender<crate::collectors::node_runtime::NodeMonitorData>,
+    node_rx: mpsc::Receiver<crate::collectors::node_runtime::NodeMonitorData>,
+    current_node_monitored_pid: Option<u32>,
+    current_node_monitored_cid: Option<String>,
+
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -179,6 +187,8 @@ impl AppState {
             container_state: ContainerBackendState::default(),
             container_sort_col: ContainerSortColumn::default(),
             container_sort_asc: true,
+            container_filter: String::new(),
+            container_filter_active: false,
             collapsed_compose_groups: HashSet::new(),
             current_view: View::Main,
             detail_process_pid: None,
@@ -238,6 +248,17 @@ impl AppState {
             },
             current_proxy_monitored_pid: None,
             current_proxy_monitored_cid: None,
+            node_monitor: None,
+            node_tx: {
+                let (tx, _) = mpsc::channel(8);
+                tx
+            },
+            node_rx: {
+                let (_, rx) = mpsc::channel(8);
+                rx
+            },
+            current_node_monitored_pid: None,
+            current_node_monitored_cid: None,
             metrics_rx: rx,
             interval_tx,
         }
@@ -755,6 +776,11 @@ impl AppState {
                                     let mut ticker =
                                         tokio::time::interval(std::time::Duration::from_secs(1));
                                     let mut prev_total: Option<u64> = None;
+                                    let mut prev_1xx: u64 = 0;
+                                    let mut prev_2xx: u64 = 0;
+                                    let mut prev_3xx: u64 = 0;
+                                    let mut prev_4xx: u64 = 0;
+                                    let mut prev_5xx: u64 = 0;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
@@ -764,6 +790,11 @@ impl AppState {
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
+                                        let cur_1xx = data.metrics.status_1xx;
+                                        let cur_2xx = data.metrics.status_2xx;
+                                        let cur_3xx = data.metrics.status_3xx;
+                                        let cur_4xx = data.metrics.status_4xx;
+                                        let cur_5xx = data.metrics.status_5xx;
                                         if let Some(prev) = prev_total {
                                             if dt > 0.0 {
                                                 let diff = data
@@ -773,8 +804,24 @@ impl AppState {
                                                     as f64;
                                                 data.metrics.rps = diff / dt;
                                             }
+                                            data.metrics.status_1xx = cur_1xx.saturating_sub(prev_1xx);
+                                            data.metrics.status_2xx = cur_2xx.saturating_sub(prev_2xx);
+                                            data.metrics.status_3xx = cur_3xx.saturating_sub(prev_3xx);
+                                            data.metrics.status_4xx = cur_4xx.saturating_sub(prev_4xx);
+                                            data.metrics.status_5xx = cur_5xx.saturating_sub(prev_5xx);
+                                        } else {
+                                            data.metrics.status_1xx = 0;
+                                            data.metrics.status_2xx = 0;
+                                            data.metrics.status_3xx = 0;
+                                            data.metrics.status_4xx = 0;
+                                            data.metrics.status_5xx = 0;
                                         }
                                         prev_total = Some(data.metrics.requests_total);
+                                        prev_1xx = cur_1xx;
+                                        prev_2xx = cur_2xx;
+                                        prev_3xx = cur_3xx;
+                                        prev_4xx = cur_4xx;
+                                        prev_5xx = cur_5xx;
                                         if tx.send(data).await.is_err() {
                                             break;
                                         }
@@ -822,6 +869,11 @@ impl AppState {
                                     let mut ticker =
                                         tokio::time::interval(std::time::Duration::from_secs(1));
                                     let mut prev_total: Option<u64> = None;
+                                    let mut prev_1xx: u64 = 0;
+                                    let mut prev_2xx: u64 = 0;
+                                    let mut prev_3xx: u64 = 0;
+                                    let mut prev_4xx: u64 = 0;
+                                    let mut prev_5xx: u64 = 0;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
@@ -833,6 +885,11 @@ impl AppState {
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
+                                        let cur_1xx = data.metrics.status_1xx;
+                                        let cur_2xx = data.metrics.status_2xx;
+                                        let cur_3xx = data.metrics.status_3xx;
+                                        let cur_4xx = data.metrics.status_4xx;
+                                        let cur_5xx = data.metrics.status_5xx;
                                         if let Some(prev) = prev_total {
                                             if dt > 0.0 {
                                                 let diff = data
@@ -842,8 +899,24 @@ impl AppState {
                                                     as f64;
                                                 data.metrics.rps = diff / dt;
                                             }
+                                            data.metrics.status_1xx = cur_1xx.saturating_sub(prev_1xx);
+                                            data.metrics.status_2xx = cur_2xx.saturating_sub(prev_2xx);
+                                            data.metrics.status_3xx = cur_3xx.saturating_sub(prev_3xx);
+                                            data.metrics.status_4xx = cur_4xx.saturating_sub(prev_4xx);
+                                            data.metrics.status_5xx = cur_5xx.saturating_sub(prev_5xx);
+                                        } else {
+                                            data.metrics.status_1xx = 0;
+                                            data.metrics.status_2xx = 0;
+                                            data.metrics.status_3xx = 0;
+                                            data.metrics.status_4xx = 0;
+                                            data.metrics.status_5xx = 0;
                                         }
                                         prev_total = Some(data.metrics.requests_total);
+                                        prev_1xx = cur_1xx;
+                                        prev_2xx = cur_2xx;
+                                        prev_3xx = cur_3xx;
+                                        prev_4xx = cur_4xx;
+                                        prev_5xx = cur_5xx;
                                         if tx.send(data).await.is_err() {
                                             break;
                                         }
@@ -874,6 +947,107 @@ impl AppState {
                 }
                 self.current_proxy_monitored_pid = None;
                 self.current_proxy_monitored_cid = None;
+            }
+
+            // Node.js runtime monitor: receive updates
+            while let Ok(node_data) = self.node_rx.try_recv() {
+                if let Some(pid) = node_data.pid {
+                    if Some(pid) == self.detail_process_pid {
+                        let mut nd = node_data;
+                        if let Some(ref prev) = self.node_monitor {
+                            nd.elu_history = prev.elu_history.clone();
+                            nd.delay_history = prev.delay_history.clone();
+                            nd.heap_used_history = prev.heap_used_history.clone();
+                            nd.minor_gc_history = prev.minor_gc_history.clone();
+                            nd.major_gc_history = prev.major_gc_history.clone();
+                        }
+                        nd.push_history();
+                        self.node_monitor = Some(nd);
+                    }
+                } else if let Some(ref cid) = node_data.container_id {
+                    if self.detail_container_id.as_ref() == Some(cid) {
+                        let mut nd = node_data;
+                        if let Some(ref prev) = self.node_monitor {
+                            nd.elu_history = prev.elu_history.clone();
+                            nd.delay_history = prev.delay_history.clone();
+                            nd.heap_used_history = prev.heap_used_history.clone();
+                            nd.minor_gc_history = prev.minor_gc_history.clone();
+                            nd.major_gc_history = prev.major_gc_history.clone();
+                        }
+                        nd.push_history();
+                        self.node_monitor = Some(nd);
+                    }
+                }
+            }
+
+            // Node.js runtime monitor: spawn task when needed
+            if self.current_view == View::ProcessDetail {
+                if let Some(pid) = self.detail_process_pid {
+                    if let Some(proc) = self.processes.iter().find(|p| p.pid == pid) {
+                        if proc.node_runtime_type.is_some() {
+                            if self.current_node_monitored_pid != Some(pid) {
+                                self.current_node_monitored_pid = Some(pid);
+                                self.current_node_monitored_cid = None;
+                                self.node_monitor = Some(
+                                    crate::collectors::node_runtime::NodeMonitorData::new(pid),
+                                );
+                                let (tx, rx) = mpsc::channel(8);
+                                self.node_rx = rx;
+                                self.node_tx = tx.clone();
+                                tokio::spawn(
+                                    crate::collectors::node_runtime::run_inspector_session_process(
+                                        pid, tx,
+                                    ),
+                                );
+                            }
+                        } else {
+                            self.node_monitor = None;
+                            self.current_node_monitored_pid = None;
+                            self.current_node_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.node_monitor = None;
+                    self.current_node_monitored_pid = None;
+                    self.current_node_monitored_cid = None;
+                }
+            } else if self.current_view == View::ContainerDetail {
+                if let Some(ref cid) = self.detail_container_id.clone() {
+                    if let Some(container) = self.containers.iter().find(|c| &c.id == cid) {
+                        if container.node_runtime_type.is_some() {
+                            if self.current_node_monitored_cid.as_ref() != Some(cid) {
+                                self.current_node_monitored_cid = Some(cid.clone());
+                                self.current_node_monitored_pid = None;
+                                self.node_monitor = Some(
+                                    crate::collectors::node_runtime::NodeMonitorData::new_container(
+                                        cid.clone(),
+                                    ),
+                                );
+                                let (tx, rx) = mpsc::channel(8);
+                                self.node_rx = rx;
+                                self.node_tx = tx.clone();
+                                let cid_clone = cid.clone();
+                                tokio::spawn(
+                                    crate::collectors::node_runtime::run_inspector_session_container(
+                                        cid_clone, tx,
+                                    ),
+                                );
+                            }
+                        } else {
+                            self.node_monitor = None;
+                            self.current_node_monitored_pid = None;
+                            self.current_node_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.node_monitor = None;
+                    self.current_node_monitored_pid = None;
+                    self.current_node_monitored_cid = None;
+                }
+            } else {
+                self.node_monitor = None;
+                self.current_node_monitored_pid = None;
+                self.current_node_monitored_cid = None;
             }
 
             // If the detailed process or container no longer exists, exit the detail view.
@@ -1105,8 +1279,23 @@ impl AppState {
         self.container_scroll = 0;
     }
 
+    pub fn containers_filtered(&self) -> Vec<ContainerData> {
+        if self.container_filter.is_empty() {
+            return self.containers.clone();
+        }
+        let f = self.container_filter.to_lowercase();
+        self.containers
+            .iter()
+            .filter(|c| {
+                c.name.to_lowercase().contains(&f) || c.id.to_lowercase().contains(&f)
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn container_visual_rows(&self) -> Vec<ContainerVisualRow> {
-        build_container_visual_rows(&self.containers, &self.collapsed_compose_groups)
+        let filtered = self.containers_filtered();
+        build_container_visual_rows(&filtered, &self.collapsed_compose_groups)
     }
 
     pub fn container_move_cursor(&mut self, delta: i32) {
@@ -1210,9 +1399,15 @@ impl AppState {
         if let Some(ref id) = self.detail_container_id {
             return self.containers.iter().find(|c| &c.id == id);
         }
-        let rows = self.container_visual_rows();
+        let filtered = self.containers_filtered();
+        let rows = build_container_visual_rows(&filtered, &self.collapsed_compose_groups);
         match rows.get(self.container_cursor) {
-            Some(ContainerVisualRow::Container { real_idx, .. }) => self.containers.get(*real_idx),
+            Some(ContainerVisualRow::Container { real_idx, .. }) => {
+                // real_idx is into the filtered slice; look up the actual container by id
+                filtered
+                    .get(*real_idx)
+                    .and_then(|fc| self.containers.iter().find(|c| c.id == fc.id))
+            }
             _ => None,
         }
     }
@@ -1640,6 +1835,43 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             state.process_table.cursor = 0;
                             state.process_table.scroll = 0;
                         }
+                        // Container table: filter mode input
+                        (KeyCode::Char(ch), _)
+                            if state.container_filter_active
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter.push(ch);
+                            state.container_cursor = 0;
+                            state.container_scroll = 0;
+                        }
+                        (KeyCode::Backspace, _)
+                            if state.container_filter_active
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter.pop();
+                            state.container_cursor = 0;
+                            state.container_scroll = 0;
+                        }
+                        (KeyCode::Esc, _)
+                            if state.container_filter_active
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter_active = false;
+                        }
+                        (KeyCode::Enter, _)
+                            if state.container_filter_active
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter_active = false;
+                        }
+                        (KeyCode::Esc, _)
+                            if !state.container_filter.is_empty()
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter.clear();
+                            state.container_cursor = 0;
+                            state.container_scroll = 0;
+                        }
                         // Process table: navigate to detail on Enter — pin the PID so the detail
                         // view always tracks the same process even when the list re-sorts.
                         (KeyCode::Enter, _)
@@ -1683,6 +1915,14 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 && !state.show_disk_selector =>
                         {
                             state.process_table.filter_active = true;
+                        }
+                        // Container table: activate filter
+                        (KeyCode::Char('/'), _)
+                            if state.current_view == View::Main
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
+                        {
+                            state.container_filter_active = true;
                         }
                         (KeyCode::Char('c'), _)
                             if state.current_view == View::Main
@@ -1746,37 +1986,43 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         // Container table: sort keys
                         (KeyCode::Char('c'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::Cpu);
                         }
                         (KeyCode::Char('m'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::Memory);
                         }
                         (KeyCode::Char('i'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::NetRecv);
                         }
                         (KeyCode::Char('o'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::NetSent);
                         }
                         (KeyCode::Char('r'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::DiskRead);
                         }
                         (KeyCode::Char('w'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::DiskWrite);
                         }
