@@ -1149,12 +1149,13 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                 ];
                 for (hist, count, color, slot, label) in hist_status {
                     let pct = count as f64 / total_req * 100.0;
-                    render_proxy_braille_chart(
+                    render_proxy_braille_chart_fixed(
                         f,
                         chunks[slot],
                         hist,
                         format!(" {}  {}  ({:.1}%) ", label, count, pct),
                         color,
+                        100.0,
                     );
                 }
 
@@ -1289,6 +1290,28 @@ fn render_proxy_braille_chart(
     title: String,
     color: Color,
 ) {
+    render_proxy_braille_chart_inner(f, area, history, title, color, None);
+}
+
+fn render_proxy_braille_chart_fixed(
+    f: &mut Frame,
+    area: Rect,
+    history: &std::collections::VecDeque<u64>,
+    title: String,
+    color: Color,
+    fixed_max: f64,
+) {
+    render_proxy_braille_chart_inner(f, area, history, title, color, Some(fixed_max));
+}
+
+fn render_proxy_braille_chart_inner(
+    f: &mut Frame,
+    area: Rect,
+    history: &std::collections::VecDeque<u64>,
+    title: String,
+    color: Color,
+    forced_max: Option<f64>,
+) {
     use ratatui::symbols::Marker;
     use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
     use ratatui::widgets::Clear;
@@ -1298,12 +1321,11 @@ fn render_proxy_braille_chart(
     }
 
     let theme = crate::ui::theme::Theme::default_theme();
-    // Use at least a small non-zero range so a flat zero line is visible
-    let data_max = history.iter().copied().max().unwrap_or(0) as f64;
-    let y_max = if data_max < 1.0 {
-        10.0
+    let y_max = if let Some(fm) = forced_max {
+        fm
     } else {
-        data_max * 1.15
+        let data_max = history.iter().copied().max().unwrap_or(0) as f64;
+        if data_max < 1.0 { 10.0 } else { data_max * 1.15 }
     };
     let max_samples = 60.0_f64;
     let s_len = history.len();
