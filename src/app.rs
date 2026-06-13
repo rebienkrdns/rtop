@@ -79,6 +79,8 @@ pub struct AppState {
     pub container_state: ContainerBackendState,
     pub container_sort_col: ContainerSortColumn,
     pub container_sort_asc: bool,
+    pub container_filter: String,
+    pub container_filter_active: bool,
     pub collapsed_compose_groups: HashSet<String>,
 
     // View navigation
@@ -185,6 +187,8 @@ impl AppState {
             container_state: ContainerBackendState::default(),
             container_sort_col: ContainerSortColumn::default(),
             container_sort_asc: true,
+            container_filter: String::new(),
+            container_filter_active: false,
             collapsed_compose_groups: HashSet::new(),
             current_view: View::Main,
             detail_process_pid: None,
@@ -1223,8 +1227,23 @@ impl AppState {
         self.container_scroll = 0;
     }
 
+    pub fn containers_filtered(&self) -> Vec<ContainerData> {
+        if self.container_filter.is_empty() {
+            return self.containers.clone();
+        }
+        let f = self.container_filter.to_lowercase();
+        self.containers
+            .iter()
+            .filter(|c| {
+                c.name.to_lowercase().contains(&f) || c.id.to_lowercase().contains(&f)
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn container_visual_rows(&self) -> Vec<ContainerVisualRow> {
-        build_container_visual_rows(&self.containers, &self.collapsed_compose_groups)
+        let filtered = self.containers_filtered();
+        build_container_visual_rows(&filtered, &self.collapsed_compose_groups)
     }
 
     pub fn container_move_cursor(&mut self, delta: i32) {
@@ -1328,9 +1347,15 @@ impl AppState {
         if let Some(ref id) = self.detail_container_id {
             return self.containers.iter().find(|c| &c.id == id);
         }
-        let rows = self.container_visual_rows();
+        let filtered = self.containers_filtered();
+        let rows = build_container_visual_rows(&filtered, &self.collapsed_compose_groups);
         match rows.get(self.container_cursor) {
-            Some(ContainerVisualRow::Container { real_idx, .. }) => self.containers.get(*real_idx),
+            Some(ContainerVisualRow::Container { real_idx, .. }) => {
+                // real_idx is into the filtered slice; look up the actual container by id
+                filtered
+                    .get(*real_idx)
+                    .and_then(|fc| self.containers.iter().find(|c| c.id == fc.id))
+            }
             _ => None,
         }
     }
@@ -1758,6 +1783,43 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                             state.process_table.cursor = 0;
                             state.process_table.scroll = 0;
                         }
+                        // Container table: filter mode input
+                        (KeyCode::Char(ch), _)
+                            if state.container_filter_active
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter.push(ch);
+                            state.container_cursor = 0;
+                            state.container_scroll = 0;
+                        }
+                        (KeyCode::Backspace, _)
+                            if state.container_filter_active
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter.pop();
+                            state.container_cursor = 0;
+                            state.container_scroll = 0;
+                        }
+                        (KeyCode::Esc, _)
+                            if state.container_filter_active
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter_active = false;
+                        }
+                        (KeyCode::Enter, _)
+                            if state.container_filter_active
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter_active = false;
+                        }
+                        (KeyCode::Esc, _)
+                            if !state.container_filter.is_empty()
+                                && state.active_tab == Tab::Containers =>
+                        {
+                            state.container_filter.clear();
+                            state.container_cursor = 0;
+                            state.container_scroll = 0;
+                        }
                         // Process table: navigate to detail on Enter — pin the PID so the detail
                         // view always tracks the same process even when the list re-sorts.
                         (KeyCode::Enter, _)
@@ -1801,6 +1863,14 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 && !state.show_disk_selector =>
                         {
                             state.process_table.filter_active = true;
+                        }
+                        // Container table: activate filter
+                        (KeyCode::Char('/'), _)
+                            if state.current_view == View::Main
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
+                        {
+                            state.container_filter_active = true;
                         }
                         (KeyCode::Char('c'), _)
                             if state.current_view == View::Main
@@ -1864,37 +1934,43 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         // Container table: sort keys
                         (KeyCode::Char('c'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::Cpu);
                         }
                         (KeyCode::Char('m'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::Memory);
                         }
                         (KeyCode::Char('i'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::NetRecv);
                         }
                         (KeyCode::Char('o'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::NetSent);
                         }
                         (KeyCode::Char('r'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::DiskRead);
                         }
                         (KeyCode::Char('w'), _)
                             if state.current_view == View::Main
-                                && state.active_tab == Tab::Containers =>
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
                         {
                             state.container_sort_by(ContainerSortColumn::DiskWrite);
                         }

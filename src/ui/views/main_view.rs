@@ -126,10 +126,15 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         draw_metrics(f, col1_inner, state);
     }
 
-    // Columna 2: Presión (PSI)
+    // Columna 2: Disco·Red (historial) | Presión (PSI)
+    let col2_title = if state.history_mode {
+        format!(" {} ", state.t("Disk Net IO"))
+    } else {
+        format!(" {} ", state.t("Pressure PSI"))
+    };
     let col2_block = Block::default()
         .title(Span::styled(
-            format!(" {} ", state.t("Pressure PSI")),
+            col2_title,
             Style::default().fg(theme.accent),
         ))
         .borders(Borders::ALL)
@@ -251,6 +256,8 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                     state.container_sort_col,
                     state.container_sort_asc,
                     &state.collapsed_compose_groups,
+                    &state.container_filter,
+                    state.container_filter_active,
                     state.lang,
                 );
             } else {
