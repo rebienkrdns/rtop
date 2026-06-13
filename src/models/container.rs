@@ -62,4 +62,6 @@ pub struct ContainerData {
     pub database_type: Option<super::DatabaseType>,
     pub proxy_type: Option<super::HttpProxyType>,
     pub node_runtime_type: Option<super::NodeRuntimeType>,
+    pub message_broker_type: Option<super::MessageBrokerType>,
 }
+

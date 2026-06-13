@@ -80,6 +80,22 @@ impl NodeRuntimeType {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MessageBrokerType {
+    Kafka,
+    Redpanda,
+}
+
+impl MessageBrokerType {
+    #[allow(dead_code)]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MessageBrokerType::Kafka => "Kafka",
+            MessageBrokerType::Redpanda => "Redpanda",
+        }
+    }
+}
+
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct ProcessData {
@@ -104,4 +120,5 @@ pub struct ProcessData {
     pub database_type: Option<DatabaseType>,
     pub proxy_type: Option<HttpProxyType>,
     pub node_runtime_type: Option<NodeRuntimeType>,
+    pub message_broker_type: Option<MessageBrokerType>,
 }

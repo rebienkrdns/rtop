@@ -61,5 +61,11 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         View::RouterLatency => {
             views::router_latency::render(f, area, state);
         }
+        View::NetworkStats => {
+            views::network_stats::render(f, area, state);
+        }
+        View::Swarm => {
+            views::swarm::render(f, area, state);
+        }
     }
 }

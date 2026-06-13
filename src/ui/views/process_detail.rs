@@ -52,7 +52,9 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let has_right_panel = process.database_type.is_some() || process.node_runtime_type.is_some();
+    let has_right_panel = process.database_type.is_some()
+        || process.node_runtime_type.is_some()
+        || process.message_broker_type.is_some();
     let (left_area, db_area) = if has_right_panel {
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -423,6 +425,8 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
                 state,
                 node_type.as_str(),
             );
+        } else if process.message_broker_type.is_some() {
+            render_broker_panel(f, right_rect, state, &theme);
         }
     }
 }
@@ -1571,3 +1575,295 @@ fn render_router_latency_table(
 
     f.render_widget(Paragraph::new(lines), inner);
 }
+
+pub fn render_broker_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    use crate::collectors::broker::BrokerConnectionStatus;
+
+    let broker_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent_dim))
+        .title(Span::styled(
+            " Message Broker Dashboard ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+    let inner_rect = broker_block.inner(area);
+    f.render_widget(broker_block, area);
+
+    let monitor_data = match &state.broker_monitor {
+        Some(data) => data,
+        None => {
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Broker Initializing / Disconnected]",
+                    Style::default().fg(theme.muted),
+                )),
+                Line::from(""),
+                Line::from("  No metrics collected yet. Checking status..."),
+            ]);
+            f.render_widget(paragraph, inner_rect);
+            return;
+        }
+    };
+
+    match &monitor_data.status {
+        BrokerConnectionStatus::Disconnected => {
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Broker Disconnected]",
+                    Style::default().fg(theme.crit),
+                )),
+                Line::from(""),
+                Line::from("  Polling is currently disabled or disconnected."),
+            ]);
+            f.render_widget(paragraph, inner_rect);
+        }
+        BrokerConnectionStatus::Connecting => {
+            let paragraph = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Broker Connecting...]",
+                    Style::default().fg(theme.warn),
+                )),
+                Line::from(""),
+                Line::from("  Attempting connection to broker metrics endpoint..."),
+            ]);
+            f.render_widget(paragraph, inner_rect);
+        }
+        BrokerConnectionStatus::Error(err_msg) => {
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  [Broker Unreachable]",
+                    Style::default().fg(theme.crit).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(format!("  Error: {}", err_msg)),
+                Line::from(""),
+                Line::from("  Ensure broker admin/prometheus endpoint is enabled:"),
+                Line::from("  - Redpanda: Public metrics enabled on port 9644"),
+                Line::from("  - Kafka: Prometheus exporter on port 9404"),
+            ];
+            let paragraph = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
+            f.render_widget(paragraph, inner_rect);
+        }
+        BrokerConnectionStatus::Connected => {
+            let broker_type_str = match monitor_data.broker_type {
+                crate::models::MessageBrokerType::Redpanda => "Redpanda",
+                crate::models::MessageBrokerType::Kafka => "Kafka",
+            };
+
+            let broker_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(7), // Info details
+                    Constraint::Min(0),    // Charts area
+                ])
+                .split(inner_rect);
+
+            let mut info_lines = vec![Line::from(vec![
+                Span::styled("  Engine:         ", Style::default().fg(theme.muted)),
+                Span::styled(
+                    broker_type_str,
+                    Style::default().fg(theme.text).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("   "),
+                Span::styled("● Active", Style::default().fg(theme.ok)),
+            ])];
+
+            info_lines.push(Line::from(vec![
+                Span::styled("  Metadata:       ", Style::default().fg(theme.muted)),
+                Span::styled(
+                    format!("{} Topics", monitor_data.metrics.active_topics),
+                    Style::default().fg(theme.text),
+                ),
+                Span::raw(", "),
+                Span::styled(
+                    format!("{} Partitions", monitor_data.metrics.active_partitions),
+                    Style::default().fg(theme.text),
+                ),
+                Span::raw(", "),
+                Span::styled(
+                    format!("{} Consumers", monitor_data.metrics.active_consumers),
+                    Style::default().fg(theme.text),
+                ),
+            ]));
+
+            let under_replicated = monitor_data.metrics.under_replicated_partitions;
+            info_lines.push(Line::from(vec![
+                Span::styled("  Unsynced Parts: ", Style::default().fg(theme.muted)),
+                Span::styled(
+                    format!("{}", under_replicated),
+                    if under_replicated > 0 {
+                        Style::default().fg(theme.crit).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme.ok)
+                    },
+                ),
+            ]));
+
+            let lag = monitor_data.metrics.consumer_lag;
+            info_lines.push(Line::from(vec![
+                Span::styled("  Consumer Lag:   ", Style::default().fg(theme.muted)),
+                Span::styled(
+                    format!("{}", lag),
+                    if lag > 0 {
+                        Style::default().fg(theme.warn).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme.ok)
+                    },
+                ),
+            ]));
+
+            f.render_widget(Paragraph::new(info_lines), broker_chunks[0]);
+
+            // Split vertical charts area into 2 sections
+            let chart_sections = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Ratio(1, 2),
+                    Constraint::Ratio(1, 2),
+                ])
+                .split(broker_chunks[1]);
+
+            // Retrieve thread-safe broker history snapshot
+            let history_snapshot = match state.broker_history.lock() {
+                Ok(h) => h.clone(),
+                Err(_) => std::collections::VecDeque::new(),
+            };
+
+            // Chart A: Message Rate Trend
+            let max_msg = history_snapshot
+                .iter()
+                .map(|m| m.messages_per_sec)
+                .fold(5.0, f64::max);
+            let title_msg = format!(
+                " Message Rate [last 60s] · Last: {:.1} msg/s ",
+                monitor_data.metrics.messages_per_sec
+            );
+            let lines_msg = vec![
+                BrokerChartLineSpec {
+                    color: Color::Rgb(50, 150, 250), // Blue
+                    style: LineStyle::Solid,
+                    extract: |m| m.messages_per_sec,
+                },
+            ];
+
+            render_broker_chart_multi(
+                f,
+                chart_sections[0],
+                &history_snapshot,
+                max_msg,
+                &lines_msg,
+                &title_msg,
+            );
+
+            // Chart B: Byte Rate Trend
+            let max_bytes = history_snapshot
+                .iter()
+                .map(|m| m.bytes_per_sec)
+                .fold(1024.0, f64::max);
+            let title_bytes = format!(
+                " Data Throughput [last 60s] · Last: {} ",
+                format_traffic_rate(monitor_data.metrics.bytes_per_sec)
+            );
+            let lines_bytes = vec![
+                BrokerChartLineSpec {
+                    color: Color::Rgb(250, 150, 50), // Orange
+                    style: LineStyle::Solid,
+                    extract: |m| m.bytes_per_sec,
+                },
+            ];
+
+            render_broker_chart_multi(
+                f,
+                chart_sections[1],
+                &history_snapshot,
+                max_bytes,
+                &lines_bytes,
+                &title_bytes,
+            );
+        }
+    }
+}
+
+struct BrokerChartLineSpec {
+    color: Color,
+    #[allow(dead_code)]
+    style: LineStyle,
+    extract: fn(&crate::collectors::broker::BrokerMetrics) -> f64,
+}
+
+fn render_broker_chart_multi(
+    f: &mut Frame,
+    area: Rect,
+    history: &std::collections::VecDeque<crate::collectors::broker::BrokerMetrics>,
+    max_val: f64,
+    lines: &[BrokerChartLineSpec],
+    title: &str,
+) {
+    use ratatui::symbols::Marker;
+    use ratatui::widgets::canvas::{Canvas, Line as CanvasLine};
+    use ratatui::widgets::Clear;
+
+    if area.height < 3 || area.width < 5 {
+        return;
+    }
+
+    let max_samples = 60.0;
+    let s_len = history.len();
+
+    let canvas = Canvas::default()
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Rgb(80, 80, 95)))
+                .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
+                .style(Style::default().bg(Color::Rgb(30, 31, 38)))
+        )
+        .x_bounds([0.0, max_samples])
+        .y_bounds([0.0, max_val])
+        .marker(Marker::Braille)
+        .paint(|ctx| {
+            if s_len == 1 {
+                // Draw a flat reference line at the current value for each metric
+                for line_spec in lines {
+                    let y = (line_spec.extract)(&history[0]);
+                    ctx.draw(&CanvasLine {
+                        x1: 0.0,
+                        y1: y,
+                        x2: max_samples,
+                        y2: y,
+                        color: line_spec.color,
+                    });
+                }
+            } else if s_len > 1 {
+                for line_spec in lines {
+                    for i in 0..(s_len - 1) {
+                        let x1 = max_samples - (s_len - 1 - i) as f64;
+                        let x2 = max_samples - (s_len - 1 - (i + 1)) as f64;
+                        if x2 < 0.0 {
+                            continue;
+                        }
+                        let y1 = (line_spec.extract)(&history[i]);
+                        let y2 = (line_spec.extract)(&history[i + 1]);
+                        ctx.draw(&CanvasLine {
+                            x1,
+                            y1,
+                            x2,
+                            y2,
+                            color: line_spec.color,
+                        });
+                    }
+                }
+            }
+        });
+
+    f.render_widget(Clear, area);
+    f.render_widget(canvas, area);
+}
+

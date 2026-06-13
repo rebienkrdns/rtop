@@ -3,12 +3,14 @@ use std::collections::HashMap;
 use sysinfo::{Disks, System};
 
 use crate::collectors::disk::{device_short_name, DiskIoCollector};
+use crate::collectors::gpu::GpuCollector;
 use crate::collectors::network::NetworkCollector;
 use crate::collectors::process_net::ProcessNetCollector;
 use crate::collectors::psi::PsiCollector;
+use crate::collectors::tcp_stats::TcpStatsCollector;
 use crate::models::{
-    CpuData, DiskData, MemoryData, NetworkData, NetworkInterface, ProcessData, ProcessStatus,
-    PsiData,
+    CpuData, DiskData, GpuData, MemoryData, NetworkData, NetworkInterface, ProcessData,
+    ProcessStatus, PsiData, TcpStats,
 };
 
 pub struct SystemSnapshot {
@@ -21,6 +23,8 @@ pub struct SystemSnapshot {
     pub proc_permission_denied: bool,
     pub processes: Vec<ProcessData>,
     pub psi: Option<PsiData>,
+    pub gpus: Vec<GpuData>,
+    pub tcp_stats: Option<TcpStats>,
 }
 
 pub struct SystemCollector {
@@ -30,6 +34,8 @@ pub struct SystemCollector {
     network: NetworkCollector,
     process_net: ProcessNetCollector,
     psi: PsiCollector,
+    gpu: GpuCollector,
+    tcp: TcpStatsCollector,
 }
 
 impl Default for SystemCollector {
@@ -50,6 +56,8 @@ impl SystemCollector {
             network: NetworkCollector::new(),
             process_net: ProcessNetCollector::new(),
             psi: PsiCollector::new(),
+            gpu: GpuCollector::new(),
+            tcp: TcpStatsCollector::new(),
         }
     }
 
@@ -282,6 +290,13 @@ impl SystemCollector {
                 } else {
                     None
                 };
+                let message_broker_type = if name_lower.contains("redpanda") {
+                    Some(crate::models::MessageBrokerType::Redpanda)
+                } else if name_lower.contains("kafka") || cmd.to_lowercase().contains("kafka") {
+                    Some(crate::models::MessageBrokerType::Kafka)
+                } else {
+                    None
+                };
 
                 ProcessData {
                     pid,
@@ -305,6 +320,7 @@ impl SystemCollector {
                     database_type,
                     proxy_type,
                     node_runtime_type,
+                    message_broker_type,
                 }
             })
             .collect();
@@ -315,6 +331,8 @@ impl SystemCollector {
         let available_nics = self.network.interfaces();
         let suggested_nic = self.network.autodetect();
         let psi = self.psi.collect();
+        let gpus = self.gpu.collect();
+        let tcp_stats = self.tcp.collect();
 
         SystemSnapshot {
             cpu,
@@ -326,6 +344,8 @@ impl SystemCollector {
             proc_permission_denied: permission_denied,
             processes,
             psi,
+            gpus,
+            tcp_stats,
         }
     }
 }

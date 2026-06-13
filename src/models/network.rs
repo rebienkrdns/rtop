@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)]
 pub struct NetworkData {
@@ -14,4 +16,15 @@ pub struct NetworkInterface {
     pub is_up: bool,
     pub is_loopback: bool,
     pub ip_address: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TcpStats {
+    pub tcp_retransmissions: u64,
+    pub tcp_retransmission_rate: f64,
+    pub tcp_failed_connections: u64,
+    pub tcp_resets: u64,
+    pub tcp_retrans_fail: u64,
+    #[allow(dead_code)]
+    pub timestamp: Instant,
 }

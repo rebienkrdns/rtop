@@ -59,7 +59,8 @@ pub fn render(
 
     let has_right_panel = container.database_type.is_some()
         || container.proxy_type.is_some()
-        || container.node_runtime_type.is_some();
+        || container.node_runtime_type.is_some()
+        || container.message_broker_type.is_some();
     let (left_area, db_area) = if has_right_panel {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
@@ -610,6 +611,8 @@ pub fn render(
                 state,
                 node_type.as_str(),
             );
+        } else if container.message_broker_type.is_some() {
+            crate::ui::views::process_detail::render_broker_panel(f, db_rect, state, &theme);
         }
     }
 

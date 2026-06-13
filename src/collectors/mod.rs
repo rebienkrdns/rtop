@@ -1,9 +1,13 @@
+pub mod broker;
 pub mod containers;
 pub mod database;
 pub mod disk;
+pub mod gpu;
 pub mod network;
 pub mod node_runtime;
 pub mod process_net;
 pub mod proxy;
 pub mod psi;
+pub mod swarm;
 pub mod system;
+pub mod tcp_stats;

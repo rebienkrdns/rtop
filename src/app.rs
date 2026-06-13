@@ -16,8 +16,8 @@ use crate::collectors::disk::{DiskIoCollector, DiskSelectorEntry};
 use crate::collectors::system::SystemCollector;
 use crate::config::{self, Config, Tab, INTERVALS};
 use crate::models::{
-    ContainerData, ContainerSortColumn, CpuData, DiskData, MemoryData, NetworkData,
-    NetworkInterface, ProcessData, ProcessSortColumn, PsiData,
+    ContainerData, ContainerSortColumn, CpuData, DiskData, GpuData, MemoryData, NetworkData,
+    NetworkInterface, ProcessData, ProcessSortColumn, PsiData, TcpStats,
 };
 use crate::ui;
 use crate::ui::history::{
@@ -34,6 +34,15 @@ pub enum View {
     ContainerDetail,
     ContainerLogs,
     RouterLatency,
+    NetworkStats,
+    Swarm,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum SwarmFocus {
+    #[default]
+    Services,
+    Nodes,
 }
 
 pub struct AppSnapshot {
@@ -49,6 +58,8 @@ pub struct AppSnapshot {
     pub container_state: ContainerBackendState,
     pub docker_client: Option<Docker>,
     pub psi: Option<PsiData>,
+    pub gpus: Vec<GpuData>,
+    pub tcp_stats: Option<TcpStats>,
 }
 
 pub struct AppState {
@@ -106,6 +117,10 @@ pub struct AppState {
     pub refresh_tick: bool,
     pub show_help: bool,
     pub psi: Option<PsiData>,
+    pub gpus: Vec<GpuData>,
+
+    pub tcp_stats: Option<TcpStats>,
+    pub tcp_retrans_history: std::collections::VecDeque<f64>,
 
     // Historial de uso de red (% respecto a capacidad máxima del enlace)
     pub network_usage_pct_history: std::collections::VecDeque<f64>,
@@ -150,6 +165,22 @@ pub struct AppState {
     current_node_monitored_pid: Option<u32>,
     current_node_monitored_cid: Option<String>,
 
+    pub broker_monitor: Option<crate::collectors::broker::BrokerMonitorData>,
+    pub broker_history: std::sync::Arc<
+        std::sync::Mutex<std::collections::VecDeque<crate::collectors::broker::BrokerMetrics>>,
+    >,
+    broker_tx: mpsc::Sender<crate::collectors::broker::BrokerMonitorData>,
+    broker_rx: mpsc::Receiver<crate::collectors::broker::BrokerMonitorData>,
+    current_broker_monitored_pid: Option<u32>,
+    current_broker_monitored_cid: Option<String>,
+
+    // Swarm view
+    pub swarm_data: crate::models::SwarmData,
+    pub swarm_focus: SwarmFocus,
+    pub swarm_service_cursor: usize,
+    pub swarm_node_cursor: usize,
+    swarm_rx: mpsc::Receiver<crate::models::SwarmData>,
+
     metrics_rx: mpsc::Receiver<AppSnapshot>,
     interval_tx: watch::Sender<f64>,
 }
@@ -157,6 +188,7 @@ pub struct AppState {
 impl AppState {
     fn new(
         rx: mpsc::Receiver<AppSnapshot>,
+        swarm_rx: mpsc::Receiver<crate::models::SwarmData>,
         interval_tx: watch::Sender<f64>,
         initial_idx: usize,
         cfg: Config,
@@ -210,6 +242,9 @@ impl AppState {
             refresh_tick: false,
             show_help: false,
             psi: None,
+            gpus: vec![],
+            tcp_stats: None,
+            tcp_retrans_history: std::collections::VecDeque::new(),
             network_usage_pct_history: std::collections::VecDeque::new(),
             network_max_bw_by_nic: HashMap::new(),
             psi_history_cpu: std::collections::VecDeque::new(),
@@ -262,6 +297,25 @@ impl AppState {
             },
             current_node_monitored_pid: None,
             current_node_monitored_cid: None,
+            broker_monitor: None,
+            broker_history: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::VecDeque::new(),
+            )),
+            broker_tx: {
+                let (tx, _) = mpsc::channel(8);
+                tx
+            },
+            broker_rx: {
+                let (_, rx) = mpsc::channel(8);
+                rx
+            },
+            current_broker_monitored_pid: None,
+            current_broker_monitored_cid: None,
+            swarm_data: crate::models::SwarmData::default(),
+            swarm_focus: SwarmFocus::default(),
+            swarm_service_cursor: 0,
+            swarm_node_cursor: 0,
+            swarm_rx,
             metrics_rx: rx,
             interval_tx,
         }
@@ -413,6 +467,15 @@ impl AppState {
             self.sort_containers();
             self.container_state = snapshot.container_state;
             self.psi = snapshot.psi.clone();
+            self.gpus = snapshot.gpus.clone();
+            self.tcp_stats = snapshot.tcp_stats.clone();
+            if let Some(ref ts) = snapshot.tcp_stats {
+                const TCP_MAX: usize = 300;
+                if self.tcp_retrans_history.len() >= TCP_MAX {
+                    self.tcp_retrans_history.pop_front();
+                }
+                self.tcp_retrans_history.push_back(ts.tcp_retransmission_rate);
+            }
             if let Some(ref p) = snapshot.psi {
                 const PSI_MAX: usize = 3600;
                 if self.psi_history_cpu.len() >= PSI_MAX {
@@ -464,6 +527,32 @@ impl AppState {
                     }
                 }
             }
+
+            // Receive any Broker monitor updates
+            while let Ok(broker_data) = self.broker_rx.try_recv() {
+                if let Some(pid) = broker_data.pid {
+                    if Some(pid) == self.detail_process_pid {
+                        if let Ok(mut history) = self.broker_history.lock() {
+                            history.push_back(broker_data.metrics.clone());
+                            if history.len() > 60 {
+                                history.pop_front();
+                            }
+                        }
+                        self.broker_monitor = Some(broker_data);
+                    }
+                } else if let Some(ref cid) = broker_data.container_id {
+                    if Some(cid.clone()) == self.detail_container_id {
+                        if let Ok(mut history) = self.broker_history.lock() {
+                            history.push_back(broker_data.metrics.clone());
+                            if history.len() > 60 {
+                                history.pop_front();
+                            }
+                        }
+                        self.broker_monitor = Some(broker_data);
+                    }
+                }
+            }
+
 
             // Check if we need to spawn database monitoring task
             if self.current_view == View::ProcessDetail {
@@ -1082,6 +1171,162 @@ impl AppState {
                 self.current_node_monitored_cid = None;
             }
 
+            // Message Broker monitor: spawn task when needed
+            if self.current_view == View::ProcessDetail {
+                if let Some(pid) = self.detail_process_pid {
+                    if let Some(proc) = self.processes.iter().find(|p| p.pid == pid) {
+                        if let Some(broker_type) = proc.message_broker_type {
+                            if self.current_broker_monitored_pid != Some(pid) {
+                                self.current_broker_monitored_pid = Some(pid);
+                                self.current_broker_monitored_cid = None;
+                                self.broker_monitor = Some(
+                                    crate::collectors::broker::BrokerMonitorData::new(pid, broker_type),
+                                );
+                                if let Ok(mut history) = self.broker_history.lock() {
+                                    history.clear();
+                                }
+                                let (tx, rx) = mpsc::channel(8);
+                                self.broker_rx = rx;
+                                self.broker_tx = tx.clone();
+                                let proc_clone = proc.clone();
+                                tokio::spawn(async move {
+                                    let mut ticker =
+                                        tokio::time::interval(std::time::Duration::from_secs(1));
+                                    let mut prev_metrics: Option<crate::collectors::broker::BrokerMetrics> = None;
+                                    let mut last_poll_time = std::time::Instant::now();
+                                    loop {
+                                        ticker.tick().await;
+                                        let mut data = crate::collectors::broker::poll_broker(
+                                            proc_clone.clone(),
+                                        )
+                                        .await;
+                                        let now = std::time::Instant::now();
+                                        let dt = now.duration_since(last_poll_time).as_secs_f64();
+                                        last_poll_time = now;
+                                        if let Some(ref prev) = prev_metrics {
+                                            if dt > 0.0 {
+                                                let msg_diff = data
+                                                    .metrics
+                                                    .raw_messages_total
+                                                    .saturating_sub(prev.raw_messages_total)
+                                                    as f64;
+                                                data.metrics.messages_per_sec = msg_diff / dt;
+                                                let bytes_diff = data
+                                                    .metrics
+                                                    .raw_bytes_total
+                                                    .saturating_sub(prev.raw_bytes_total)
+                                                    as f64;
+                                                data.metrics.bytes_per_sec = bytes_diff / dt;
+                                            }
+                                        }
+                                        prev_metrics = Some(data.metrics.clone());
+                                        if tx.send(data).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+                        } else {
+                            self.broker_monitor = None;
+                            if let Ok(mut history) = self.broker_history.lock() {
+                                history.clear();
+                            }
+                            self.current_broker_monitored_pid = None;
+                            self.current_broker_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.broker_monitor = None;
+                    if let Ok(mut history) = self.broker_history.lock() {
+                        history.clear();
+                    }
+                    self.current_broker_monitored_pid = None;
+                    self.current_broker_monitored_cid = None;
+                }
+            } else if self.current_view == View::ContainerDetail {
+                if let Some(ref cid) = self.detail_container_id {
+                    if let Some(container) = self.containers.iter().find(|c| &c.id == cid) {
+                        if let Some(broker_type) = container.message_broker_type {
+                            if self.current_broker_monitored_cid.as_ref() != Some(cid) {
+                                self.current_broker_monitored_cid = Some(cid.clone());
+                                self.current_broker_monitored_pid = None;
+                                self.broker_monitor = Some(
+                                    crate::collectors::broker::BrokerMonitorData::new_container(
+                                        cid.clone(),
+                                        broker_type,
+                                    ),
+                                );
+                                if let Ok(mut history) = self.broker_history.lock() {
+                                    history.clear();
+                                }
+                                let (tx, rx) = mpsc::channel(8);
+                                self.broker_rx = rx;
+                                self.broker_tx = tx.clone();
+                                let container_clone = container.clone();
+                                tokio::spawn(async move {
+                                    let mut ticker =
+                                        tokio::time::interval(std::time::Duration::from_secs(1));
+                                    let mut prev_metrics: Option<crate::collectors::broker::BrokerMetrics> = None;
+                                    let mut last_poll_time = std::time::Instant::now();
+                                    loop {
+                                        ticker.tick().await;
+                                        let mut data = crate::collectors::broker::poll_broker_container(
+                                            container_clone.clone(),
+                                        )
+                                        .await;
+                                        let now = std::time::Instant::now();
+                                        let dt = now.duration_since(last_poll_time).as_secs_f64();
+                                        last_poll_time = now;
+                                        if let Some(ref prev) = prev_metrics {
+                                            if dt > 0.0 {
+                                                let msg_diff = data
+                                                    .metrics
+                                                    .raw_messages_total
+                                                    .saturating_sub(prev.raw_messages_total)
+                                                    as f64;
+                                                data.metrics.messages_per_sec = msg_diff / dt;
+                                                let bytes_diff = data
+                                                    .metrics
+                                                    .raw_bytes_total
+                                                    .saturating_sub(prev.raw_bytes_total)
+                                                    as f64;
+                                                data.metrics.bytes_per_sec = bytes_diff / dt;
+                                            }
+                                        }
+                                        prev_metrics = Some(data.metrics.clone());
+                                        if tx.send(data).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+                        } else {
+                            self.broker_monitor = None;
+                            if let Ok(mut history) = self.broker_history.lock() {
+                                history.clear();
+                            }
+                            self.current_broker_monitored_pid = None;
+                            self.current_broker_monitored_cid = None;
+                        }
+                    }
+                } else {
+                    self.broker_monitor = None;
+                    if let Ok(mut history) = self.broker_history.lock() {
+                        history.clear();
+                    }
+                    self.current_broker_monitored_pid = None;
+                    self.current_broker_monitored_cid = None;
+                }
+            } else {
+                self.broker_monitor = None;
+                if let Ok(mut history) = self.broker_history.lock() {
+                    history.clear();
+                }
+                self.current_broker_monitored_pid = None;
+                self.current_broker_monitored_cid = None;
+            }
+
+
             // If the detailed process or container no longer exists, exit the detail view.
             // Require 3 consecutive missing snapshots to avoid false exits from transient
             // Docker stats failures or momentarily empty lists.
@@ -1131,6 +1376,11 @@ impl AppState {
                     self.selected_disk = Some(short);
                 }
             }
+        }
+
+        // Receive swarm updates (non-blocking)
+        while let Ok(swarm) = self.swarm_rx.try_recv() {
+            self.swarm_data = swarm;
         }
     }
 
@@ -1580,6 +1830,8 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         container_state,
                         docker_client,
                         psi: system.psi,
+                        gpus: system.gpus,
+                        tcp_stats: system.tcp_stats,
                     };
                     if tx.send(snapshot).await.is_err() {
                         break;
@@ -1594,7 +1846,21 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
         }
     });
 
-    let mut state = AppState::new(rx, interval_tx, initial_idx, cfg);
+    // Background task for Swarm metrics (polls every 5s)
+    let (swarm_tx, swarm_rx) = mpsc::channel::<crate::models::SwarmData>(4);
+    tokio::spawn(async move {
+        let mut collector = crate::collectors::swarm::SwarmCollector::new().await;
+        let mut ticker = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            ticker.tick().await;
+            let data = collector.refresh().await;
+            if swarm_tx.send(data).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut state = AppState::new(rx, swarm_rx, interval_tx, initial_idx, cfg);
 
     loop {
         state.try_update();
@@ -1767,6 +2033,69 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 let num_routers = monitor.router_percentiles.len();
                                 if state.router_cursor + 1 < num_routers {
                                     state.router_cursor += 1;
+                                }
+                            }
+                        }
+
+                        // ── NetworkStats view ─────────────────────────────────
+                        (KeyCode::Char('n'), _) if state.current_view == View::Main => {
+                            state.current_view = View::NetworkStats;
+                        }
+                        (KeyCode::Esc, _) if state.current_view == View::NetworkStats => {
+                            state.current_view = View::Main;
+                        }
+
+                        // ── SwarmView ─────────────────────────────────────────
+                        (KeyCode::Char('s'), _)
+                            if state.current_view == View::Main
+                                && state.active_tab == Tab::Containers
+                                && !state.container_filter_active =>
+                        {
+                            state.current_view = View::Swarm;
+                            state.swarm_focus = SwarmFocus::Services;
+                            state.swarm_service_cursor = 0;
+                            state.swarm_node_cursor = 0;
+                        }
+                        (KeyCode::Esc, _) if state.current_view == View::Swarm => {
+                            state.current_view = View::Main;
+                        }
+                        (KeyCode::Tab, _) if state.current_view == View::Swarm => {
+                            state.swarm_focus = match state.swarm_focus {
+                                SwarmFocus::Services => SwarmFocus::Nodes,
+                                SwarmFocus::Nodes => SwarmFocus::Services,
+                            };
+                        }
+                        (KeyCode::Up | KeyCode::Char('k'), _)
+                            if state.current_view == View::Swarm =>
+                        {
+                            match state.swarm_focus {
+                                SwarmFocus::Services => {
+                                    state.swarm_service_cursor =
+                                        state.swarm_service_cursor.saturating_sub(1);
+                                }
+                                SwarmFocus::Nodes => {
+                                    state.swarm_node_cursor =
+                                        state.swarm_node_cursor.saturating_sub(1);
+                                }
+                            }
+                        }
+                        (KeyCode::Down | KeyCode::Char('j'), _)
+                            if state.current_view == View::Swarm =>
+                        {
+                            match state.swarm_focus {
+                                SwarmFocus::Services => {
+                                    let max =
+                                        state.swarm_data.services.len().saturating_sub(1);
+                                    if state.swarm_service_cursor < max {
+                                        state.swarm_service_cursor += 1;
+                                    }
+                                }
+                                SwarmFocus::Nodes => {
+                                    let max =
+                                        state.swarm_data.nodes.len().saturating_sub(1);
+                                    if state.swarm_node_cursor < max {
+                                        state.swarm_node_cursor += 1;
+                                    }
                                 }
                             }
                         }

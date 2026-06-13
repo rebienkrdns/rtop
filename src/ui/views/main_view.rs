@@ -13,31 +13,41 @@ use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
 use crate::ui::views::{disk_selector, nic_selector};
 use crate::ui::widgets::{
-    container_table, cpu_bar, disk_bar, history_chart, memory_bar, network_widget, process_table,
-    psi_widget,
+    container_table, cpu_bar, disk_bar, gpu_widget, history_chart, memory_bar, network_widget,
+    process_table, psi_widget,
 };
 
 pub fn draw(f: &mut Frame, state: &AppState) {
     let theme = Theme::default_theme();
     let area = f.size();
 
-    // Layout vertical: header | métricas | tab_bar | contenido_pestaña | footer
+    let gpu_count = state.gpus.len() as u16;
+    let gpu_section_height = if gpu_count > 0 { gpu_count * 4 } else { 0 };
+
+    // Layout vertical: header | métricas | [GPU] | tab_bar | contenido_pestaña | footer
+    let mut constraints = vec![
+        Constraint::Length(3),  // header
+        Constraint::Length(13), // métricas (CPU/RAM/Disco + Red)
+    ];
+    if gpu_section_height > 0 {
+        constraints.push(Constraint::Length(gpu_section_height));
+    }
+    constraints.push(Constraint::Length(3)); // barra de pestañas
+    constraints.push(Constraint::Min(5));    // contenido de pestaña activa
+    constraints.push(Constraint::Length(3)); // footer
+
     let vertical = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),  // header
-            Constraint::Length(13), // métricas (CPU/RAM/Disco + Red)
-            Constraint::Length(3),  // barra de pestañas
-            Constraint::Min(5),     // contenido de pestaña activa
-            Constraint::Length(3),  // footer
-        ])
+        .constraints(constraints)
         .split(area);
 
     let header_area = vertical[0];
     let metrics_area = vertical[1];
-    let tabbar_area = vertical[2];
-    let content_area = vertical[3];
-    let footer_area = vertical[4];
+    let (gpu_area_opt, tabbar_area, content_area, footer_area) = if gpu_section_height > 0 {
+        (Some(vertical[2]), vertical[3], vertical[4], vertical[5])
+    } else {
+        (None, vertical[2], vertical[3], vertical[4])
+    };
 
     // — Header —
     let now = Local::now().format("%H:%M:%S").to_string();
@@ -144,6 +154,11 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         history_chart::render_disk_net(f, col2_inner, &samples, state.history_range, state.lang);
     } else {
         psi_widget::render(f, col2_inner, state);
+    }
+
+    // — GPU (si hay GPUs detectadas) —
+    if let Some(gpu_area) = gpu_area_opt {
+        gpu_widget::render(f, gpu_area, &state.gpus);
     }
 
     // — Barra de pestañas —
