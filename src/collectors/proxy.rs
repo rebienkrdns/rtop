@@ -287,7 +287,7 @@ fn parse_traefik_metrics(body: &str, metrics: &mut ProxyMetrics) {
         } else if line.contains("traefik_entrypoint_request_duration_seconds_bucket") {
             if let Some(le) = extract_label(line, "le") {
                 if le == "+Inf" {
-                    hist_count = parse_prometheus_value(line);
+                    hist_count += parse_prometheus_value(line);
                 } else if let Ok(bound) = le.parse::<f64>() {
                     let count = parse_prometheus_value(line);
                     hist_buckets.push((bound * 1000.0, count)); // convert to ms

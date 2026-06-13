@@ -869,6 +869,11 @@ impl AppState {
                                     let mut ticker =
                                         tokio::time::interval(std::time::Duration::from_secs(1));
                                     let mut prev_total: Option<u64> = None;
+                                    let mut prev_1xx: u64 = 0;
+                                    let mut prev_2xx: u64 = 0;
+                                    let mut prev_3xx: u64 = 0;
+                                    let mut prev_4xx: u64 = 0;
+                                    let mut prev_5xx: u64 = 0;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
@@ -880,6 +885,11 @@ impl AppState {
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
+                                        let cur_1xx = data.metrics.status_1xx;
+                                        let cur_2xx = data.metrics.status_2xx;
+                                        let cur_3xx = data.metrics.status_3xx;
+                                        let cur_4xx = data.metrics.status_4xx;
+                                        let cur_5xx = data.metrics.status_5xx;
                                         if let Some(prev) = prev_total {
                                             if dt > 0.0 {
                                                 let diff = data
@@ -889,8 +899,24 @@ impl AppState {
                                                     as f64;
                                                 data.metrics.rps = diff / dt;
                                             }
+                                            data.metrics.status_1xx = cur_1xx.saturating_sub(prev_1xx);
+                                            data.metrics.status_2xx = cur_2xx.saturating_sub(prev_2xx);
+                                            data.metrics.status_3xx = cur_3xx.saturating_sub(prev_3xx);
+                                            data.metrics.status_4xx = cur_4xx.saturating_sub(prev_4xx);
+                                            data.metrics.status_5xx = cur_5xx.saturating_sub(prev_5xx);
+                                        } else {
+                                            data.metrics.status_1xx = 0;
+                                            data.metrics.status_2xx = 0;
+                                            data.metrics.status_3xx = 0;
+                                            data.metrics.status_4xx = 0;
+                                            data.metrics.status_5xx = 0;
                                         }
                                         prev_total = Some(data.metrics.requests_total);
+                                        prev_1xx = cur_1xx;
+                                        prev_2xx = cur_2xx;
+                                        prev_3xx = cur_3xx;
+                                        prev_4xx = cur_4xx;
+                                        prev_5xx = cur_5xx;
                                         if tx.send(data).await.is_err() {
                                             break;
                                         }
