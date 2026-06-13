@@ -7,6 +7,14 @@ use tokio::time::timeout;
 
 pub const PROXY_HISTORY_LEN: usize = 60;
 
+/// Snapshot of Traefik's cumulative histogram buckets used to compute per-interval percentiles.
+#[derive(Clone, Debug, Default)]
+pub struct TraefikHistogramState {
+    /// (bound_ms, cumulative_count) sorted by bound ascending
+    pub buckets: Vec<(f64, u64)>,
+    pub total: u64,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ProxyMetrics {
     pub active_connections: u32,
@@ -262,7 +270,11 @@ fn parse_apache_status(body: &str, metrics: &mut ProxyMetrics) {
     }
 }
 
-fn parse_traefik_metrics(body: &str, metrics: &mut ProxyMetrics) {
+fn parse_traefik_metrics(
+    body: &str,
+    metrics: &mut ProxyMetrics,
+    prev_hist: Option<&TraefikHistogramState>,
+) -> TraefikHistogramState {
     let mut total_1xx: u64 = 0;
     let mut total_2xx: u64 = 0;
     let mut total_3xx: u64 = 0;
@@ -270,7 +282,7 @@ fn parse_traefik_metrics(body: &str, metrics: &mut ProxyMetrics) {
     let mut total_5xx: u64 = 0;
     let mut open_conns: u32 = 0;
 
-    // histogram buckets: (le_bound, cumulative_count)
+    // histogram buckets: (le_bound_ms, cumulative_count)
     let mut hist_buckets: Vec<(f64, u64)> = Vec::new();
     let mut hist_count: u64 = 0;
 
@@ -303,12 +315,36 @@ fn parse_traefik_metrics(body: &str, metrics: &mut ProxyMetrics) {
         }
     }
 
-    // compute p50/p95/p99 from cumulative histogram
+    hist_buckets.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Compute p50/p95/p99 from delta histogram when prev state is available,
+    // falling back to cumulative on the first poll.
     if hist_count > 0 && !hist_buckets.is_empty() {
-        hist_buckets.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        metrics.p50_ms = percentile_from_buckets(&hist_buckets, hist_count, 0.50);
-        metrics.p95_ms = percentile_from_buckets(&hist_buckets, hist_count, 0.95);
-        metrics.p99_ms = percentile_from_buckets(&hist_buckets, hist_count, 0.99);
+        let (effective_buckets, effective_total): (Vec<(f64, u64)>, u64) =
+            if let Some(prev) = prev_hist {
+                let delta_total = hist_count.saturating_sub(prev.total);
+                let delta_buckets: Vec<(f64, u64)> = hist_buckets
+                    .iter()
+                    .map(|&(bound, count)| {
+                        let prev_count = prev
+                            .buckets
+                            .iter()
+                            .find(|&&(b, _)| (b - bound).abs() < 0.0001)
+                            .map(|&(_, c)| c)
+                            .unwrap_or(0);
+                        (bound, count.saturating_sub(prev_count))
+                    })
+                    .collect();
+                (delta_buckets, delta_total)
+            } else {
+                (hist_buckets.clone(), hist_count)
+            };
+
+        if effective_total > 0 {
+            metrics.p50_ms = percentile_from_buckets(&effective_buckets, effective_total, 0.50);
+            metrics.p95_ms = percentile_from_buckets(&effective_buckets, effective_total, 0.95);
+            metrics.p99_ms = percentile_from_buckets(&effective_buckets, effective_total, 0.99);
+        }
     }
 
     let total = total_1xx + total_2xx + total_3xx + total_4xx + total_5xx;
@@ -325,6 +361,11 @@ fn parse_traefik_metrics(body: &str, metrics: &mut ProxyMetrics) {
     metrics.status_5xx = total_5xx;
     metrics.requests_total = total;
     metrics.active_connections = open_conns;
+
+    TraefikHistogramState {
+        buckets: hist_buckets,
+        total: hist_count,
+    }
 }
 
 fn percentile_from_buckets(buckets: &[(f64, u64)], total: u64, pct: f64) -> f64 {
@@ -364,46 +405,70 @@ pub async fn poll_proxy_at_port(
     proxy_type: HttpProxyType,
     port: u16,
     metrics: &mut ProxyMetrics,
-) -> ProxyConnectionStatus {
-    let (path, parse_fn): (&str, fn(&str, &mut ProxyMetrics)) = match proxy_type {
-        HttpProxyType::Nginx => ("/nginx_status", parse_nginx_status),
-        HttpProxyType::Apache => ("/server-status?auto", parse_apache_status),
-        HttpProxyType::Traefik => ("/metrics", parse_traefik_metrics),
-    };
-
-    match http_get("127.0.0.1", port, path).await {
-        Ok(body) => {
-            parse_fn(&body, metrics);
-            ProxyConnectionStatus::Connected
+    prev_hist: Option<&TraefikHistogramState>,
+) -> (ProxyConnectionStatus, Option<TraefikHistogramState>) {
+    match proxy_type {
+        HttpProxyType::Traefik => match http_get("127.0.0.1", port, "/metrics").await {
+            Ok(body) => {
+                let hist = parse_traefik_metrics(&body, metrics, prev_hist);
+                (ProxyConnectionStatus::Connected, Some(hist))
+            }
+            Err(e) => (ProxyConnectionStatus::Error(e), None),
+        },
+        _ => {
+            let (path, parse_fn): (&str, fn(&str, &mut ProxyMetrics)) = match proxy_type {
+                HttpProxyType::Nginx => ("/nginx_status", parse_nginx_status),
+                HttpProxyType::Apache => ("/server-status?auto", parse_apache_status),
+                HttpProxyType::Traefik => unreachable!(),
+            };
+            match http_get("127.0.0.1", port, path).await {
+                Ok(body) => {
+                    parse_fn(&body, metrics);
+                    (ProxyConnectionStatus::Connected, None)
+                }
+                Err(e) => (ProxyConnectionStatus::Error(e), None),
+            }
         }
-        Err(e) => ProxyConnectionStatus::Error(e),
     }
 }
 
-pub async fn poll_proxy(process: ProcessData) -> ProxyMonitorData {
+pub async fn poll_proxy(
+    process: ProcessData,
+    prev_hist: Option<&TraefikHistogramState>,
+) -> (ProxyMonitorData, Option<TraefikHistogramState>) {
     let proxy_type = match process.proxy_type {
         Some(t) => t,
-        None => return ProxyMonitorData::new(process.pid, HttpProxyType::Nginx),
+        None => return (ProxyMonitorData::new(process.pid, HttpProxyType::Nginx), None),
     };
 
     let mut data = ProxyMonitorData::new(process.pid, proxy_type);
     data.status = ProxyConnectionStatus::Connecting;
     let port = extract_proxy_port(&process.cmd, proxy_type);
-    data.status = poll_proxy_at_port(proxy_type, port, &mut data.metrics).await;
-    data
+    let (status, hist) = poll_proxy_at_port(proxy_type, port, &mut data.metrics, prev_hist).await;
+    data.status = status;
+    (data, hist)
 }
 
-pub async fn poll_proxy_container(container: ContainerData) -> ProxyMonitorData {
+pub async fn poll_proxy_container(
+    container: ContainerData,
+    prev_hist: Option<&TraefikHistogramState>,
+) -> (ProxyMonitorData, Option<TraefikHistogramState>) {
     let proxy_type = match container.proxy_type {
         Some(t) => t,
-        None => return ProxyMonitorData::new_container(container.id, HttpProxyType::Nginx),
+        None => {
+            return (
+                ProxyMonitorData::new_container(container.id, HttpProxyType::Nginx),
+                None,
+            )
+        }
     };
 
     let mut data = ProxyMonitorData::new_container(container.id.clone(), proxy_type);
     data.status = ProxyConnectionStatus::Connecting;
     let port = extract_proxy_container_port(&container.ports, proxy_type);
-    data.status = poll_proxy_at_port(proxy_type, port, &mut data.metrics).await;
-    data
+    let (status, hist) = poll_proxy_at_port(proxy_type, port, &mut data.metrics, prev_hist).await;
+    data.status = status;
+    (data, hist)
 }
 
 #[cfg(test)]
@@ -441,7 +506,7 @@ traefik_entrypoint_requests_total{code="404",entrypoint="web",method="GET",proto
 traefik_entrypoint_open_connections{entrypoint="web",protocol="http"} 3.0
 "#;
         let mut m = ProxyMetrics::default();
-        parse_traefik_metrics(body, &mut m);
+        parse_traefik_metrics(body, &mut m, None);
         assert_eq!(m.status_2xx, 42);
         assert_eq!(m.status_4xx, 5);
         assert_eq!(m.requests_total, 47);

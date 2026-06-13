@@ -788,13 +788,19 @@ impl AppState {
                                     let mut prev_3xx: u64 = 0;
                                     let mut prev_4xx: u64 = 0;
                                     let mut prev_5xx: u64 = 0;
+                                    let mut prev_hist_state: Option<crate::collectors::proxy::TraefikHistogramState> = None;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
-                                        let mut data = crate::collectors::proxy::poll_proxy(
-                                            proc_clone.clone(),
-                                        )
-                                        .await;
+                                        let (mut data, new_hist) =
+                                            crate::collectors::proxy::poll_proxy(
+                                                proc_clone.clone(),
+                                                prev_hist_state.as_ref(),
+                                            )
+                                            .await;
+                                        if let Some(h) = new_hist {
+                                            prev_hist_state = Some(h);
+                                        }
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
@@ -887,14 +893,19 @@ impl AppState {
                                     let mut prev_3xx: u64 = 0;
                                     let mut prev_4xx: u64 = 0;
                                     let mut prev_5xx: u64 = 0;
+                                    let mut prev_hist_state: Option<crate::collectors::proxy::TraefikHistogramState> = None;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
-                                        let mut data =
+                                        let (mut data, new_hist) =
                                             crate::collectors::proxy::poll_proxy_container(
                                                 container_clone.clone(),
+                                                prev_hist_state.as_ref(),
                                             )
                                             .await;
+                                        if let Some(h) = new_hist {
+                                            prev_hist_state = Some(h);
+                                        }
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
