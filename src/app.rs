@@ -744,6 +744,12 @@ impl AppState {
                         let mut pd = proxy_data;
                         if let Some(ref prev) = self.proxy_monitor {
                             pd.rps_history = prev.rps_history.clone();
+                            pd.conn_history = prev.conn_history.clone();
+                            pd.s1xx_history = prev.s1xx_history.clone();
+                            pd.s2xx_history = prev.s2xx_history.clone();
+                            pd.s3xx_history = prev.s3xx_history.clone();
+                            pd.s4xx_history = prev.s4xx_history.clone();
+                            pd.s5xx_history = prev.s5xx_history.clone();
                             pd.p50_history = prev.p50_history.clone();
                             pd.p95_history = prev.p95_history.clone();
                             pd.p99_history = prev.p99_history.clone();
