@@ -606,6 +606,7 @@ mod tests {
             compose_project: None,
             database_type: Some(DatabaseType::MySqlMariaDb),
             proxy_type: None,
+            node_runtime_type: None,
         };
 
         // Let's test the env vars extraction directly
@@ -670,6 +671,7 @@ mod tests {
             compose_project: None,
             database_type: Some(DatabaseType::MySqlMariaDb),
             proxy_type: None,
+            node_runtime_type: None,
         };
 
         let res = poll_database_container(container).await;
@@ -722,6 +724,7 @@ mod tests {
             compose_project: None,
             database_type: Some(DatabaseType::PostgreSQL),
             proxy_type: None,
+            node_runtime_type: None,
         };
 
         let res = poll_database_container(container).await;

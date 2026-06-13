@@ -95,7 +95,11 @@ impl ProxyMonitorData {
             + self.metrics.status_4xx
             + self.metrics.status_5xx;
         let pct = |n: u64| -> u64 {
-            if total_delta > 0 { n * 100 / total_delta } else { 0 }
+            if total_delta > 0 {
+                n * 100 / total_delta
+            } else {
+                0
+            }
         };
         push(&mut self.s1xx_history, pct(self.metrics.status_1xx));
         push(&mut self.s2xx_history, pct(self.metrics.status_2xx));
