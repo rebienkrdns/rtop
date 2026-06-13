@@ -369,7 +369,9 @@ fn parse_traefik_metrics(
 }
 
 fn percentile_from_buckets(buckets: &[(f64, u64)], total: u64, pct: f64) -> f64 {
-    let target = (total as f64 * pct) as u64;
+    // Use ceil so target is never 0 (floor would give 0 for total=1 and pct<1.0,
+    // causing every percentile to return 0ms when there is only one request/interval).
+    let target = ((total as f64 * pct).ceil() as u64).max(1);
     let mut prev_bound = 0.0_f64;
     let mut prev_count = 0_u64;
     for &(bound, count) in buckets {

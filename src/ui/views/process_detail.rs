@@ -1173,7 +1173,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     f,
                     chunks[6],
                     &monitor_data.p50_history,
-                    format!(" p50  {:.0}ms ", m.p50_ms),
+                    format!(" p50  {} ", fmt_latency(m.p50_ms)),
                     theme.ok,
                     proxy_limit,
                 );
@@ -1181,7 +1181,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     f,
                     chunks[7],
                     &monitor_data.p95_history,
-                    format!(" p95  {:.0}ms ", m.p95_ms),
+                    format!(" p95  {} ", fmt_latency(m.p95_ms)),
                     theme.warn,
                     proxy_limit,
                 );
@@ -1189,7 +1189,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     f,
                     chunks[8],
                     &monitor_data.p99_history,
-                    format!(" p99  {:.0}ms ", m.p99_ms),
+                    format!(" p99  {} ", fmt_latency(m.p99_ms)),
                     p99_color,
                     proxy_limit,
                 );
@@ -1240,6 +1240,20 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                 render_proxy_sre_text(f, chunks[5], m, monitor_data.proxy_type, theme);
             }
         }
+    }
+}
+
+/// Format a latency in ms with appropriate precision:
+/// - sub-ms values shown in µs (e.g. "800µs")
+/// - < 10ms shown with one decimal (e.g. "4.8ms")
+/// - otherwise integer ms (e.g. "25ms")
+fn fmt_latency(ms: f64) -> String {
+    if ms < 1.0 {
+        format!("{:.0}µs", ms * 1000.0)
+    } else if ms < 10.0 {
+        format!("{:.1}ms", ms)
+    } else {
+        format!("{:.0}ms", ms)
     }
 }
 
