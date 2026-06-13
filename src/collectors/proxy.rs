@@ -1,5 +1,5 @@
 use crate::models::{ContainerData, HttpProxyType, ProcessData};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -13,6 +13,16 @@ pub struct TraefikHistogramState {
     /// (bound_ms, cumulative_count) sorted by bound ascending
     pub buckets: Vec<(f64, u64)>,
     pub total: u64,
+    /// Per-router cumulative histogram state: router_name → (sorted buckets, +Inf count)
+    pub router_states: HashMap<String, (Vec<(f64, u64)>, u64)>,
+}
+
+/// Current p50/p95/p99 latency for a single Traefik router (computed from delta histogram).
+#[derive(Clone, Debug, Default)]
+pub struct RouterLatencySnapshot {
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -61,6 +71,8 @@ pub struct ProxyMonitorData {
     pub p50_history: VecDeque<u64>,
     pub p95_history: VecDeque<u64>,
     pub p99_history: VecDeque<u64>,
+    /// Latest p50/p95/p99 per Traefik router (populated only for Traefik proxy type).
+    pub router_percentiles: HashMap<String, RouterLatencySnapshot>,
 }
 
 impl ProxyMonitorData {
@@ -81,6 +93,7 @@ impl ProxyMonitorData {
             p50_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
             p95_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
             p99_history: VecDeque::with_capacity(PROXY_HISTORY_LEN),
+            router_percentiles: HashMap::new(),
         }
     }
 
@@ -274,7 +287,7 @@ fn parse_traefik_metrics(
     body: &str,
     metrics: &mut ProxyMetrics,
     prev_hist: Option<&TraefikHistogramState>,
-) -> TraefikHistogramState {
+) -> (TraefikHistogramState, HashMap<String, RouterLatencySnapshot>) {
     let mut total_1xx: u64 = 0;
     let mut total_2xx: u64 = 0;
     let mut total_3xx: u64 = 0;
@@ -285,6 +298,10 @@ fn parse_traefik_metrics(
     // histogram buckets: (le_bound_ms, cumulative_count)
     let mut hist_buckets: Vec<(f64, u64)> = Vec::new();
     let mut hist_count: u64 = 0;
+
+    // per-router histogram: router → (le_str → aggregated_count)
+    let mut router_bucket_map: HashMap<String, HashMap<String, u64>> = HashMap::new();
+    let mut router_total_map: HashMap<String, u64> = HashMap::new();
 
     for line in body.lines() {
         if line.starts_with('#') {
@@ -310,6 +327,23 @@ fn parse_traefik_metrics(
                 } else if let Ok(bound) = le.parse::<f64>() {
                     let count = parse_prometheus_value(line);
                     hist_buckets.push((bound * 1000.0, count)); // convert to ms
+                }
+            }
+        } else if line.contains("traefik_router_request_duration_seconds_bucket") {
+            // Aggregate per-router histogram across all code/method label combinations.
+            if let (Some(router), Some(le)) =
+                (extract_label(line, "router"), extract_label(line, "le"))
+            {
+                let count = parse_prometheus_value(line);
+                if le == "+Inf" {
+                    *router_total_map.entry(router).or_insert(0) += count;
+                } else {
+                    router_bucket_map
+                        .entry(router)
+                        .or_default()
+                        .entry(le)
+                        .and_modify(|c| *c += count)
+                        .or_insert(count);
                 }
             }
         }
@@ -379,10 +413,67 @@ fn parse_traefik_metrics(
     metrics.requests_total = total;
     metrics.active_connections = open_conns;
 
-    TraefikHistogramState {
-        buckets: hist_buckets,
-        total: hist_count,
+    // Build per-router sorted bucket lists and compute percentiles.
+    let mut new_router_states: HashMap<String, (Vec<(f64, u64)>, u64)> = HashMap::new();
+    let mut router_percentiles: HashMap<String, RouterLatencySnapshot> = HashMap::new();
+
+    for (router, le_map) in router_bucket_map {
+        let total_r = router_total_map.get(&router).copied().unwrap_or(0);
+        if total_r == 0 {
+            continue;
+        }
+
+        let mut buckets: Vec<(f64, u64)> = le_map
+            .iter()
+            .filter_map(|(le_str, &count)| {
+                le_str.parse::<f64>().ok().map(|b| (b * 1000.0, count))
+            })
+            .collect();
+        buckets.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let (eff_buckets, eff_total) = if let Some(prev_state) = prev_hist
+            .and_then(|h| h.router_states.get(&router))
+        {
+            let delta_total = total_r.saturating_sub(prev_state.1);
+            let delta_buckets: Vec<(f64, u64)> = buckets
+                .iter()
+                .map(|&(bound, count)| {
+                    let prev_count = prev_state
+                        .0
+                        .iter()
+                        .find(|&&(b, _)| (b - bound).abs() < 0.0001)
+                        .map(|&(_, c)| c)
+                        .unwrap_or(0);
+                    (bound, count.saturating_sub(prev_count))
+                })
+                .collect();
+            (delta_buckets, delta_total)
+        } else {
+            (buckets.clone(), total_r)
+        };
+
+        new_router_states.insert(router.clone(), (buckets, total_r));
+
+        if eff_total > 0 {
+            router_percentiles.insert(
+                router,
+                RouterLatencySnapshot {
+                    p50_ms: percentile_from_buckets(&eff_buckets, eff_total, 0.50),
+                    p95_ms: percentile_from_buckets(&eff_buckets, eff_total, 0.95),
+                    p99_ms: percentile_from_buckets(&eff_buckets, eff_total, 0.99),
+                },
+            );
+        }
     }
+
+    (
+        TraefikHistogramState {
+            buckets: hist_buckets,
+            total: hist_count,
+            router_states: new_router_states,
+        },
+        router_percentiles,
+    )
 }
 
 fn percentile_from_buckets(buckets: &[(f64, u64)], total: u64, pct: f64) -> f64 {
@@ -425,14 +516,18 @@ pub async fn poll_proxy_at_port(
     port: u16,
     metrics: &mut ProxyMetrics,
     prev_hist: Option<&TraefikHistogramState>,
-) -> (ProxyConnectionStatus, Option<TraefikHistogramState>) {
+) -> (
+    ProxyConnectionStatus,
+    Option<TraefikHistogramState>,
+    HashMap<String, RouterLatencySnapshot>,
+) {
     match proxy_type {
         HttpProxyType::Traefik => match http_get("127.0.0.1", port, "/metrics").await {
             Ok(body) => {
-                let hist = parse_traefik_metrics(&body, metrics, prev_hist);
-                (ProxyConnectionStatus::Connected, Some(hist))
+                let (hist, router_pcts) = parse_traefik_metrics(&body, metrics, prev_hist);
+                (ProxyConnectionStatus::Connected, Some(hist), router_pcts)
             }
-            Err(e) => (ProxyConnectionStatus::Error(e), None),
+            Err(e) => (ProxyConnectionStatus::Error(e), None, HashMap::new()),
         },
         _ => {
             let (path, parse_fn): (&str, fn(&str, &mut ProxyMetrics)) = match proxy_type {
@@ -443,9 +538,9 @@ pub async fn poll_proxy_at_port(
             match http_get("127.0.0.1", port, path).await {
                 Ok(body) => {
                     parse_fn(&body, metrics);
-                    (ProxyConnectionStatus::Connected, None)
+                    (ProxyConnectionStatus::Connected, None, HashMap::new())
                 }
-                Err(e) => (ProxyConnectionStatus::Error(e), None),
+                Err(e) => (ProxyConnectionStatus::Error(e), None, HashMap::new()),
             }
         }
     }
@@ -463,8 +558,10 @@ pub async fn poll_proxy(
     let mut data = ProxyMonitorData::new(process.pid, proxy_type);
     data.status = ProxyConnectionStatus::Connecting;
     let port = extract_proxy_port(&process.cmd, proxy_type);
-    let (status, hist) = poll_proxy_at_port(proxy_type, port, &mut data.metrics, prev_hist).await;
+    let (status, hist, router_pcts) =
+        poll_proxy_at_port(proxy_type, port, &mut data.metrics, prev_hist).await;
     data.status = status;
+    data.router_percentiles = router_pcts;
     (data, hist)
 }
 
@@ -485,8 +582,10 @@ pub async fn poll_proxy_container(
     let mut data = ProxyMonitorData::new_container(container.id.clone(), proxy_type);
     data.status = ProxyConnectionStatus::Connecting;
     let port = extract_proxy_container_port(&container.ports, proxy_type);
-    let (status, hist) = poll_proxy_at_port(proxy_type, port, &mut data.metrics, prev_hist).await;
+    let (status, hist, router_pcts) =
+        poll_proxy_at_port(proxy_type, port, &mut data.metrics, prev_hist).await;
     data.status = status;
+    data.router_percentiles = router_pcts;
     (data, hist)
 }
 

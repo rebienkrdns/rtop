@@ -993,6 +993,7 @@ fn render_db_chart_multi(
 }
 
 fn format_uptime(secs: u64) -> String {
+
     if secs < 60 {
         format!("{}s", secs)
     } else if secs < 3600 {
@@ -1078,6 +1079,8 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
         }
         ProxyConnectionStatus::Connected => {
             let m = &monitor_data.metrics;
+            let has_routers = monitor_data.proxy_type == crate::models::HttpProxyType::Traefik
+                && !monitor_data.router_percentiles.is_empty();
 
             if state.history_mode {
                 // ── Historical mode: ALL charts as Braille over time ──
@@ -1095,7 +1098,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                         Constraint::Length(5), // 6: p50 braille
                         Constraint::Length(5), // 7: p95 braille
                         Constraint::Length(5), // 8: p99 braille
-                        Constraint::Min(0),    // 9: SRE text
+                        Constraint::Min(0),    // 9: SRE text + optional router table
                     ])
                     .split(inner_rect);
 
@@ -1194,7 +1197,21 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     proxy_limit,
                 );
 
-                render_proxy_sre_text(f, chunks[9], m, monitor_data.proxy_type, theme);
+                if has_routers {
+                    let bottom = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([Constraint::Length(3), Constraint::Min(0)])
+                        .split(chunks[9]);
+                    render_proxy_sre_text(f, bottom[0], m, monitor_data.proxy_type, theme);
+                    render_router_latency_table(
+                        f,
+                        bottom[1],
+                        &monitor_data.router_percentiles,
+                        theme,
+                    );
+                } else {
+                    render_proxy_sre_text(f, chunks[9], m, monitor_data.proxy_type, theme);
+                }
             } else {
                 // ── Real-time mode: status bars + SRE text (connections as number in text) ──
                 let chunks = Layout::default()
@@ -1205,7 +1222,7 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                         Constraint::Length(4), // 2: 3xx
                         Constraint::Length(4), // 3: 4xx
                         Constraint::Length(4), // 4: 5xx
-                        Constraint::Min(0),    // 5: SRE text
+                        Constraint::Min(0),    // 5: SRE text + optional router table
                     ])
                     .split(inner_rect);
 
@@ -1237,7 +1254,21 @@ pub fn render_proxy_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &T
                     );
                 }
 
-                render_proxy_sre_text(f, chunks[5], m, monitor_data.proxy_type, theme);
+                if has_routers {
+                    let bottom = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([Constraint::Length(3), Constraint::Min(0)])
+                        .split(chunks[5]);
+                    render_proxy_sre_text(f, bottom[0], m, monitor_data.proxy_type, theme);
+                    render_router_latency_table(
+                        f,
+                        bottom[1],
+                        &monitor_data.router_percentiles,
+                        theme,
+                    );
+                } else {
+                    render_proxy_sre_text(f, chunks[5], m, monitor_data.proxy_type, theme);
+                }
             }
         }
     }
@@ -1425,4 +1456,118 @@ fn render_proxy_braille_chart_inner(
 
     f.render_widget(Clear, area);
     f.render_widget(canvas, area);
+}
+
+/// Renders a table of Traefik router p50/p95/p99 latencies sorted by p99 descending.
+fn render_router_latency_table(
+    f: &mut Frame,
+    area: Rect,
+    router_percentiles: &std::collections::HashMap<
+        String,
+        crate::collectors::proxy::RouterLatencySnapshot,
+    >,
+    theme: &Theme,
+) {
+    if area.height < 3 || area.width < 10 {
+        return;
+    }
+
+    let block = Block::default()
+        .title(Span::styled(
+            " Router Latency ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent_dim));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if inner.height < 2 {
+        return;
+    }
+
+    // Sort routers by p99 descending (worst offenders first).
+    let mut rows: Vec<(&String, &crate::collectors::proxy::RouterLatencySnapshot)> =
+        router_percentiles.iter().collect();
+    rows.sort_by(|a, b| {
+        b.1.p99_ms
+            .partial_cmp(&a.1.p99_ms)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let col_w = inner.width.saturating_sub(2) as usize;
+    let name_w = col_w.saturating_sub(24).max(8); // leave 24 chars for 3 metric columns
+
+    // Header row
+    let header = Line::from(vec![
+        Span::styled(
+            format!("  {:<name_w$}", "Router", name_w = name_w),
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{:>7}", "p50"),
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{:>7}", "p95"),
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{:>7}", "p99"),
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+
+    let max_rows = inner.height.saturating_sub(1) as usize;
+    let mut lines: Vec<Line> = vec![header];
+
+    let latency_color = |ms: f64, th: &Theme| -> Color {
+        if ms < 100.0 {
+            th.ok
+        } else if ms < 500.0 {
+            th.warn
+        } else {
+            th.crit
+        }
+    };
+
+    for (router_name, snap) in rows.iter().take(max_rows) {
+        let display_name = router_name.split('@').next().unwrap_or(router_name).to_string();
+        let truncated = if display_name.len() > name_w {
+            format!("{}…", &display_name[..name_w.saturating_sub(1)])
+        } else {
+            display_name
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {:<name_w$}", truncated, name_w = name_w),
+                Style::default().fg(theme.text),
+            ),
+            Span::styled(
+                format!("{:>7}", fmt_latency(snap.p50_ms)),
+                Style::default().fg(latency_color(snap.p50_ms, theme)),
+            ),
+            Span::styled(
+                format!("{:>7}", fmt_latency(snap.p95_ms)),
+                Style::default().fg(latency_color(snap.p95_ms, theme)),
+            ),
+            Span::styled(
+                format!("{:>7}", fmt_latency(snap.p99_ms)),
+                Style::default().fg(latency_color(snap.p99_ms, theme)),
+            ),
+        ]));
+    }
+
+    f.render_widget(Paragraph::new(lines), inner);
 }
