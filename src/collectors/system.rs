@@ -203,12 +203,31 @@ impl SystemCollector {
                 if !mounted_shorts.contains(&name) {
                     let total = DiskIoCollector::raw_block_size(&name);
                     let rate = rates.get(&name).cloned().unwrap_or_default();
+
+                    // Aggregate used/total from mounted child partitions (e.g. nvme0n1p1 → nvme0n1)
+                    let (used_bytes, usage_pct) = {
+                        let mut agg_used: u64 = 0;
+                        let mut agg_total: u64 = 0;
+                        for d in self.disks.list() {
+                            let short = device_short_name(&d.name().to_string_lossy());
+                            if short != name && short.starts_with(&name) {
+                                agg_total += d.total_space();
+                                agg_used += d.total_space().saturating_sub(d.available_space());
+                            }
+                        }
+                        if agg_total > 0 {
+                            (agg_used, (agg_used as f64 / agg_total as f64) * 100.0)
+                        } else {
+                            (0, 0.0)
+                        }
+                    };
+
                     result.push(DiskData {
                         device: format!("/dev/{}", name),
                         mount_point: String::new(),
                         total_bytes: total,
-                        used_bytes: 0,
-                        usage_pct: 0.0,
+                        used_bytes,
+                        usage_pct,
                         read_bytes_per_sec: Some(rate.read_bytes_per_sec),
                         write_bytes_per_sec: Some(rate.write_bytes_per_sec),
                         read_latency_ms: rate.read_latency_ms,

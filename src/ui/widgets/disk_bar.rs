@@ -54,10 +54,21 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
         .split(chunks[0]);
 
     let disk_label = translate("Disk", lang);
-    let name_str = if disk.mount_point.is_empty() {
-        format!("{}  {}", disk_label, disk.device)
+    let size_info = if disk.total_bytes > 0 {
+        let free = disk.total_bytes.saturating_sub(disk.used_bytes);
+        format!(
+            "  [{} / {}  free {}]",
+            ByteSize(disk.used_bytes),
+            ByteSize(disk.total_bytes),
+            ByteSize(free),
+        )
     } else {
-        format!("{}  {} ({})", disk_label, disk.device, disk.mount_point)
+        String::new()
+    };
+    let name_str = if disk.mount_point.is_empty() {
+        format!("{}  {}{}", disk_label, disk.device, size_info)
+    } else {
+        format!("{}  {} ({}){}", disk_label, disk.device, disk.mount_point, size_info)
     };
     f.render_widget(
         Paragraph::new(name_str).style(Style::default().fg(theme.accent)),
