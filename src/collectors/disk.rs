@@ -13,12 +13,31 @@ struct DiskIoSnapshot {
     timestamp: Instant,
     sectors_read: u64,
     sectors_written: u64,
+    reads_completed: u64,
+    ms_reading: u64,
+    writes_completed: u64,
+    ms_writing: u64,
+    ms_io: u64,
 }
 
 #[derive(Default, Clone)]
 pub struct DiskIoRate {
     pub read_bytes_per_sec: f64,
     pub write_bytes_per_sec: f64,
+    pub read_latency_ms: Option<f64>,
+    pub write_latency_ms: Option<f64>,
+    pub io_util_pct: Option<f64>,
+}
+
+#[cfg(target_os = "linux")]
+struct DiskRawStats {
+    sectors_read: u64,
+    sectors_written: u64,
+    reads_completed: u64,
+    ms_reading: u64,
+    writes_completed: u64,
+    ms_writing: u64,
+    ms_io: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -69,7 +88,7 @@ impl DiskIoCollector {
     }
 
     #[cfg(target_os = "linux")]
-    fn read_diskstats_raw() -> HashMap<String, (u64, u64)> {
+    fn read_diskstats_raw() -> HashMap<String, DiskRawStats> {
         let content = match std::fs::read_to_string("/proc/diskstats") {
             Ok(c) => c,
             Err(_) => return HashMap::new(),
@@ -77,57 +96,74 @@ impl DiskIoCollector {
         let mut map = HashMap::new();
         for line in content.lines() {
             let f: Vec<&str> = line.split_whitespace().collect();
-            if f.len() < 10 {
+            if f.len() < 13 {
                 continue;
             }
-            let sr: u64 = f[5].parse().unwrap_or(0);
-            let sw: u64 = f[9].parse().unwrap_or(0);
-            map.insert(f[2].to_string(), (sr, sw));
+            map.insert(f[2].to_string(), DiskRawStats {
+                reads_completed:  f[3].parse().unwrap_or(0),
+                sectors_read:     f[5].parse().unwrap_or(0),
+                ms_reading:       f[6].parse().unwrap_or(0),
+                writes_completed: f[7].parse().unwrap_or(0),
+                sectors_written:  f[9].parse().unwrap_or(0),
+                ms_writing:       f[10].parse().unwrap_or(0),
+                ms_io:            f[12].parse().unwrap_or(0),
+            });
         }
         map
     }
 
-    #[cfg(not(target_os = "linux"))]
-    fn read_diskstats_raw() -> HashMap<String, (u64, u64)> {
-        HashMap::new()
-    }
-
     #[allow(dead_code)]
     pub fn io_rates_batch(&mut self, device_shorts: &[String]) -> HashMap<String, DiskIoRate> {
-        let stats = Self::read_diskstats_raw();
-        let now = Instant::now();
-        let mut result = HashMap::new();
-
-        for name in device_shorts {
-            if let Some(&(sr, sw)) = stats.get(name.as_str()) {
-                let rate = if let Some(prev) = self.prev.get(name) {
-                    let elapsed = now.duration_since(prev.timestamp).as_secs_f64();
-                    if elapsed > 0.0 {
-                        let dr = sr.saturating_sub(prev.sectors_read);
-                        let dw = sw.saturating_sub(prev.sectors_written);
-                        DiskIoRate {
-                            read_bytes_per_sec: (dr * SECTOR_SIZE) as f64 / elapsed,
-                            write_bytes_per_sec: (dw * SECTOR_SIZE) as f64 / elapsed,
+        #[cfg(target_os = "linux")]
+        {
+            let now = Instant::now();
+            let stats = Self::read_diskstats_raw();
+            let mut result = HashMap::new();
+            for name in device_shorts {
+                if let Some(s) = stats.get(name.as_str()) {
+                    let rate = if let Some(prev) = self.prev.get(name) {
+                        let elapsed = now.duration_since(prev.timestamp).as_secs_f64();
+                        if elapsed > 0.0 {
+                            let dr = s.sectors_read.saturating_sub(prev.sectors_read);
+                            let dw = s.sectors_written.saturating_sub(prev.sectors_written);
+                            let d_reads = s.reads_completed.saturating_sub(prev.reads_completed);
+                            let d_writes = s.writes_completed.saturating_sub(prev.writes_completed);
+                            let d_ms_r = s.ms_reading.saturating_sub(prev.ms_reading);
+                            let d_ms_w = s.ms_writing.saturating_sub(prev.ms_writing);
+                            let d_ms_io = s.ms_io.saturating_sub(prev.ms_io);
+                            DiskIoRate {
+                                read_bytes_per_sec:  (dr * SECTOR_SIZE) as f64 / elapsed,
+                                write_bytes_per_sec: (dw * SECTOR_SIZE) as f64 / elapsed,
+                                read_latency_ms:  if d_reads > 0 { Some(d_ms_r as f64 / d_reads as f64) } else { None },
+                                write_latency_ms: if d_writes > 0 { Some(d_ms_w as f64 / d_writes as f64) } else { None },
+                                io_util_pct: Some((d_ms_io as f64 / (elapsed * 1000.0) * 100.0).clamp(0.0, 100.0)),
+                            }
+                        } else {
+                            DiskIoRate::default()
                         }
                     } else {
                         DiskIoRate::default()
-                    }
-                } else {
-                    DiskIoRate::default()
-                };
-                self.prev.insert(
-                    name.clone(),
-                    DiskIoSnapshot {
+                    };
+                    self.prev.insert(name.clone(), DiskIoSnapshot {
                         timestamp: now,
-                        sectors_read: sr,
-                        sectors_written: sw,
-                    },
-                );
-                result.insert(name.clone(), rate);
+                        sectors_read:     s.sectors_read,
+                        sectors_written:  s.sectors_written,
+                        reads_completed:  s.reads_completed,
+                        ms_reading:       s.ms_reading,
+                        writes_completed: s.writes_completed,
+                        ms_writing:       s.ms_writing,
+                        ms_io:            s.ms_io,
+                    });
+                    result.insert(name.clone(), rate);
+                }
             }
+            return result;
         }
-
-        result
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = device_shorts;
+            HashMap::new()
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -255,6 +291,11 @@ impl DiskIoCollector {
                             timestamp: now,
                             sectors_read: read_bytes,
                             sectors_written: write_bytes,
+                            reads_completed: 0,
+                            ms_reading: 0,
+                            writes_completed: 0,
+                            ms_writing: 0,
+                            ms_io: 0,
                         },
                     );
                     result.insert(pid, rate);
@@ -309,6 +350,11 @@ impl DiskIoCollector {
                         timestamp: now,
                         sectors_read: read_bytes,
                         sectors_written: write_bytes,
+                        reads_completed: 0,
+                        ms_reading: 0,
+                        writes_completed: 0,
+                        ms_writing: 0,
+                        ms_io: 0,
                     },
                 );
                 result.insert(pid, rate);

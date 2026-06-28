@@ -1,5 +1,6 @@
 pub mod broker;
 pub mod containers;
+pub mod cpu_times;
 pub mod database;
 pub mod disk;
 pub mod gpu;

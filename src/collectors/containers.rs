@@ -240,6 +240,14 @@ impl ContainerCollector {
 
             let node_runtime_type = detect_node_runtime(&inspect_opt, &name_lower, &image_lower);
 
+            let message_broker_type = if name_lower.contains("redpanda") || image_lower.contains("redpanda") {
+                Some(crate::models::MessageBrokerType::Redpanda)
+            } else if name_lower.contains("kafka") || image_lower.contains("kafka") {
+                Some(crate::models::MessageBrokerType::Kafka)
+            } else {
+                None
+            };
+
             result.push(ContainerData {
                 id: full_id.chars().take(12).collect(),
                 name,
@@ -270,6 +278,7 @@ impl ContainerCollector {
                 database_type,
                 proxy_type,
                 node_runtime_type,
+                message_broker_type,
             });
         }
 

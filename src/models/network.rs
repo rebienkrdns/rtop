@@ -8,6 +8,10 @@ pub struct NetworkData {
     pub sent_bytes_per_sec: f64,
     pub total_recv_bytes: u64,
     pub total_sent_bytes: u64,
+    pub rx_errors: u64,
+    pub tx_errors: u64,
+    pub rx_drops: u64,
+    pub tx_drops: u64,
 }
 
 #[derive(Debug, Clone)]

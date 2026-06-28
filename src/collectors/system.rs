@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use sysinfo::{Disks, System};
 
+use crate::collectors::cpu_times::CpuTimesCollector;
 use crate::collectors::disk::{device_short_name, DiskIoCollector};
 use crate::collectors::gpu::GpuCollector;
 use crate::collectors::network::NetworkCollector;
@@ -9,8 +10,8 @@ use crate::collectors::process_net::ProcessNetCollector;
 use crate::collectors::psi::PsiCollector;
 use crate::collectors::tcp_stats::TcpStatsCollector;
 use crate::models::{
-    CpuData, DiskData, GpuData, MemoryData, NetworkData, NetworkInterface, ProcessData,
-    ProcessStatus, PsiData, TcpStats,
+    CoreType, CpuCoreData, CpuData, DiskData, GpuData, MemoryData, NetworkData,
+    NetworkInterface, ProcessData, ProcessStatus, PsiData, TcpStats,
 };
 
 pub struct SystemSnapshot {
@@ -25,6 +26,7 @@ pub struct SystemSnapshot {
     pub psi: Option<PsiData>,
     pub gpus: Vec<GpuData>,
     pub tcp_stats: Option<TcpStats>,
+    pub uptime_secs: u64,
 }
 
 pub struct SystemCollector {
@@ -36,6 +38,7 @@ pub struct SystemCollector {
     psi: PsiCollector,
     gpu: GpuCollector,
     tcp: TcpStatsCollector,
+    cpu_times: CpuTimesCollector,
 }
 
 impl Default for SystemCollector {
@@ -58,6 +61,7 @@ impl SystemCollector {
             psi: PsiCollector::new(),
             gpu: GpuCollector::new(),
             tcp: TcpStatsCollector::new(),
+            cpu_times: CpuTimesCollector::new(),
         }
     }
 
@@ -67,18 +71,47 @@ impl SystemCollector {
         self.network.refresh();
     }
 
-    pub fn cpu_data(&self) -> CpuData {
-        let per_core: Vec<f64> = self
-            .sys
-            .cpus()
+    pub fn cpu_data(&mut self) -> CpuData {
+        let cpus = self.sys.cpus();
+        let core_count = cpus.len();
+
+        let per_core: Vec<CpuCoreData> = cpus
             .iter()
-            .map(|c| c.cpu_usage() as f64)
+            .enumerate()
+            .map(|(i, c)| {
+                let usage = c.cpu_usage() as f64;
+                let freq = c.frequency();
+                let vendor = c.vendor_id().to_string();
+                let brand = c.brand().to_string();
+
+                let core_type = detect_core_type(i, core_count, &vendor, &brand);
+                let temp = read_core_temperature(i);
+
+                CpuCoreData {
+                    core_id: i,
+                    usage_pct: usage,
+                    frequency_mhz: freq,
+                    temperature_celsius: temp,
+                    core_type,
+                    vendor_id: vendor,
+                    brand,
+                }
+            })
             .collect();
-        let core_count = per_core.len();
+
+        let global_usage = self.sys.global_cpu_info().cpu_usage() as f64;
+        let times = self.cpu_times.collect();
+
         CpuData {
-            global_usage_pct: self.sys.global_cpu_info().cpu_usage() as f64,
+            global_usage_pct: global_usage,
             per_core,
             core_count,
+            user_pct: times.user_pct,
+            system_pct: times.system_pct,
+            iowait_pct: times.iowait_pct,
+            steal_pct: times.steal_pct,
+            ctx_switches_per_sec: times.ctx_switches_per_sec,
+            interrupts_per_sec: times.interrupts_per_sec,
         }
     }
 
@@ -148,6 +181,9 @@ impl SystemCollector {
                     usage_pct,
                     read_bytes_per_sec: Some(rate.read_bytes_per_sec),
                     write_bytes_per_sec: Some(rate.write_bytes_per_sec),
+                    read_latency_ms: rate.read_latency_ms,
+                    write_latency_ms: rate.write_latency_ms,
+                    io_util_pct: rate.io_util_pct,
                 }
             })
             .collect();
@@ -175,6 +211,9 @@ impl SystemCollector {
                         usage_pct: 0.0,
                         read_bytes_per_sec: Some(rate.read_bytes_per_sec),
                         write_bytes_per_sec: Some(rate.write_bytes_per_sec),
+                        read_latency_ms: rate.read_latency_ms,
+                        write_latency_ms: rate.write_latency_ms,
+                        io_util_pct: rate.io_util_pct,
                     });
                 }
             }
@@ -333,6 +372,7 @@ impl SystemCollector {
         let psi = self.psi.collect();
         let gpus = self.gpu.collect();
         let tcp_stats = self.tcp.collect();
+        let uptime_secs = System::uptime();
 
         SystemSnapshot {
             cpu,
@@ -346,6 +386,104 @@ impl SystemCollector {
             psi,
             gpus,
             tcp_stats,
+            uptime_secs,
         }
     }
+}
+
+fn detect_core_type(core_id: usize, total_cores: usize, vendor: &str, brand: &str) -> CoreType {
+    let vendor_lower = vendor.to_lowercase();
+    let brand_lower = brand.to_lowercase();
+
+    // Apple Silicon detection
+    if vendor_lower.contains("apple") || brand_lower.contains("apple") {
+        // On Apple Silicon, first cores are typically P-cores, last are E-cores
+        // M1/M2/M3: 4P+4E (8 cores), M1 Pro/Max: 6P+2E or 8P+2E, M1 Ultra: 16P+4E
+        // Heuristic: if we have 8+ cores, assume first half are P, second half E
+        if total_cores >= 8 {
+            let p_core_count = match total_cores {
+                8 => 4,  // M1/M2/M3 base
+                10 => 6, // M1 Pro/Max 10-core
+                12 => 8, // M1 Pro/Max 12-core
+                16 => 12, // M1 Max 16-core? Actually M1 Ultra has 16P+4E
+                _ => total_cores / 2,
+            };
+            if core_id < p_core_count {
+                return CoreType::Performance;
+            } else {
+                return CoreType::Efficiency;
+            }
+        }
+        return CoreType::Standard;
+    }
+
+    // Intel hybrid (Alder Lake, Raptor Lake) - 12th/13th/14th gen
+    if vendor_lower.contains("intel") || vendor_lower.contains("genuineintel") {
+        // Check for hybrid architecture in brand string
+        if brand_lower.contains("hybrid") || brand_lower.contains("12th") || brand_lower.contains("13th") || brand_lower.contains("14th") {
+            // On Linux, we'd need to read /proc/cpuinfo for core type
+            // For now, use a heuristic: if > 8 cores, likely hybrid
+            if total_cores > 8 {
+                // Typical: 8P + 8E = 16 threads, or 6P + 4E = 10 cores
+                // P-cores usually come first in numbering
+                let p_core_estimate = (total_cores as f64 * 0.6) as usize;
+                if core_id < p_core_estimate {
+                    return CoreType::Performance;
+                } else {
+                    return CoreType::Efficiency;
+                }
+            }
+        }
+        return CoreType::Standard;
+    }
+
+    // AMD - typically all standard cores (Zen architecture)
+    if vendor_lower.contains("amd") || vendor_lower.contains("authenticamd") {
+        return CoreType::Standard;
+    }
+
+    CoreType::Unknown
+}
+
+#[cfg(target_os = "linux")]
+fn read_core_temperature(core_id: usize) -> Option<f64> {
+    use std::fs;
+    // Try multiple thermal zone paths
+    let paths = [
+        format!("/sys/class/thermal/thermal_zone{}/temp", core_id),
+        format!("/sys/class/hwmon/hwmon{}/temp{}_input", core_id / 4 + 1, (core_id % 4) + 1),
+        format!("/sys/devices/platform/coretemp.{}/hwmon/hwmon*/temp{}_input", core_id, core_id + 1),
+    ];
+
+    for path in &paths {
+        if let Ok(content) = fs::read_to_string(path) {
+            if let Ok(temp_millicelsius) = content.trim().parse::<i64>() {
+                return Some(temp_millicelsius as f64 / 1000.0);
+            }
+        }
+    }
+
+    // Fallback: try to read from coretemp hwmon
+    if let Ok(entries) = fs::read_dir("/sys/class/hwmon") {
+        for entry in entries.flatten() {
+            let name_path = entry.path().join("name");
+            if let Ok(name) = fs::read_to_string(&name_path) {
+                if name.trim().contains("coretemp") || name.trim().contains("k10temp") || name.trim().contains("zenpower") {
+                    let temp_path = entry.path().join(format!("temp{}_input", core_id + 1));
+                    if let Ok(content) = fs::read_to_string(&temp_path) {
+                        if let Ok(temp_millicelsius) = content.trim().parse::<i64>() {
+                            return Some(temp_millicelsius as f64 / 1000.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_core_temperature(_core_id: usize) -> Option<f64> {
+    None
 }

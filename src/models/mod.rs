@@ -9,7 +9,7 @@ pub mod psi;
 pub mod swarm;
 
 pub use container::{ContainerData, ContainerSortColumn, ContainerStatus};
-pub use cpu::CpuData;
+pub use cpu::{CoreType, CpuCoreData, CpuData};
 pub use disk::DiskData;
 pub use memory::MemoryData;
 pub use network::{NetworkData, NetworkInterface, TcpStats};

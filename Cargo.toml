@@ -1,6 +1,6 @@
 [package]
 name = "rtopm"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2021"
 default-run = "rtop"
 description = "A modern TUI system resource monitor with Docker and disk I/O tracking"

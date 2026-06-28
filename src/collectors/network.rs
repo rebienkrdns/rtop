@@ -68,11 +68,14 @@ impl NetworkCollector {
 
     pub fn all_data(&self) -> HashMap<String, NetworkData> {
         let elapsed = self.last_elapsed;
+        let error_stats = read_all_netdev_errors();
         self.networks
             .iter()
             .map(|(name, data)| {
                 let recv_bps = data.received() as f64 / elapsed;
                 let sent_bps = data.transmitted() as f64 / elapsed;
+                let (rx_errors, tx_errors, rx_drops, tx_drops) =
+                    error_stats.get(name.as_str()).copied().unwrap_or((0, 0, 0, 0));
                 (
                     name.clone(),
                     NetworkData {
@@ -81,6 +84,10 @@ impl NetworkCollector {
                         sent_bytes_per_sec: sent_bps,
                         total_recv_bytes: data.total_received(),
                         total_sent_bytes: data.total_transmitted(),
+                        rx_errors,
+                        tx_errors,
+                        rx_drops,
+                        tx_drops,
                     },
                 )
             })
@@ -90,6 +97,37 @@ impl NetworkCollector {
 
 fn is_docker(name: &str) -> bool {
     name.starts_with("docker") || name.starts_with("br-") || name.starts_with("veth")
+}
+
+/// Reads rx/tx errors and drops from /proc/net/dev (Linux only).
+/// Returns (rx_errors, tx_errors, rx_drops, tx_drops) per interface.
+fn read_all_netdev_errors() -> std::collections::HashMap<String, (u64, u64, u64, u64)> {
+    #[cfg(target_os = "linux")]
+    {
+        let content = match std::fs::read_to_string("/proc/net/dev") {
+            Ok(c) => c,
+            Err(_) => return std::collections::HashMap::new(),
+        };
+        let mut map = std::collections::HashMap::new();
+        for line in content.lines().skip(2) {
+            let (iface, rest) = match line.trim().split_once(':') {
+                Some(p) => p,
+                None => continue,
+            };
+            let fields: Vec<u64> = rest
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
+            // /proc/net/dev columns after iface: rx_bytes rx_packets rx_errs rx_drop rx_fifo
+            //   rx_frame rx_compressed rx_multicast tx_bytes tx_packets tx_errs tx_drop ...
+            if fields.len() >= 12 {
+                map.insert(iface.trim().to_string(), (fields[2], fields[10], fields[3], fields[11]));
+            }
+        }
+        return map;
+    }
+    #[cfg(not(target_os = "linux"))]
+    std::collections::HashMap::new()
 }
 
 /// Reads the link speed (in Mbps) from `/sys/class/net/<iface>/speed` and converts to bytes/s.

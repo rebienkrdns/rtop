@@ -60,6 +60,7 @@ pub struct AppSnapshot {
     pub psi: Option<PsiData>,
     pub gpus: Vec<GpuData>,
     pub tcp_stats: Option<TcpStats>,
+    pub uptime_secs: u64,
 }
 
 pub struct AppState {
@@ -70,6 +71,7 @@ pub struct AppState {
     pub interval_idx: usize,
     pub cfg: Config,
     pub active_tab: Tab,
+    pub show_cpu_cores: bool,
 
     // Disk selection
     pub selected_disk: Option<String>,
@@ -121,6 +123,12 @@ pub struct AppState {
 
     pub tcp_stats: Option<TcpStats>,
     pub tcp_retrans_history: std::collections::VecDeque<f64>,
+
+    pub uptime_secs: u64,
+
+    // Pico de ancho de banda de red (máximo histórico de la sesión, estilo btop)
+    pub network_peak_recv_bps: f64,
+    pub network_peak_sent_bps: f64,
 
     // Historial de uso de red (% respecto a capacidad máxima del enlace)
     pub network_usage_pct_history: std::collections::VecDeque<f64>,
@@ -204,6 +212,7 @@ impl AppState {
             disks: vec![],
             interval_idx: initial_idx,
             active_tab: cfg.default_tab.clone(),
+            show_cpu_cores: true,
             cfg,
             selected_disk,
             selector_entries: vec![],
@@ -245,6 +254,9 @@ impl AppState {
             gpus: vec![],
             tcp_stats: None,
             tcp_retrans_history: std::collections::VecDeque::new(),
+            uptime_secs: 0,
+            network_peak_recv_bps: 0.0,
+            network_peak_sent_bps: 0.0,
             network_usage_pct_history: std::collections::VecDeque::new(),
             network_max_bw_by_nic: HashMap::new(),
             psi_history_cpu: std::collections::VecDeque::new(),
@@ -342,15 +354,9 @@ impl AppState {
                 .fold((0.0_f64, 0.0_f64), |(r, s), nd| {
                     (r + nd.recv_bytes_per_sec, s + nd.sent_bytes_per_sec)
                 });
-            let (disk_read, disk_write) = snapshot
-                .disks
-                .first()
-                .map(|d| {
-                    (
-                        d.read_bytes_per_sec.unwrap_or(0.0),
-                        d.write_bytes_per_sec.unwrap_or(0.0),
-                    )
-                })
+            let best = best_disk_for_history(&snapshot.disks, self.selected_disk.as_deref());
+            let (disk_read, disk_write) = best
+                .map(|d| (d.read_bytes_per_sec.unwrap_or(0.0), d.write_bytes_per_sec.unwrap_or(0.0)))
                 .unwrap_or((0.0, 0.0));
             let mem_pct = if self.memory.total_bytes > 0 {
                 self.memory.used_bytes as f64 / self.memory.total_bytes as f64 * 100.0
@@ -403,6 +409,14 @@ impl AppState {
             } else {
                 self.container_history.clear();
             }
+            // Actualizar pico de red antes de mover network_by_nic
+            {
+                let recv_total: f64 = snapshot.network_by_nic.values().map(|n| n.recv_bytes_per_sec).sum();
+                let sent_total: f64 = snapshot.network_by_nic.values().map(|n| n.sent_bytes_per_sec).sum();
+                if recv_total > self.network_peak_recv_bps { self.network_peak_recv_bps = recv_total; }
+                if sent_total > self.network_peak_sent_bps { self.network_peak_sent_bps = sent_total; }
+            }
+
             self.selector_entries = DiskIoCollector::build_selector_entries(&snapshot.disks);
             self.disks = snapshot.disks;
             self.network_by_nic = snapshot.network_by_nic;
@@ -461,6 +475,7 @@ impl AppState {
                 }
                 self.network_usage_pct_history.push_back(pct);
             }
+            self.uptime_secs = snapshot.uptime_secs;
             self.proc_permission_denied = snapshot.proc_permission_denied;
             self.processes = snapshot.processes;
             self.containers = snapshot.containers;
@@ -1413,6 +1428,10 @@ impl AppState {
             sent_bytes_per_sec: 0.0,
             total_recv_bytes: 0,
             total_sent_bytes: 0,
+            rx_errors: 0,
+            tx_errors: 0,
+            rx_drops: 0,
+            tx_drops: 0,
         };
         let mut count = 0u32;
         for (name, data) in &self.network_by_nic {
@@ -1423,6 +1442,10 @@ impl AppState {
             total.sent_bytes_per_sec += data.sent_bytes_per_sec;
             total.total_recv_bytes += data.total_recv_bytes;
             total.total_sent_bytes += data.total_sent_bytes;
+            total.rx_errors += data.rx_errors;
+            total.tx_errors += data.tx_errors;
+            total.rx_drops += data.rx_drops;
+            total.tx_drops += data.tx_drops;
             count += 1;
         }
         if count == 0 {
@@ -1832,6 +1855,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         psi: system.psi,
                         gpus: system.gpus,
                         tcp_stats: system.tcp_stats,
+                        uptime_secs: system.uptime_secs,
                     };
                     if tx.send(snapshot).await.is_err() {
                         break;
@@ -2188,6 +2212,15 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         {
                             state.history_mode = !state.history_mode;
                         }
+                        // Toggle per-core CPU view
+                        (KeyCode::Char('K'), _)
+                            if state.current_view == View::Main
+                                && !state.show_nic_selector
+                                && !state.show_disk_selector
+                                && !state.process_table.filter_active =>
+                        {
+                            state.show_cpu_cores = !state.show_cpu_cores;
+                        }
                         // Ciclar rango de tiempo del historial
                         (KeyCode::Char('t'), _)
                             if (state.current_view == View::Main
@@ -2531,4 +2564,25 @@ pub fn build_container_visual_rows(
     }
 
     rows
+}
+
+/// Selecciona el disco más representativo para historial y display por defecto.
+/// Prioridad: (1) disco seleccionado por el usuario, (2) primer dispositivo de bloque
+/// real bajo /dev/ con espacio total > 0, (3) cualquier disco.
+fn best_disk_for_history<'a>(disks: &'a [DiskData], selected: Option<&str>) -> Option<&'a DiskData> {
+    // Disco elegido explícitamente por el usuario
+    if let Some(sel) = selected {
+        if let Some(d) = disks.iter().find(|d| {
+            crate::collectors::disk::device_short_name(&d.device) == sel
+        }) {
+            return Some(d);
+        }
+    }
+    // Preferir dispositivo de bloque real (no tmpfs, devtmpfs, overlay, loop)
+    disks.iter().find(|d| {
+        d.device.starts_with("/dev/")
+            && !d.device.contains("loop")
+            && d.total_bytes > 0
+    })
+    .or_else(|| disks.first())
 }

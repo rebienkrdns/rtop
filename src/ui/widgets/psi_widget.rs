@@ -56,13 +56,13 @@ fn render_psi_chart_single(
                 label,
                 Style::default().fg(color).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!(
-                    "  avg10:{:.2}%  60s:{:.2}%  300s:{:.2}%",
-                    avg10, avg60, avg300
-                ),
-                Style::default().fg(theme.muted),
-            ),
+            Span::styled("  ", Style::default()),
+            Span::styled("a10:", Style::default().fg(theme.muted)),
+            Span::styled(format!("{:.1}%", avg10), Style::default().fg(color)),
+            Span::styled("  60s:", Style::default().fg(theme.muted)),
+            Span::styled(format!("{:.1}%", avg60), Style::default().fg(color)),
+            Span::styled("  300s:", Style::default().fg(theme.muted)),
+            Span::styled(format!("{:.1}%", avg300), Style::default().fg(color)),
         ])),
         chunks[0],
     );
@@ -99,26 +99,17 @@ fn render_psi_chart_dual(
         .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(area);
 
-    // Header: etiqueta | some values (izq) | full values (der)
+    // Header compacto: "LABEL  S a10/60s/300s  F a10/60s/300s"
     let header = Line::from(vec![
+        Span::styled(label, Style::default().fg(color_some).add_modifier(Modifier::BOLD)),
+        Span::styled("  S ", Style::default().fg(color_some)),
         Span::styled(
-            label,
-            Style::default().fg(color_some).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("  some ", Style::default().fg(color_some)),
-        Span::styled(
-            format!(
-                "avg10:{:.2}% 60s:{:.2}% 300s:{:.2}%",
-                some_avg10, some_avg60, some_avg300
-            ),
+            format!("{:.1}/{:.1}/{:.1}", some_avg10, some_avg60, some_avg300),
             Style::default().fg(theme.muted),
         ),
-        Span::styled("   full ", Style::default().fg(COLOR_FULL)),
+        Span::styled("  F ", Style::default().fg(COLOR_FULL)),
         Span::styled(
-            format!(
-                "avg10:{:.2}% 60s:{:.2}% 300s:{:.2}%",
-                full_avg10, full_avg60, full_avg300
-            ),
+            format!("{:.1}/{:.1}/{:.1}", full_avg10, full_avg60, full_avg300),
             Style::default().fg(theme.muted),
         ),
     ]);
