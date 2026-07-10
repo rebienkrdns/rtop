@@ -55,7 +55,11 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
             };
 
             let cap_bps = if let Some(ref name) = state.selected_nic {
-                state.network_max_bw_by_nic.get(name).copied().unwrap_or(125_000_000.0)
+                state
+                    .network_max_bw_by_nic
+                    .get(name)
+                    .copied()
+                    .unwrap_or(125_000_000.0)
             } else {
                 let loopback_names: Vec<&str> = state
                     .available_nics
