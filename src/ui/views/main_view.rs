@@ -13,7 +13,7 @@ use crate::config::{interval_label, INTERVALS};
 use crate::ui::theme::Theme;
 use crate::ui::views::{disk_selector, nic_selector};
 use crate::ui::widgets::{
-    container_table, cpu_bar, cpu_cores, disk_bar, gpu_widget, history_chart, memory_bar, network_widget,
+    container_table, cpu_cores, disk_bar, gpu_widget, history_chart, memory_bar, network_widget,
     process_table, psi_widget,
 };
 
@@ -53,7 +53,17 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     let extra_cpu_rows: u16 = 2; // USR/SYS/IOW/STL + CTX/INT
     #[cfg(not(target_os = "linux"))]
     let extra_cpu_rows: u16 = 0;
-    let metrics_height = (1 + extra_cpu_rows + num_cores as u16 + 2).max(15); // mínimo 15
+    
+    // Height calculation:
+    // Ideal height is 2 (gauge) + extra + 2 lines per core pair + 2 borders
+    let ideal_core_rows = ((num_cores + 1) / 2) as u16;
+    let ideal_cpu_height = 2 + extra_cpu_rows + (ideal_core_rows * 2) + 2;
+
+    // Calculate maximum safe height without pushing bottom elements off-screen
+    let max_safe_height = area.height.saturating_sub(3 + 3 + 5 + 3 + gpu_section_height);
+    
+    // Assign ideal height, constrained by safe limits and a small minimum for neighboring metrics
+    let metrics_height = ideal_cpu_height.min(max_safe_height).max(11);
 
     // Layout vertical: header | métricas (3 grupos) | [GPU] | tab_bar | contenido_pestaña | footer
     let mut constraints = vec![
@@ -83,7 +93,12 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     // — Header —
     let now_dt = Local::now();
     let now_str = now_dt.format("%H:%M:%S").to_string();
-    let tz_str = now_dt.format("%Z").to_string(); // e.g. "UTC", "CST", "PDT"
+    let mut tz_str = now_dt.format("%Z").to_string(); // e.g. "UTC", "CST", "PDT"
+    if tz_str == "+00:00" || tz_str == "Z" {
+        tz_str = "UTC".to_string();
+    } else if tz_str.starts_with('+') || tz_str.starts_with('-') {
+        tz_str = format!("UTC{}", tz_str);
+    }
     let uptime_str = format_uptime(state.uptime_secs);
     let idx = state.interval_idx;
     let left_arrow = if idx > 0 { "◀ " } else { "  " };
@@ -142,10 +157,8 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     if state.history_mode {
         let samples = state.metrics_history.tail_n(state.history_range.samples());
         history_chart::render_cpu_ram(f, col1_inner, &samples, state.history_range, state.lang);
-    } else if state.show_cpu_cores {
-        cpu_cores::render_cpu_cores(f, col1_inner, &state.cpu, state.data_loaded);
     } else {
-        cpu_bar::render_with_loading(f, col1_inner, &state.cpu, state.data_loaded);
+        cpu_cores::render_cpu_cores(f, col1_inner, &state.cpu, state.data_loaded);
     }
 
     // Grupo 2: Memoria · Disco · Red
@@ -313,8 +326,6 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             Span::styled(format!("{}  ", state.t("Containers")), Style::default().fg(theme.muted)),
             Span::styled("[h] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
-            Span::styled("[K] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("CPU Cores")), Style::default().fg(theme.muted)),
             Span::styled("[F4] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
             Span::styled(
                 format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()),

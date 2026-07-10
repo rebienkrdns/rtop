@@ -3,14 +3,16 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph, Table, Row, Cell},
     Frame,
 };
 
 use crate::app::AppState;
 
+use crate::ui::theme::Theme;
+
 pub fn render(f: &mut Frame, state: &AppState) {
-    let area = centered_rect(60, 50, f.size());
+    let area = centered_rect(75, 50, f.size());
 
     f.render_widget(Clear, area);
 
@@ -55,9 +57,9 @@ pub fn render(f: &mut Frame, state: &AppState) {
         .saturating_sub(list_area.height as usize / 2);
     let entries = &state.selector_entries;
 
-    let mut lines: Vec<Line> = Vec::new();
+    let mut rows: Vec<Row> = Vec::new();
     for (i, entry) in entries.iter().enumerate().skip(visible_start) {
-        if lines.len() >= list_area.height as usize {
+        if rows.len() >= list_area.height.saturating_sub(2) as usize {
             break;
         }
 
@@ -76,9 +78,9 @@ pub fn render(f: &mut Frame, state: &AppState) {
             entry.mount_point.clone()
         };
         let size_str = if entry.total_bytes > 0 {
-            ByteSize(entry.total_bytes).to_string()
+            format!("{:>9}", ByteSize(entry.total_bytes).to_string())
         } else {
-            "?".to_string()
+            format!("{:>9}", "?")
         };
         let sel_mark = if is_selected {
             format!("  ({})", state.t("Selected"))
@@ -86,6 +88,12 @@ pub fn render(f: &mut Frame, state: &AppState) {
             String::new()
         };
 
+        let (rx, tx) = state.disks.iter()
+            .find(|d| d.device == entry.device_short && d.mount_point == entry.mount_point)
+            .map(|d| (d.read_bytes_per_sec.unwrap_or(0.0), d.write_bytes_per_sec.unwrap_or(0.0)))
+            .unwrap_or((0.0, 0.0));
+
+        let theme = Theme::default_theme();
         let base_style = if is_cursor {
             Style::default()
                 .fg(Color::White)
@@ -94,16 +102,46 @@ pub fn render(f: &mut Frame, state: &AppState) {
             Style::default().fg(Color::Gray)
         };
 
-        lines.push(Line::from(vec![Span::styled(
-            format!(
-                "{}{:<14} {:<12} {:>8}{}",
-                cursor_sym, entry.device_short, mount, size_str, sel_mark
-            ),
-            base_style,
-        )]));
+        let mount_style = if is_cursor {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+
+        rows.push(Row::new(vec![
+            Cell::from(Span::styled(cursor_sym, base_style)),
+            Cell::from(Span::styled(entry.device_short.clone(), base_style)),
+            Cell::from(Span::styled(mount, mount_style)),
+            Cell::from(Span::styled(size_str, base_style)),
+            Cell::from(Span::styled(format!("↓{:>8}", fmt_bps_short(rx)), Style::default().fg(theme.ok))),
+            Cell::from(Span::styled(format!("↑{:>8}", fmt_bps_short(tx)), Style::default().fg(theme.accent_dim))),
+            Cell::from(Span::styled(sel_mark, Style::default().fg(Color::Green))),
+        ]));
     }
 
-    f.render_widget(Paragraph::new(lines), list_area);
+    let header = Row::new(vec![
+        Cell::from(""),
+        Cell::from(state.t("Device")),
+        Cell::from(state.t("Mount")),
+        Cell::from(format!("{:>9}", state.t("Size"))),
+        Cell::from(format!("{:>9}", state.t("Read"))),
+        Cell::from(format!("{:>9}", state.t("Write"))),
+        Cell::from(state.t("Status")),
+    ]).style(Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD));
+
+    let table = Table::new(rows, [
+        Constraint::Length(2),
+        Constraint::Length(14),
+        Constraint::Min(15), // Se estira y empuja lo demás a la derecha
+        Constraint::Length(9),
+        Constraint::Length(9),
+        Constraint::Length(9),
+        Constraint::Length(12),
+    ])
+    .header(header)
+    .column_spacing(1);
+
+    f.render_widget(table, list_area);
 
     let hint = Line::from(vec![
         Span::styled("↑↓", Style::default().fg(Color::Cyan)),
@@ -133,4 +171,19 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(vert[1])[1]
+}
+
+/// Helper to format speed compactly (e.g., 1.2M/s instead of 1.2 MB/s)
+fn fmt_bps_short(bps: f64) -> String {
+    let bs = bytesize::ByteSize(bps as u64).to_string_as(true); // e.g. "1.2 MB"
+    let mut parts = bs.split_whitespace();
+    if let (Some(num), Some(unit)) = (parts.next(), parts.next()) {
+        if unit == "B" {
+            format!("{}B/s", num)
+        } else {
+            format!("{}{}/s", num, unit.chars().next().unwrap_or('B'))
+        }
+    } else {
+        format!("{}/s", bs)
+    }
 }
