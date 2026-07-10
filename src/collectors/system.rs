@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sysinfo::{Disks, System};
+use sysinfo::{Components, Disks, System};
 
 use crate::collectors::cpu_times::CpuTimesCollector;
 use crate::collectors::disk::{device_short_name, DiskIoCollector};
@@ -31,6 +31,7 @@ pub struct SystemSnapshot {
 
 pub struct SystemCollector {
     sys: System,
+    components: Components,
     disks: Disks,
     disk_io: DiskIoCollector,
     network: NetworkCollector,
@@ -51,9 +52,11 @@ impl SystemCollector {
     pub fn new() -> Self {
         let mut sys = System::new_all();
         sys.refresh_all();
+        let components = Components::new_with_refreshed_list();
         let disks = Disks::new_with_refreshed_list();
         Self {
             sys,
+            components,
             disks,
             disk_io: DiskIoCollector::new(),
             network: NetworkCollector::new(),
@@ -67,11 +70,31 @@ impl SystemCollector {
 
     pub fn refresh(&mut self) {
         self.sys.refresh_all();
+        self.components.refresh_list();
         self.disks.refresh();
         self.network.refresh();
     }
 
     pub fn cpu_data(&mut self) -> CpuData {
+        let mut core_temps: HashMap<usize, f64> = HashMap::new();
+        let mut global_temp: Option<f64> = None;
+        for comp in self.components.list() {
+            let label = comp.label().to_lowercase();
+            let temp = comp.temperature() as f64;
+            if label.starts_with("core") {
+                let parts: Vec<&str> = label.split_whitespace().collect();
+                if parts.len() > 1 {
+                    if let Ok(id) = parts[1].parse::<usize>() {
+                        core_temps.insert(id, temp);
+                    }
+                }
+            } else if label.contains("cpu") || label.contains("tdie") || label.contains("tctl") || label.contains("package id 0") {
+                if global_temp.is_none() {
+                    global_temp = Some(temp);
+                }
+            }
+        }
+
         let cpus = self.sys.cpus();
         let core_count = cpus.len();
 
@@ -85,7 +108,7 @@ impl SystemCollector {
                 let brand = c.brand().to_string();
 
                 let core_type = detect_core_type(i, core_count, &vendor, &brand);
-                let temp = read_core_temperature(i);
+                let temp = core_temps.get(&i).copied().or(global_temp).or_else(|| read_core_temperature(i));
 
                 CpuCoreData {
                     core_id: i,
