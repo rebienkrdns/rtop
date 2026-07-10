@@ -177,11 +177,11 @@ pub fn render_with_cursor(
             ratatui::layout::Constraint::Length(8),
             ratatui::layout::Constraint::Min(12),
             ratatui::layout::Constraint::Length(7),
-            ratatui::layout::Constraint::Length(15),
             ratatui::layout::Constraint::Length(18),
-            ratatui::layout::Constraint::Length(18),
-            ratatui::layout::Constraint::Length(18),
-            ratatui::layout::Constraint::Length(18),
+            ratatui::layout::Constraint::Length(22),
+            ratatui::layout::Constraint::Length(22),
+            ratatui::layout::Constraint::Length(22),
+            ratatui::layout::Constraint::Length(22),
             ratatui::layout::Constraint::Length(10),
         ]
     } else {

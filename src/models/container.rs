@@ -24,12 +24,12 @@ pub enum ContainerStatus {
 impl ContainerStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
-            ContainerStatus::Running => "activo",
-            ContainerStatus::Paused => "pausado",
-            ContainerStatus::Restarting => "reiniciando",
-            ContainerStatus::Exited => "salido",
-            ContainerStatus::Dead => "muerto",
-            ContainerStatus::Unknown => "desconocido",
+            ContainerStatus::Running => "running",
+            ContainerStatus::Paused => "paused",
+            ContainerStatus::Restarting => "restarting",
+            ContainerStatus::Exited => "exited",
+            ContainerStatus::Dead => "dead",
+            ContainerStatus::Unknown => "unknown",
         }
     }
 }

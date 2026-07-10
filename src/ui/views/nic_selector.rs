@@ -219,7 +219,9 @@ pub fn render(f: &mut Frame, state: &AppState) {
     .header(header)
     .column_spacing(1);
 
-    f.render_widget(table, layout[0]);
+    let mut table_state = ratatui::widgets::TableState::default();
+    table_state.select(Some(state.nic_cursor));
+    f.render_stateful_widget(table, layout[0], &mut table_state);
 
     let footer = Paragraph::new(Line::from(vec![
         Span::styled(

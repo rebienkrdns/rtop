@@ -107,7 +107,7 @@ pub fn render(f: &mut Frame, area: Rect, process: &ProcessData, state: &AppState
                 Style::default().fg(theme.muted),
             ),
             Span::styled(
-                process.status.to_localized_str(state.lang),
+                state.t(process.status.as_str()),
                 Style::default().fg(theme.ok),
             ),
             Span::raw("    "),

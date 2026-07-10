@@ -1723,6 +1723,7 @@ impl AppState {
                     at.partial_cmp(&bt).unwrap_or(std::cmp::Ordering::Equal)
                 }
                 ProcessSortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                ProcessSortColumn::Pid => a.pid.cmp(&b.pid),
             };
             if self.process_table.sort_asc {
                 ord
@@ -2437,6 +2438,13 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                 && !state.process_table.filter_active =>
                         {
                             state.process_sort_by(ProcessSortColumn::NetTx);
+                        }
+                        (KeyCode::Char('p'), _)
+                            if state.current_view == View::Main
+                                && state.active_tab == Tab::Processes
+                                && !state.process_table.filter_active =>
+                        {
+                            state.process_sort_by(ProcessSortColumn::Pid);
                         }
                         (KeyCode::Char('f'), _)
                             if state.current_view == View::Main

@@ -151,6 +151,8 @@ pub fn render(
                 format!("{}  ", t("PressSlashToFilter")),
                 Style::default().fg(theme.muted),
             ),
+            Span::styled("p", Style::default().fg(theme.accent)),
+            Span::styled(" PID  ", Style::default().fg(theme.muted)),
             Span::styled("c", Style::default().fg(theme.accent)),
             Span::styled(" CPU  ", Style::default().fg(theme.muted)),
             Span::styled("m", Style::default().fg(theme.accent)),
@@ -247,6 +249,7 @@ pub fn render(
                 at.partial_cmp(&bt).unwrap_or(std::cmp::Ordering::Equal)
             }
             ProcessSortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            ProcessSortColumn::Pid => a.pid.cmp(&b.pid),
         };
         if state.sort_asc {
             ord
@@ -255,6 +258,7 @@ pub fn render(
         }
     });
 
+    let is_pid = state.sort_col == ProcessSortColumn::Pid;
     let is_cpu = state.sort_col == ProcessSortColumn::Cpu;
     let is_mem = state.sort_col == ProcessSortColumn::Memory;
     let is_dr = state.sort_col == ProcessSortColumn::DiskRead;
@@ -274,8 +278,17 @@ pub fn render(
 
     let mut header_cells = vec![
         Cell::from(
-            Line::from(Span::styled("PID", header_style))
-                .alignment(ratatui::layout::Alignment::Right),
+            Line::from(Span::styled(
+                col_header("PID", is_pid, state.sort_asc),
+                if is_pid {
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    header_style
+                },
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
         ),
         Cell::from(Span::styled(
             col_header(t("Process"), is_name, state.sort_asc),
@@ -468,7 +481,7 @@ pub fn render(
         );
 
         let status_cell = Cell::from(Line::from(vec![Span::styled(
-            p.status.to_localized_str(lang),
+            t(p.status.as_str()),
             row_style.fg(status_color),
         )]));
 
@@ -526,18 +539,18 @@ pub fn render(
     }
 
     let mut constraints = vec![
-        Constraint::Length(6),  // PID
-        Constraint::Min(12),    // Process Name
-        Constraint::Length(8),  // CPU%
-        Constraint::Length(10), // RAM
-        Constraint::Length(10), // Disk Read
-        Constraint::Length(10), // Disk Write
+        Constraint::Length(8),
+        Constraint::Min(12),
+        Constraint::Length(7),
+        Constraint::Length(15),
+        Constraint::Length(18),
+        Constraint::Length(18),
     ];
     if show_net {
-        constraints.push(Constraint::Length(10)); // Net RX/s
-        constraints.push(Constraint::Length(10)); // Net TX/s
-        constraints.push(Constraint::Length(10)); // Net RX Tot
-        constraints.push(Constraint::Length(10)); // Net TX Tot
+        constraints.push(Constraint::Length(22));
+        constraints.push(Constraint::Length(22));
+        constraints.push(Constraint::Length(22));
+        constraints.push(Constraint::Length(22));
     }
     constraints.push(Constraint::Length(10)); // Status
 

@@ -65,7 +65,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         .saturating_sub(3 + 3 + 5 + 3 + gpu_section_height);
 
     // Assign ideal height, constrained by safe limits and a small minimum for neighboring metrics
-    let metrics_height = ideal_cpu_height.min(max_safe_height).max(11);
+    let metrics_height = ideal_cpu_height.min(max_safe_height).max(13);
 
     // Layout vertical: header | métricas (3 grupos) | [GPU] | tab_bar | contenido_pestaña | footer
     let mut constraints = vec![
@@ -179,7 +179,38 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
     // Grupo 1: CPU
     let core_count = state.cpu.per_core.len();
-    let cpu_title = format!(" CPU · {} CORES [{}] ", core_count, cpu_arch_label());
+    let cpu_brand = state
+        .cpu
+        .per_core
+        .first()
+        .map(|c| c.brand.as_str())
+        .unwrap_or("CPU")
+        .trim();
+    let temp_sum: f64 = state
+        .cpu
+        .per_core
+        .iter()
+        .filter_map(|c| c.temperature_celsius)
+        .sum();
+    let temp_count = state
+        .cpu
+        .per_core
+        .iter()
+        .filter(|c| c.temperature_celsius.is_some())
+        .count();
+    let temp_str = if temp_count > 0 {
+        format!(" · {:.1}°C", temp_sum / temp_count as f64)
+    } else {
+        String::new()
+    };
+
+    let cpu_title = format!(
+        " {} · {} CORES [{}]{} ",
+        cpu_brand,
+        core_count,
+        cpu_arch_label(),
+        temp_str
+    );
     let col1_block = Block::default()
         .title(Span::styled(cpu_title, Style::default().fg(theme.accent)))
         .borders(Borders::ALL)

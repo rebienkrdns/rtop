@@ -51,18 +51,10 @@ pub fn render(f: &mut Frame, state: &AppState) {
     let list_area = layout[0];
     let hint_area = layout[2];
 
-    // Lista de dispositivos
-    let visible_start = state
-        .disk_selector_cursor
-        .saturating_sub(list_area.height as usize / 2);
     let entries = &state.selector_entries;
 
     let mut rows: Vec<Row> = Vec::new();
-    for (i, entry) in entries.iter().enumerate().skip(visible_start) {
-        if rows.len() >= list_area.height.saturating_sub(2) as usize {
-            break;
-        }
-
+    for (i, entry) in entries.iter().enumerate() {
         let is_cursor = i == state.disk_selector_cursor;
         let is_selected = state
             .cfg
@@ -164,7 +156,10 @@ pub fn render(f: &mut Frame, state: &AppState) {
     .header(header)
     .column_spacing(1);
 
-    f.render_widget(table, list_area);
+    let mut table_state = ratatui::widgets::TableState::default();
+    table_state.select(Some(state.disk_selector_cursor));
+
+    f.render_stateful_widget(table, list_area, &mut table_state);
 
     let hint = Line::from(vec![
         Span::styled("↑↓", Style::default().fg(Color::Cyan)),
