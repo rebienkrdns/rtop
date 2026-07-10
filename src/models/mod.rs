@@ -11,15 +11,15 @@ pub mod swarm;
 pub use container::{ContainerData, ContainerSortColumn, ContainerStatus};
 pub use cpu::{CoreType, CpuCoreData, CpuData};
 pub use disk::DiskData;
+#[allow(unused_imports)]
+pub use gpu::{GpuData, GpuProcessData};
 pub use memory::MemoryData;
 pub use network::{NetworkData, NetworkInterface, TcpStats};
 #[allow(unused_imports)]
 pub use process::{
-    DatabaseType, HttpProxyType, NodeRuntimeType, MessageBrokerType, ProcessData, ProcessIoData, ProcessSortColumn,
-    ProcessStatus,
+    DatabaseType, HttpProxyType, MessageBrokerType, NodeRuntimeType, ProcessData, ProcessIoData,
+    ProcessSortColumn, ProcessStatus,
 };
-#[allow(unused_imports)]
-pub use gpu::{GpuData, GpuProcessData};
 pub use psi::{PsiData, PsiValues};
 #[allow(unused_imports)]
 pub use swarm::{SwarmData, SwarmNodeData, SwarmServiceData};

@@ -99,15 +99,18 @@ impl DiskIoCollector {
             if f.len() < 13 {
                 continue;
             }
-            map.insert(f[2].to_string(), DiskRawStats {
-                reads_completed:  f[3].parse().unwrap_or(0),
-                sectors_read:     f[5].parse().unwrap_or(0),
-                ms_reading:       f[6].parse().unwrap_or(0),
-                writes_completed: f[7].parse().unwrap_or(0),
-                sectors_written:  f[9].parse().unwrap_or(0),
-                ms_writing:       f[10].parse().unwrap_or(0),
-                ms_io:            f[12].parse().unwrap_or(0),
-            });
+            map.insert(
+                f[2].to_string(),
+                DiskRawStats {
+                    reads_completed: f[3].parse().unwrap_or(0),
+                    sectors_read: f[5].parse().unwrap_or(0),
+                    ms_reading: f[6].parse().unwrap_or(0),
+                    writes_completed: f[7].parse().unwrap_or(0),
+                    sectors_written: f[9].parse().unwrap_or(0),
+                    ms_writing: f[10].parse().unwrap_or(0),
+                    ms_io: f[12].parse().unwrap_or(0),
+                },
+            );
         }
         map
     }
@@ -132,11 +135,21 @@ impl DiskIoCollector {
                             let d_ms_w = s.ms_writing.saturating_sub(prev.ms_writing);
                             let d_ms_io = s.ms_io.saturating_sub(prev.ms_io);
                             DiskIoRate {
-                                read_bytes_per_sec:  (dr * SECTOR_SIZE) as f64 / elapsed,
+                                read_bytes_per_sec: (dr * SECTOR_SIZE) as f64 / elapsed,
                                 write_bytes_per_sec: (dw * SECTOR_SIZE) as f64 / elapsed,
-                                read_latency_ms:  if d_reads > 0 { Some(d_ms_r as f64 / d_reads as f64) } else { None },
-                                write_latency_ms: if d_writes > 0 { Some(d_ms_w as f64 / d_writes as f64) } else { None },
-                                io_util_pct: Some((d_ms_io as f64 / (elapsed * 1000.0) * 100.0).clamp(0.0, 100.0)),
+                                read_latency_ms: if d_reads > 0 {
+                                    Some(d_ms_r as f64 / d_reads as f64)
+                                } else {
+                                    None
+                                },
+                                write_latency_ms: if d_writes > 0 {
+                                    Some(d_ms_w as f64 / d_writes as f64)
+                                } else {
+                                    None
+                                },
+                                io_util_pct: Some(
+                                    (d_ms_io as f64 / (elapsed * 1000.0) * 100.0).clamp(0.0, 100.0),
+                                ),
                             }
                         } else {
                             DiskIoRate::default()
@@ -144,16 +157,19 @@ impl DiskIoCollector {
                     } else {
                         DiskIoRate::default()
                     };
-                    self.prev.insert(name.clone(), DiskIoSnapshot {
-                        timestamp: now,
-                        sectors_read:     s.sectors_read,
-                        sectors_written:  s.sectors_written,
-                        reads_completed:  s.reads_completed,
-                        ms_reading:       s.ms_reading,
-                        writes_completed: s.writes_completed,
-                        ms_writing:       s.ms_writing,
-                        ms_io:            s.ms_io,
-                    });
+                    self.prev.insert(
+                        name.clone(),
+                        DiskIoSnapshot {
+                            timestamp: now,
+                            sectors_read: s.sectors_read,
+                            sectors_written: s.sectors_written,
+                            reads_completed: s.reads_completed,
+                            ms_reading: s.ms_reading,
+                            writes_completed: s.writes_completed,
+                            ms_writing: s.ms_writing,
+                            ms_io: s.ms_io,
+                        },
+                    );
                     result.insert(name.clone(), rate);
                 }
             }

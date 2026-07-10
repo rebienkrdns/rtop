@@ -64,4 +64,3 @@ pub struct ContainerData {
     pub node_runtime_type: Option<super::NodeRuntimeType>,
     pub message_broker_type: Option<super::MessageBrokerType>,
 }
-

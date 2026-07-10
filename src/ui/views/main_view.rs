@@ -53,28 +53,30 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     let extra_cpu_rows: u16 = 2; // USR/SYS/IOW/STL + CTX/INT
     #[cfg(not(target_os = "linux"))]
     let extra_cpu_rows: u16 = 0;
-    
+
     // Height calculation:
     // Ideal height is 2 (gauge) + extra + 2 lines per core pair + 2 borders
     let ideal_core_rows = ((num_cores + 1) / 2) as u16;
     let ideal_cpu_height = 2 + extra_cpu_rows + (ideal_core_rows * 2) + 2;
 
     // Calculate maximum safe height without pushing bottom elements off-screen
-    let max_safe_height = area.height.saturating_sub(3 + 3 + 5 + 3 + gpu_section_height);
-    
+    let max_safe_height = area
+        .height
+        .saturating_sub(3 + 3 + 5 + 3 + gpu_section_height);
+
     // Assign ideal height, constrained by safe limits and a small minimum for neighboring metrics
     let metrics_height = ideal_cpu_height.min(max_safe_height).max(11);
 
     // Layout vertical: header | métricas (3 grupos) | [GPU] | tab_bar | contenido_pestaña | footer
     let mut constraints = vec![
-        Constraint::Length(3),               // header
-        Constraint::Length(metrics_height),  // métricas (3 grupos)
+        Constraint::Length(3),              // header
+        Constraint::Length(metrics_height), // métricas (3 grupos)
     ];
     if gpu_section_height > 0 {
         constraints.push(Constraint::Length(gpu_section_height));
     }
     constraints.push(Constraint::Length(3)); // barra de pestañas
-    constraints.push(Constraint::Min(5));    // contenido de pestaña activa
+    constraints.push(Constraint::Min(5)); // contenido de pestaña activa
     constraints.push(Constraint::Length(3)); // footer
 
     let vertical = Layout::default()
@@ -102,34 +104,65 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     let uptime_str = format_uptime(state.uptime_secs);
     let idx = state.interval_idx;
     let left_arrow = if idx > 0 { "◀ " } else { "  " };
-    let right_arrow = if idx < INTERVALS.len() - 1 { " ▶" } else { "  " };
+    let right_arrow = if idx < INTERVALS.len() - 1 {
+        " ▶"
+    } else {
+        "  "
+    };
     let label = interval_label(idx);
     let interval_ctrl = format!("[ {}{}{} ]", left_arrow, label, right_arrow);
 
     let tick_dot = if state.refresh_tick { "●" } else { "○" };
-    let tick_color = if state.data_loaded { Color::Green } else { theme.muted };
+    let tick_color = if state.data_loaded {
+        Color::Green
+    } else {
+        theme.muted
+    };
 
     let header_text = Line::from(vec![
-        Span::styled(" rtop ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " rtop ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("│ ", Style::default().fg(theme.muted)),
         Span::styled(state.hostname.as_str(), Style::default().fg(theme.text)),
-        Span::styled(format!("  {}", uptime_str), Style::default().fg(theme.muted)),
-        Span::styled(format!("    {}: ", state.t("Refresh")), Style::default().fg(theme.muted)),
-        Span::styled(interval_ctrl, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!("  {}", uptime_str),
+            Style::default().fg(theme.muted),
+        ),
+        Span::styled(
+            format!("    {}: ", state.t("Refresh")),
+            Style::default().fg(theme.muted),
+        ),
+        Span::styled(
+            interval_ctrl,
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("  ", Style::default()),
         Span::styled(tick_dot, Style::default().fg(tick_color)),
         Span::styled("  ", Style::default()),
         Span::styled(now_str, Style::default().fg(theme.muted)),
         Span::styled(format!(" {}", tz_str), Style::default().fg(theme.muted)),
-        Span::styled(format!("   [F1 {}]", state.t("Help")), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("   [F1 {}]", state.t("Help")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled(
             format!("   [F4 {}: {}]", state.t("Theme"), state.cfg.theme.name()),
-            Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
         ),
     ]);
     f.render_widget(
         Paragraph::new(header_text).block(
-            Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.accent)),
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent)),
         ),
         header_area,
     );
@@ -203,22 +236,40 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Span::styled(
             format!(" {} ", state.t("Processes")),
             Style::default()
-                .fg(if state.active_tab == Tab::Processes { theme.selected_fg } else { theme.muted })
-                .bg(if state.active_tab == Tab::Processes { theme.accent_dim } else { theme.bg })
+                .fg(if state.active_tab == Tab::Processes {
+                    theme.selected_fg
+                } else {
+                    theme.muted
+                })
+                .bg(if state.active_tab == Tab::Processes {
+                    theme.accent_dim
+                } else {
+                    theme.bg
+                })
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
         Span::styled(
             format!(" {} ", state.t("Containers")),
             Style::default()
-                .fg(if state.active_tab == Tab::Containers { theme.selected_fg } else { theme.muted })
-                .bg(if state.active_tab == Tab::Containers { theme.accent_dim } else { theme.bg })
+                .fg(if state.active_tab == Tab::Containers {
+                    theme.selected_fg
+                } else {
+                    theme.muted
+                })
+                .bg(if state.active_tab == Tab::Containers {
+                    theme.accent_dim
+                } else {
+                    theme.bg
+                })
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
     f.render_widget(
         Paragraph::new(tabs_line).block(
-            Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim)),
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_dim)),
         ),
         tabbar_area,
     );
@@ -244,7 +295,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 let (total_limit, has_limit) = if has_unlimited {
                     (0, false)
                 } else {
-                    (state.containers.iter().map(|c| c.memory_limit_bytes).sum(), true)
+                    (
+                        state.containers.iter().map(|c| c.memory_limit_bytes).sum(),
+                        true,
+                    )
                 };
                 if has_limit {
                     format!(
@@ -310,58 +364,188 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     use crate::config::Tab;
     let footer_text = if state.active_tab == Tab::Processes {
         Line::from(vec![
-            Span::styled(" [q] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Quit rtop")), Style::default().fg(theme.muted)),
-            Span::styled("[/] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Filter")), Style::default().fg(theme.muted)),
-            Span::styled("[c] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " [q] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Quit rtop")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[/] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Filter")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[c] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("CPU  ", Style::default().fg(theme.muted)),
-            Span::styled("[m] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[m] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("RAM  ", Style::default().fg(theme.muted)),
-            Span::styled("[r] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[r] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("DiskR  ", Style::default().fg(theme.muted)),
-            Span::styled("[w] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[w] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("DiskW  ", Style::default().fg(theme.muted)),
-            Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Containers")), Style::default().fg(theme.muted)),
-            Span::styled("[h] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
-            Span::styled("[F4] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[Tab] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Containers")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[h] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("History")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[F4] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()),
                 Style::default().fg(theme.muted),
             ),
-            Span::styled("[F1] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[F1] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(state.t("Help"), Style::default().fg(theme.muted)),
         ])
     } else {
         Line::from(vec![
-            Span::styled(" [q] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Quit rtop")), Style::default().fg(theme.muted)),
-            Span::styled("[◀▶] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Refresh")), Style::default().fg(theme.muted)),
-            Span::styled("[F2] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Disk")), Style::default().fg(theme.muted)),
-            Span::styled("[F3] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Network")), Style::default().fg(theme.muted)),
-            Span::styled("[h] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("History")), Style::default().fg(theme.muted)),
-            Span::styled("[t] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Range")), Style::default().fg(theme.muted)),
-            Span::styled("[Tab] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}  ", state.t("Change tab")), Style::default().fg(theme.muted)),
-            Span::styled("[F4] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " [q] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Quit rtop")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[◀▶] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Refresh")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[F2] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Disk")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[F3] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Network")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[h] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("History")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[t] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Range")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[Tab] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}  ", state.t("Change tab")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                "[F4] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!("{} ({})  ", state.t("Theme"), state.cfg.theme.name()),
                 Style::default().fg(theme.muted),
             ),
-            Span::styled("[F1] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[F1] ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(state.t("Help"), Style::default().fg(theme.muted)),
         ])
     };
     f.render_widget(
         Paragraph::new(footer_text).block(
-            Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.accent_dim)),
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_dim)),
         ),
         footer_area,
     );
@@ -379,13 +563,16 @@ fn best_disk_for_display<'a>(
     selected: Option<&str>,
 ) -> Option<&'a crate::models::DiskData> {
     if let Some(sel) = selected {
-        if let Some(d) = disks.iter().find(|d| {
-            crate::collectors::disk::device_short_name(&d.device) == sel
-        }) {
+        if let Some(d) = disks
+            .iter()
+            .find(|d| crate::collectors::disk::device_short_name(&d.device) == sel)
+        {
             return Some(d);
         }
     }
-    disks.iter().find(|d| d.device.starts_with("/dev/") && !d.device.contains("loop") && d.total_bytes > 0)
+    disks
+        .iter()
+        .find(|d| d.device.starts_with("/dev/") && !d.device.contains("loop") && d.total_bytes > 0)
         .or_else(|| disks.first())
 }
 

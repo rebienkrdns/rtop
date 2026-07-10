@@ -287,7 +287,10 @@ fn parse_traefik_metrics(
     body: &str,
     metrics: &mut ProxyMetrics,
     prev_hist: Option<&TraefikHistogramState>,
-) -> (TraefikHistogramState, HashMap<String, RouterLatencySnapshot>) {
+) -> (
+    TraefikHistogramState,
+    HashMap<String, RouterLatencySnapshot>,
+) {
     let mut total_1xx: u64 = 0;
     let mut total_2xx: u64 = 0;
     let mut total_3xx: u64 = 0;
@@ -425,32 +428,29 @@ fn parse_traefik_metrics(
 
         let mut buckets: Vec<(f64, u64)> = le_map
             .iter()
-            .filter_map(|(le_str, &count)| {
-                le_str.parse::<f64>().ok().map(|b| (b * 1000.0, count))
-            })
+            .filter_map(|(le_str, &count)| le_str.parse::<f64>().ok().map(|b| (b * 1000.0, count)))
             .collect();
         buckets.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        let (eff_buckets, eff_total) = if let Some(prev_state) = prev_hist
-            .and_then(|h| h.router_states.get(&router))
-        {
-            let delta_total = total_r.saturating_sub(prev_state.1);
-            let delta_buckets: Vec<(f64, u64)> = buckets
-                .iter()
-                .map(|&(bound, count)| {
-                    let prev_count = prev_state
-                        .0
-                        .iter()
-                        .find(|&&(b, _)| (b - bound).abs() < 0.0001)
-                        .map(|&(_, c)| c)
-                        .unwrap_or(0);
-                    (bound, count.saturating_sub(prev_count))
-                })
-                .collect();
-            (delta_buckets, delta_total)
-        } else {
-            (buckets.clone(), total_r)
-        };
+        let (eff_buckets, eff_total) =
+            if let Some(prev_state) = prev_hist.and_then(|h| h.router_states.get(&router)) {
+                let delta_total = total_r.saturating_sub(prev_state.1);
+                let delta_buckets: Vec<(f64, u64)> = buckets
+                    .iter()
+                    .map(|&(bound, count)| {
+                        let prev_count = prev_state
+                            .0
+                            .iter()
+                            .find(|&&(b, _)| (b - bound).abs() < 0.0001)
+                            .map(|&(_, c)| c)
+                            .unwrap_or(0);
+                        (bound, count.saturating_sub(prev_count))
+                    })
+                    .collect();
+                (delta_buckets, delta_total)
+            } else {
+                (buckets.clone(), total_r)
+            };
 
         new_router_states.insert(router.clone(), (buckets, total_r));
 
@@ -552,7 +552,12 @@ pub async fn poll_proxy(
 ) -> (ProxyMonitorData, Option<TraefikHistogramState>) {
     let proxy_type = match process.proxy_type {
         Some(t) => t,
-        None => return (ProxyMonitorData::new(process.pid, HttpProxyType::Nginx), None),
+        None => {
+            return (
+                ProxyMonitorData::new(process.pid, HttpProxyType::Nginx),
+                None,
+            )
+        }
     };
 
     let mut data = ProxyMonitorData::new(process.pid, proxy_type);

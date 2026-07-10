@@ -10,8 +10,8 @@ use crate::collectors::process_net::ProcessNetCollector;
 use crate::collectors::psi::PsiCollector;
 use crate::collectors::tcp_stats::TcpStatsCollector;
 use crate::models::{
-    CoreType, CpuCoreData, CpuData, DiskData, GpuData, MemoryData, NetworkData,
-    NetworkInterface, ProcessData, ProcessStatus, PsiData, TcpStats,
+    CoreType, CpuCoreData, CpuData, DiskData, GpuData, MemoryData, NetworkData, NetworkInterface,
+    ProcessData, ProcessStatus, PsiData, TcpStats,
 };
 
 pub struct SystemSnapshot {
@@ -421,9 +421,9 @@ fn detect_core_type(core_id: usize, total_cores: usize, vendor: &str, brand: &st
         // Heuristic: if we have 8+ cores, assume first half are P, second half E
         if total_cores >= 8 {
             let p_core_count = match total_cores {
-                8 => 4,  // M1/M2/M3 base
-                10 => 6, // M1 Pro/Max 10-core
-                12 => 8, // M1 Pro/Max 12-core
+                8 => 4,   // M1/M2/M3 base
+                10 => 6,  // M1 Pro/Max 10-core
+                12 => 8,  // M1 Pro/Max 12-core
                 16 => 12, // M1 Max 16-core? Actually M1 Ultra has 16P+4E
                 _ => total_cores / 2,
             };
@@ -439,7 +439,11 @@ fn detect_core_type(core_id: usize, total_cores: usize, vendor: &str, brand: &st
     // Intel hybrid (Alder Lake, Raptor Lake) - 12th/13th/14th gen
     if vendor_lower.contains("intel") || vendor_lower.contains("genuineintel") {
         // Check for hybrid architecture in brand string
-        if brand_lower.contains("hybrid") || brand_lower.contains("12th") || brand_lower.contains("13th") || brand_lower.contains("14th") {
+        if brand_lower.contains("hybrid")
+            || brand_lower.contains("12th")
+            || brand_lower.contains("13th")
+            || brand_lower.contains("14th")
+        {
             // On Linux, we'd need to read /proc/cpuinfo for core type
             // For now, use a heuristic: if > 8 cores, likely hybrid
             if total_cores > 8 {
@@ -470,8 +474,16 @@ fn read_core_temperature(core_id: usize) -> Option<f64> {
     // Try multiple thermal zone paths
     let paths = [
         format!("/sys/class/thermal/thermal_zone{}/temp", core_id),
-        format!("/sys/class/hwmon/hwmon{}/temp{}_input", core_id / 4 + 1, (core_id % 4) + 1),
-        format!("/sys/devices/platform/coretemp.{}/hwmon/hwmon*/temp{}_input", core_id, core_id + 1),
+        format!(
+            "/sys/class/hwmon/hwmon{}/temp{}_input",
+            core_id / 4 + 1,
+            (core_id % 4) + 1
+        ),
+        format!(
+            "/sys/devices/platform/coretemp.{}/hwmon/hwmon*/temp{}_input",
+            core_id,
+            core_id + 1
+        ),
     ];
 
     for path in &paths {
@@ -487,7 +499,10 @@ fn read_core_temperature(core_id: usize) -> Option<f64> {
         for entry in entries.flatten() {
             let name_path = entry.path().join("name");
             if let Ok(name) = fs::read_to_string(&name_path) {
-                if name.trim().contains("coretemp") || name.trim().contains("k10temp") || name.trim().contains("zenpower") {
+                if name.trim().contains("coretemp")
+                    || name.trim().contains("k10temp")
+                    || name.trim().contains("zenpower")
+                {
                     let temp_path = entry.path().join(format!("temp{}_input", core_id + 1));
                     if let Ok(content) = fs::read_to_string(&temp_path) {
                         if let Ok(temp_millicelsius) = content.trim().parse::<i64>() {

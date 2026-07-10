@@ -39,8 +39,12 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
         Constraint::Length(1), // encabezado
         Constraint::Length(1), // barra de uso
     ];
-    if has_io_row { constraints.push(Constraint::Length(1)); }
-    if has_latency_row { constraints.push(Constraint::Length(1)); }
+    if has_io_row {
+        constraints.push(Constraint::Length(1));
+    }
+    if has_latency_row {
+        constraints.push(Constraint::Length(1));
+    }
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -68,7 +72,10 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
     let name_str = if disk.mount_point.is_empty() {
         format!("{}  {}{}", disk_label, disk.device, size_info)
     } else {
-        format!("{}  {} ({}){}", disk_label, disk.device, disk.mount_point, size_info)
+        format!(
+            "{}  {} ({}){}",
+            disk_label, disk.device, disk.mount_point, size_info
+        )
     };
     f.render_widget(
         Paragraph::new(name_str).style(Style::default().fg(theme.accent)),
@@ -84,7 +91,11 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
     };
     f.render_widget(
         Paragraph::new(usage_str)
-            .style(Style::default().fg(usage_color).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(usage_color)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(ratatui::layout::Alignment::Right),
         header_cols[1],
     );
@@ -111,10 +122,18 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
         let read_str = fmt_rate(disk.read_bytes_per_sec);
 
         let io_line = Line::from(vec![
-            Span::styled("↑ W ", Style::default().fg(theme.ok).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "↑ W ",
+                Style::default().fg(theme.ok).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(write_str, Style::default().fg(theme.ok)),
             Span::raw("  "),
-            Span::styled("↓ R ", Style::default().fg(theme.accent_dim).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "↓ R ",
+                Style::default()
+                    .fg(theme.accent_dim)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(read_str, Style::default().fg(theme.accent_dim)),
         ]);
         f.render_widget(Paragraph::new(io_line), io_cols[0]);
@@ -129,7 +148,10 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
     if has_latency_row {
         let r_lat = fmt_latency(disk.read_latency_ms);
         let w_lat = fmt_latency(disk.write_latency_ms);
-        let util = disk.io_util_pct.map(|v| format!("{:.0}%", v)).unwrap_or_else(|| "—".to_string());
+        let util = disk
+            .io_util_pct
+            .map(|v| format!("{:.0}%", v))
+            .unwrap_or_else(|| "—".to_string());
         let util_color = Theme::color_for_pct(disk.io_util_pct.unwrap_or(0.0));
 
         let lat_line = Line::from(vec![
@@ -139,7 +161,10 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
             Span::styled(" W:", Style::default().fg(theme.ok)),
             Span::styled(w_lat, Style::default().fg(theme.text)),
             Span::styled("  util:", Style::default().fg(theme.muted)),
-            Span::styled(util, Style::default().fg(util_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                util,
+                Style::default().fg(util_color).add_modifier(Modifier::BOLD),
+            ),
         ]);
         f.render_widget(Paragraph::new(lat_line), chunks[3]);
     }

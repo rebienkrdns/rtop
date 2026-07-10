@@ -356,7 +356,12 @@ impl AppState {
                 });
             let best = best_disk_for_history(&snapshot.disks, self.selected_disk.as_deref());
             let (disk_read, disk_write) = best
-                .map(|d| (d.read_bytes_per_sec.unwrap_or(0.0), d.write_bytes_per_sec.unwrap_or(0.0)))
+                .map(|d| {
+                    (
+                        d.read_bytes_per_sec.unwrap_or(0.0),
+                        d.write_bytes_per_sec.unwrap_or(0.0),
+                    )
+                })
                 .unwrap_or((0.0, 0.0));
             let mem_pct = if self.memory.total_bytes > 0 {
                 self.memory.used_bytes as f64 / self.memory.total_bytes as f64 * 100.0
@@ -411,10 +416,22 @@ impl AppState {
             }
             // Actualizar pico de red antes de mover network_by_nic
             {
-                let recv_total: f64 = snapshot.network_by_nic.values().map(|n| n.recv_bytes_per_sec).sum();
-                let sent_total: f64 = snapshot.network_by_nic.values().map(|n| n.sent_bytes_per_sec).sum();
-                if recv_total > self.network_peak_recv_bps { self.network_peak_recv_bps = recv_total; }
-                if sent_total > self.network_peak_sent_bps { self.network_peak_sent_bps = sent_total; }
+                let recv_total: f64 = snapshot
+                    .network_by_nic
+                    .values()
+                    .map(|n| n.recv_bytes_per_sec)
+                    .sum();
+                let sent_total: f64 = snapshot
+                    .network_by_nic
+                    .values()
+                    .map(|n| n.sent_bytes_per_sec)
+                    .sum();
+                if recv_total > self.network_peak_recv_bps {
+                    self.network_peak_recv_bps = recv_total;
+                }
+                if sent_total > self.network_peak_sent_bps {
+                    self.network_peak_sent_bps = sent_total;
+                }
             }
 
             self.selector_entries = DiskIoCollector::build_selector_entries(&snapshot.disks);
@@ -489,7 +506,8 @@ impl AppState {
                 if self.tcp_retrans_history.len() >= TCP_MAX {
                     self.tcp_retrans_history.pop_front();
                 }
-                self.tcp_retrans_history.push_back(ts.tcp_retransmission_rate);
+                self.tcp_retrans_history
+                    .push_back(ts.tcp_retransmission_rate);
             }
             if let Some(ref p) = snapshot.psi {
                 const PSI_MAX: usize = 3600;
@@ -567,7 +585,6 @@ impl AppState {
                     }
                 }
             }
-
 
             // Check if we need to spawn database monitoring task
             if self.current_view == View::ProcessDetail {
@@ -868,7 +885,9 @@ impl AppState {
             }
 
             // Proxy monitor: spawn task when needed
-            if self.current_view == View::ProcessDetail || (self.current_view == View::RouterLatency && self.detail_process_pid.is_some()) {
+            if self.current_view == View::ProcessDetail
+                || (self.current_view == View::RouterLatency && self.detail_process_pid.is_some())
+            {
                 if let Some(pid) = self.detail_process_pid {
                     if let Some(proc) = self.processes.iter().find(|p| p.pid == pid) {
                         if let Some(proxy_type) = proc.proxy_type {
@@ -895,7 +914,9 @@ impl AppState {
                                     let mut prev_3xx: u64 = 0;
                                     let mut prev_4xx: u64 = 0;
                                     let mut prev_5xx: u64 = 0;
-                                    let mut prev_hist_state: Option<crate::collectors::proxy::TraefikHistogramState> = None;
+                                    let mut prev_hist_state: Option<
+                                        crate::collectors::proxy::TraefikHistogramState,
+                                    > = None;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
@@ -971,7 +992,9 @@ impl AppState {
                     self.current_proxy_monitored_pid = None;
                     self.current_proxy_monitored_cid = None;
                 }
-            } else if self.current_view == View::ContainerDetail || (self.current_view == View::RouterLatency && self.detail_container_id.is_some()) {
+            } else if self.current_view == View::ContainerDetail
+                || (self.current_view == View::RouterLatency && self.detail_container_id.is_some())
+            {
                 if let Some(ref cid) = self.detail_container_id {
                     if let Some(container) = self.containers.iter().find(|c| &c.id == cid) {
                         if let Some(proxy_type) = container.proxy_type {
@@ -1000,7 +1023,9 @@ impl AppState {
                                     let mut prev_3xx: u64 = 0;
                                     let mut prev_4xx: u64 = 0;
                                     let mut prev_5xx: u64 = 0;
-                                    let mut prev_hist_state: Option<crate::collectors::proxy::TraefikHistogramState> = None;
+                                    let mut prev_hist_state: Option<
+                                        crate::collectors::proxy::TraefikHistogramState,
+                                    > = None;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
@@ -1194,9 +1219,11 @@ impl AppState {
                             if self.current_broker_monitored_pid != Some(pid) {
                                 self.current_broker_monitored_pid = Some(pid);
                                 self.current_broker_monitored_cid = None;
-                                self.broker_monitor = Some(
-                                    crate::collectors::broker::BrokerMonitorData::new(pid, broker_type),
-                                );
+                                self.broker_monitor =
+                                    Some(crate::collectors::broker::BrokerMonitorData::new(
+                                        pid,
+                                        broker_type,
+                                    ));
                                 if let Ok(mut history) = self.broker_history.lock() {
                                     history.clear();
                                 }
@@ -1207,7 +1234,9 @@ impl AppState {
                                 tokio::spawn(async move {
                                     let mut ticker =
                                         tokio::time::interval(std::time::Duration::from_secs(1));
-                                    let mut prev_metrics: Option<crate::collectors::broker::BrokerMetrics> = None;
+                                    let mut prev_metrics: Option<
+                                        crate::collectors::broker::BrokerMetrics,
+                                    > = None;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
@@ -1281,14 +1310,17 @@ impl AppState {
                                 tokio::spawn(async move {
                                     let mut ticker =
                                         tokio::time::interval(std::time::Duration::from_secs(1));
-                                    let mut prev_metrics: Option<crate::collectors::broker::BrokerMetrics> = None;
+                                    let mut prev_metrics: Option<
+                                        crate::collectors::broker::BrokerMetrics,
+                                    > = None;
                                     let mut last_poll_time = std::time::Instant::now();
                                     loop {
                                         ticker.tick().await;
-                                        let mut data = crate::collectors::broker::poll_broker_container(
-                                            container_clone.clone(),
-                                        )
-                                        .await;
+                                        let mut data =
+                                            crate::collectors::broker::poll_broker_container(
+                                                container_clone.clone(),
+                                            )
+                                            .await;
                                         let now = std::time::Instant::now();
                                         let dt = now.duration_since(last_poll_time).as_secs_f64();
                                         last_poll_time = now;
@@ -1341,11 +1373,12 @@ impl AppState {
                 self.current_broker_monitored_cid = None;
             }
 
-
             // If the detailed process or container no longer exists, exit the detail view.
             // Require 3 consecutive missing snapshots to avoid false exits from transient
             // Docker stats failures or momentarily empty lists.
-            if self.current_view == View::ProcessDetail || (self.current_view == View::RouterLatency && self.detail_process_pid.is_some()) {
+            if self.current_view == View::ProcessDetail
+                || (self.current_view == View::RouterLatency && self.detail_process_pid.is_some())
+            {
                 if let Some(pid) = self.detail_process_pid {
                     if !self.processes.is_empty() && !self.processes.iter().any(|p| p.pid == pid) {
                         self.detail_process_missing_count += 1;
@@ -1360,7 +1393,9 @@ impl AppState {
                     }
                 }
             }
-            if self.current_view == View::ContainerDetail || (self.current_view == View::RouterLatency && self.detail_container_id.is_some()) {
+            if self.current_view == View::ContainerDetail
+                || (self.current_view == View::RouterLatency && self.detail_container_id.is_some())
+            {
                 if let Some(ref cid) = self.detail_container_id {
                     if !self.containers.is_empty() && !self.containers.iter().any(|c| &c.id == cid)
                     {
@@ -2108,15 +2143,13 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                         {
                             match state.swarm_focus {
                                 SwarmFocus::Services => {
-                                    let max =
-                                        state.swarm_data.services.len().saturating_sub(1);
+                                    let max = state.swarm_data.services.len().saturating_sub(1);
                                     if state.swarm_service_cursor < max {
                                         state.swarm_service_cursor += 1;
                                     }
                                 }
                                 SwarmFocus::Nodes => {
-                                    let max =
-                                        state.swarm_data.nodes.len().saturating_sub(1);
+                                    let max = state.swarm_data.nodes.len().saturating_sub(1);
                                     if state.swarm_node_cursor < max {
                                         state.swarm_node_cursor += 1;
                                     }
@@ -2569,20 +2602,22 @@ pub fn build_container_visual_rows(
 /// Selecciona el disco más representativo para historial y display por defecto.
 /// Prioridad: (1) disco seleccionado por el usuario, (2) primer dispositivo de bloque
 /// real bajo /dev/ con espacio total > 0, (3) cualquier disco.
-fn best_disk_for_history<'a>(disks: &'a [DiskData], selected: Option<&str>) -> Option<&'a DiskData> {
+fn best_disk_for_history<'a>(
+    disks: &'a [DiskData],
+    selected: Option<&str>,
+) -> Option<&'a DiskData> {
     // Disco elegido explícitamente por el usuario
     if let Some(sel) = selected {
-        if let Some(d) = disks.iter().find(|d| {
-            crate::collectors::disk::device_short_name(&d.device) == sel
-        }) {
+        if let Some(d) = disks
+            .iter()
+            .find(|d| crate::collectors::disk::device_short_name(&d.device) == sel)
+        {
             return Some(d);
         }
     }
     // Preferir dispositivo de bloque real (no tmpfs, devtmpfs, overlay, loop)
-    disks.iter().find(|d| {
-        d.device.starts_with("/dev/")
-            && !d.device.contains("loop")
-            && d.total_bytes > 0
-    })
-    .or_else(|| disks.first())
+    disks
+        .iter()
+        .find(|d| d.device.starts_with("/dev/") && !d.device.contains("loop") && d.total_bytes > 0)
+        .or_else(|| disks.first())
 }

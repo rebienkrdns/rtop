@@ -2,7 +2,10 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Row, Table, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{
+        Block, Borders, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Table,
+    },
     Frame,
 };
 
@@ -24,10 +27,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!(" {} ", hint),
-                Style::default().fg(theme.muted),
-            ),
+            Span::styled(format!(" {} ", hint), Style::default().fg(theme.muted)),
         ]))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent_dim));
@@ -43,8 +43,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
     let monitor_data = match &state.proxy_monitor {
         Some(data) => data,
         None => {
-            let paragraph = Paragraph::new("Loading proxy data...")
-                .style(Style::default().fg(theme.muted));
+            let paragraph =
+                Paragraph::new("Loading proxy data...").style(Style::default().fg(theme.muted));
             f.render_widget(paragraph, inner);
             return;
         }
@@ -87,7 +87,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
 
     let viewport_height = (inner.height as usize).saturating_sub(2);
     let total_routers = routers.len();
-    
+
     let start_idx = if state.router_cursor >= viewport_height {
         state.router_cursor - viewport_height + 1
     } else {

@@ -1,8 +1,8 @@
 use crate::models::{ContainerData, MessageBrokerType, ProcessData};
 use std::time::Duration;
-use tokio::time::timeout;
-use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 
 #[derive(Clone, Debug, Default)]
 pub struct BrokerMetrics {
@@ -217,7 +217,8 @@ fn parse_prometheus_metrics(body: &str, metrics: &mut BrokerMetrics) {
             "redpanda_cluster_topics" | "kafka_controller_KafkaController_GlobalTopicCount" => {
                 metrics.active_topics = val as u32;
             }
-            "redpanda_cluster_partitions" | "kafka_controller_KafkaController_GlobalPartitionCount" => {
+            "redpanda_cluster_partitions"
+            | "kafka_controller_KafkaController_GlobalPartitionCount" => {
                 metrics.active_partitions = val as u32;
             }
             "redpanda_kafka_consumer_groups" | "kafka_server_GroupMetadataManager_NumGroups" => {

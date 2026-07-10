@@ -997,7 +997,6 @@ fn render_db_chart_multi(
 }
 
 fn format_uptime(secs: u64) -> String {
-
     if secs < 60 {
         format!("{}s", secs)
     } else if secs < 3600 {
@@ -1396,7 +1395,11 @@ fn render_proxy_braille_chart_inner(
         fm
     } else {
         let data_max = vals.iter().copied().fold(0.0_f64, f64::max);
-        if data_max < 1.0 { 10.0 } else { data_max * 1.15 }
+        if data_max < 1.0 {
+            10.0
+        } else {
+            data_max * 1.15
+        }
     };
     let max_samples = limit as f64;
     let s_len = vals.len();
@@ -1546,7 +1549,11 @@ fn render_router_latency_table(
     };
 
     for (router_name, snap) in rows.iter().take(max_rows) {
-        let display_name = router_name.split('@').next().unwrap_or(router_name).to_string();
+        let display_name = router_name
+            .split('@')
+            .next()
+            .unwrap_or(router_name)
+            .to_string();
         let truncated = if display_name.len() > name_w {
             format!("{}…", &display_name[..name_w.saturating_sub(1)])
         } else {
@@ -1724,10 +1731,7 @@ pub fn render_broker_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &
             // Split vertical charts area into 2 sections
             let chart_sections = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Ratio(1, 2),
-                    Constraint::Ratio(1, 2),
-                ])
+                .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(broker_chunks[1]);
 
             // Retrieve thread-safe broker history snapshot
@@ -1745,13 +1749,11 @@ pub fn render_broker_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &
                 " Message Rate [last 60s] · Last: {:.1} msg/s ",
                 monitor_data.metrics.messages_per_sec
             );
-            let lines_msg = vec![
-                BrokerChartLineSpec {
-                    color: Color::Rgb(50, 150, 250), // Blue
-                    style: LineStyle::Solid,
-                    extract: |m| m.messages_per_sec,
-                },
-            ];
+            let lines_msg = vec![BrokerChartLineSpec {
+                color: Color::Rgb(50, 150, 250), // Blue
+                style: LineStyle::Solid,
+                extract: |m| m.messages_per_sec,
+            }];
 
             render_broker_chart_multi(
                 f,
@@ -1771,13 +1773,11 @@ pub fn render_broker_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &
                 " Data Throughput [last 60s] · Last: {} ",
                 format_traffic_rate(monitor_data.metrics.bytes_per_sec)
             );
-            let lines_bytes = vec![
-                BrokerChartLineSpec {
-                    color: Color::Rgb(250, 150, 50), // Orange
-                    style: LineStyle::Solid,
-                    extract: |m| m.bytes_per_sec,
-                },
-            ];
+            let lines_bytes = vec![BrokerChartLineSpec {
+                color: Color::Rgb(250, 150, 50), // Orange
+                style: LineStyle::Solid,
+                extract: |m| m.bytes_per_sec,
+            }];
 
             render_broker_chart_multi(
                 f,
@@ -1822,8 +1822,11 @@ fn render_broker_chart_multi(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Rgb(80, 80, 95)))
-                .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
-                .style(Style::default().bg(Color::Rgb(30, 31, 38)))
+                .title(Span::styled(
+                    title,
+                    Style::default().add_modifier(Modifier::BOLD),
+                ))
+                .style(Style::default().bg(Color::Rgb(30, 31, 38))),
         )
         .x_bounds([0.0, max_samples])
         .y_bounds([0.0, max_val])
@@ -1866,4 +1869,3 @@ fn render_broker_chart_multi(
     f.render_widget(Clear, area);
     f.render_widget(canvas, area);
 }
-

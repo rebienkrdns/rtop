@@ -3,9 +3,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     symbols,
     text::{Line, Span},
-    widgets::{
-        Axis, Block, Borders, Chart, Clear, Dataset, GraphType, Paragraph,
-    },
+    widgets::{Axis, Block, Borders, Chart, Clear, Dataset, GraphType, Paragraph},
     Frame,
 };
 
@@ -23,10 +21,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                " [Esc] Volver • [N] Red ",
-                Style::default().fg(theme.muted),
-            ),
+            Span::styled(" [Esc] Volver • [N] Red ", Style::default().fg(theme.muted)),
         ]))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent_dim));
@@ -41,10 +36,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(8),
-            Constraint::Min(4),
-        ])
+        .constraints([Constraint::Length(8), Constraint::Min(4)])
         .split(inner);
 
     render_metrics_panel(f, chunks[0], state, &theme);
@@ -55,7 +47,9 @@ fn render_metrics_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &The
     let block = Block::default()
         .title(Span::styled(
             " Métricas TCP ",
-            Style::default().fg(theme.muted).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent_dim));
@@ -82,7 +76,12 @@ fn render_metrics_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &The
     let lines = vec![
         Line::from(vec![
             Span::styled("Estado:           ", Style::default().fg(theme.muted)),
-            Span::styled(health_label, Style::default().fg(health_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                health_label,
+                Style::default()
+                    .fg(health_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Retransmisiones:  ", Style::default().fg(theme.muted)),
@@ -95,7 +94,9 @@ fn render_metrics_panel(f: &mut Frame, area: Rect, state: &AppState, theme: &The
             Span::styled("Tasa retrans:     ", Style::default().fg(theme.muted)),
             Span::styled(
                 format!("{:.2}%", rate),
-                Style::default().fg(health_color).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(health_color)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(vec![
@@ -129,7 +130,9 @@ fn render_history_chart(f: &mut Frame, area: Rect, state: &AppState, theme: &The
     let block = Block::default()
         .title(Span::styled(
             " Historial Tasa de Retransmisión (%) ",
-            Style::default().fg(theme.muted).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent_dim));
@@ -181,10 +184,7 @@ fn render_history_chart(f: &mut Frame, area: Rect, state: &AppState, theme: &The
                         format!("{:.1}%", max_val / 2.0),
                         Style::default().fg(theme.muted),
                     ),
-                    Span::styled(
-                        format!("{:.1}%", max_val),
-                        Style::default().fg(theme.muted),
-                    ),
+                    Span::styled(format!("{:.1}%", max_val), Style::default().fg(theme.muted)),
                 ])
                 .bounds([0.0, max_val]),
         );

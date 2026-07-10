@@ -23,10 +23,14 @@ pub fn render_cpu_cores(f: &mut Frame, area: Rect, cpu: &CpuData, data_loaded: b
     let mut remaining = area.height.saturating_sub(2) as usize; // subtract aggregate row (height 2)
 
     let actually_breakdown = show_breakdown && remaining > 0;
-    if actually_breakdown { remaining -= 1; }
+    if actually_breakdown {
+        remaining -= 1;
+    }
 
     let actually_ctx = show_ctx && remaining > 0;
-    if actually_ctx { remaining -= 1; }
+    if actually_ctx {
+        remaining -= 1;
+    }
 
     // Dynamic layout strategy based on core count and available vertical space
     let strat_2col_2row_req = (core_count + 1) / 2 * 2;
@@ -49,9 +53,15 @@ pub fn render_cpu_cores(f: &mut Frame, area: Rect, cpu: &CpuData, data_loaded: b
 
     // Build constraints
     let mut constraints = vec![Constraint::Length(2)]; // aggregate
-    if actually_breakdown { constraints.push(Constraint::Length(1)); }
-    if actually_ctx       { constraints.push(Constraint::Length(1)); }
-    for _ in 0..visible_core_rows { constraints.push(Constraint::Length(row_height as u16)); }
+    if actually_breakdown {
+        constraints.push(Constraint::Length(1));
+    }
+    if actually_ctx {
+        constraints.push(Constraint::Length(1));
+    }
+    for _ in 0..visible_core_rows {
+        constraints.push(Constraint::Length(row_height as u16));
+    }
     constraints.push(Constraint::Min(0));
 
     let chunks = Layout::default()
@@ -86,10 +96,7 @@ pub fn render_cpu_cores(f: &mut Frame, area: Rect, cpu: &CpuData, data_loaded: b
             Constraint::Percentage(25),
         ]
     } else {
-        vec![
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ]
+        vec![Constraint::Percentage(50), Constraint::Percentage(50)]
     };
 
     // Filas de hilos
@@ -148,7 +155,10 @@ fn render_cpu_breakdown(f: &mut Frame, area: Rect, cpu: &CpuData, theme: &Theme)
         let alert = iow >= 20.0;
         let color = if alert { Color::Yellow } else { theme.text };
         spans.push(Span::styled("IOW:", Style::default().fg(theme.muted)));
-        spans.push(Span::styled(format!("{:.1}%", iow), Style::default().fg(color)));
+        spans.push(Span::styled(
+            format!("{:.1}%", iow),
+            Style::default().fg(color),
+        ));
         if alert {
             spans.push(Span::styled("⚠", Style::default().fg(Color::Yellow)));
         }
@@ -159,7 +169,10 @@ fn render_cpu_breakdown(f: &mut Frame, area: Rect, cpu: &CpuData, theme: &Theme)
             let alert = stl >= 5.0;
             let color = if alert { Color::Red } else { theme.text };
             spans.push(Span::styled("STL:", Style::default().fg(theme.muted)));
-            spans.push(Span::styled(format!("{:3.1}%", stl), Style::default().fg(color)));
+            spans.push(Span::styled(
+                format!("{:3.1}%", stl),
+                Style::default().fg(color),
+            ));
             if alert {
                 spans.push(Span::styled("⚠", Style::default().fg(Color::Red)));
             }
@@ -178,7 +191,10 @@ fn render_ctx_int(f: &mut Frame, area: Rect, cpu: &CpuData, theme: &Theme) {
     }
     if let Some(intr) = cpu.interrupts_per_sec {
         spans.push(Span::styled("INT:", Style::default().fg(theme.muted)));
-        spans.push(Span::styled(fmt_kilo(intr), Style::default().fg(theme.text)));
+        spans.push(Span::styled(
+            fmt_kilo(intr),
+            Style::default().fg(theme.text),
+        ));
         spans.push(Span::styled("/s", Style::default().fg(theme.muted)));
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -201,7 +217,11 @@ fn render_core_row(f: &mut Frame, area: Rect, core: &CpuCoreData, usage: f64, th
 
     if area.height >= 2 {
         let label_area = Rect { height: 1, ..area };
-        let bar_area = Rect { y: area.y + 1, height: 1, ..area };
+        let bar_area = Rect {
+            y: area.y + 1,
+            height: 1,
+            ..area
+        };
 
         let label = Line::from(vec![
             Span::styled(

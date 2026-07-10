@@ -64,7 +64,11 @@ fn render_gpu(f: &mut Frame, area: Rect, gpu: &GpuData, theme: &Theme) {
     let util_label = Line::from(vec![
         Span::styled("CUDA", Style::default().fg(theme.accent)),
         Span::styled(
-            format!("  {:3.0}%  {} procs", gpu.utilization_pct, gpu.processes.len()),
+            format!(
+                "  {:3.0}%  {} procs",
+                gpu.utilization_pct,
+                gpu.processes.len()
+            ),
             Style::default().fg(theme.text),
         ),
     ]);
@@ -90,10 +94,7 @@ fn render_gpu(f: &mut Frame, area: Rect, gpu: &GpuData, theme: &Theme) {
         let label_width = 35u16.min(layout[1].width / 2);
         let row = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(label_width),
-                Constraint::Min(1),
-            ])
+            .constraints([Constraint::Length(label_width), Constraint::Min(1)])
             .split(layout[1]);
 
         f.render_widget(Paragraph::new(vram_label), row[0]);

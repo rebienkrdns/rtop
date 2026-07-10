@@ -252,9 +252,7 @@ fn render_nodes(f: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
                 Cell::from(node.role.clone()).style(if is_selected {
                     base_style
                 } else {
-                    Style::default()
-                        .fg(role_color)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(role_color).add_modifier(Modifier::BOLD)
                 }),
                 Cell::from(node.status.clone()).style(if is_selected {
                     base_style

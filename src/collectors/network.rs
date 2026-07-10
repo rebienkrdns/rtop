@@ -74,8 +74,10 @@ impl NetworkCollector {
             .map(|(name, data)| {
                 let recv_bps = data.received() as f64 / elapsed;
                 let sent_bps = data.transmitted() as f64 / elapsed;
-                let (rx_errors, tx_errors, rx_drops, tx_drops) =
-                    error_stats.get(name.as_str()).copied().unwrap_or((0, 0, 0, 0));
+                let (rx_errors, tx_errors, rx_drops, tx_drops) = error_stats
+                    .get(name.as_str())
+                    .copied()
+                    .unwrap_or((0, 0, 0, 0));
                 (
                     name.clone(),
                     NetworkData {
@@ -121,7 +123,10 @@ fn read_all_netdev_errors() -> std::collections::HashMap<String, (u64, u64, u64,
             // /proc/net/dev columns after iface: rx_bytes rx_packets rx_errs rx_drop rx_fifo
             //   rx_frame rx_compressed rx_multicast tx_bytes tx_packets tx_errs tx_drop ...
             if fields.len() >= 12 {
-                map.insert(iface.trim().to_string(), (fields[2], fields[10], fields[3], fields[11]));
+                map.insert(
+                    iface.trim().to_string(),
+                    (fields[2], fields[10], fields[3], fields[11]),
+                );
             }
         }
         return map;

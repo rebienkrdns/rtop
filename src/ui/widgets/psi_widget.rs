@@ -101,7 +101,10 @@ fn render_psi_chart_dual(
 
     // Header compacto: "LABEL  S a10/60s/300s  F a10/60s/300s"
     let header = Line::from(vec![
-        Span::styled(label, Style::default().fg(color_some).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            label,
+            Style::default().fg(color_some).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("  S ", Style::default().fg(color_some)),
         Span::styled(
             format!("{:.1}/{:.1}/{:.1}", some_avg10, some_avg60, some_avg300),

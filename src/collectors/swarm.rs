@@ -92,9 +92,7 @@ async fn connect_docker() -> Option<Docker> {
         if !Path::new(path).exists() {
             continue;
         }
-        if let Ok(docker) =
-            Docker::connect_with_unix(path, 120, bollard::API_DEFAULT_VERSION)
-        {
+        if let Ok(docker) = Docker::connect_with_unix(path, 120, bollard::API_DEFAULT_VERSION) {
             if docker.version().await.is_ok() {
                 return Some(docker);
             }
@@ -129,11 +127,7 @@ async fn collect_swarm(
                 .and_then(|t| t.container_spec.as_ref())
                 .and_then(|c| c.image.as_deref())
                 .unwrap_or_default();
-            let image = raw_image
-                .split('@')
-                .next()
-                .unwrap_or(raw_image)
-                .to_string();
+            let image = raw_image.split('@').next().unwrap_or(raw_image).to_string();
 
             let replicas_running = svc
                 .service_status
@@ -190,8 +184,7 @@ async fn fetch_nodes() -> Vec<SwarmNodeData> {
         None => return vec![],
     };
 
-    let raw_nodes: Vec<bollard::models::Node> =
-        serde_json::from_slice(&body).unwrap_or_default();
+    let raw_nodes: Vec<bollard::models::Node> = serde_json::from_slice(&body).unwrap_or_default();
 
     raw_nodes
         .iter()

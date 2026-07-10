@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Table, Row, Cell},
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table},
     Frame,
 };
 
@@ -50,7 +50,12 @@ pub fn render(f: &mut Frame, state: &AppState) {
         theme.muted
     });
     // Calculate total speeds (excluding loopback)
-    let loopback_names: Vec<&str> = state.available_nics.iter().filter(|n| n.is_loopback).map(|n| n.name.as_str()).collect();
+    let loopback_names: Vec<&str> = state
+        .available_nics
+        .iter()
+        .filter(|n| n.is_loopback)
+        .map(|n| n.name.as_str())
+        .collect();
     let mut total_rx = 0.0;
     let mut total_tx = 0.0;
     for (name, data) in &state.network_by_nic {
@@ -59,7 +64,9 @@ pub fn render(f: &mut Frame, state: &AppState) {
             total_tx += data.sent_bytes_per_sec;
         }
     }
-    let total_max_bw = state.network_max_bw_by_nic.iter()
+    let total_max_bw = state
+        .network_max_bw_by_nic
+        .iter()
         .filter(|(name, _)| !loopback_names.contains(&name.as_str()))
         .map(|(_, &v)| v)
         .fold(0.0_f64, f64::max)
@@ -69,10 +76,22 @@ pub fn render(f: &mut Frame, state: &AppState) {
     let all_item = Row::new(vec![
         Cell::from(Span::styled(all_prefix, all_style)),
         Cell::from(Span::styled(state.t("AllNICs"), all_style)),
-        Cell::from(Span::styled(state.t("Summation"), Style::default().fg(theme.muted))),
-        Cell::from(Span::styled(format!("↓{:>8}", fmt_bps_short(total_rx)), Style::default().fg(theme.ok))),
-        Cell::from(Span::styled(format!("↑{:>8}", fmt_bps_short(total_tx)), Style::default().fg(theme.ok))),
-        Cell::from(Span::styled(format!("{:>5.1}%", total_pct), Style::default().fg(theme.ok))),
+        Cell::from(Span::styled(
+            state.t("Summation"),
+            Style::default().fg(theme.muted),
+        )),
+        Cell::from(Span::styled(
+            format!("↓{:>8}", fmt_bps_short(total_rx)),
+            Style::default().fg(theme.ok),
+        )),
+        Cell::from(Span::styled(
+            format!("↑{:>8}", fmt_bps_short(total_tx)),
+            Style::default().fg(theme.ok),
+        )),
+        Cell::from(Span::styled(
+            format!("{:>5.1}%", total_pct),
+            Style::default().fg(theme.ok),
+        )),
         Cell::from(Span::styled(
             format!(
                 "★ {}",
@@ -109,15 +128,24 @@ pub fn render(f: &mut Frame, state: &AppState) {
         let prefix = if is_cursor { "> " } else { "  " };
 
         let (rx, tx, pct) = if let Some(net_data) = state.network_by_nic.get(&nic.name) {
-            let bw = state.network_max_bw_by_nic.get(&nic.name).copied().unwrap_or(125_000_000.0);
-            let p = ((net_data.recv_bytes_per_sec + net_data.sent_bytes_per_sec) / bw * 100.0).clamp(0.0, 100.0);
+            let bw = state
+                .network_max_bw_by_nic
+                .get(&nic.name)
+                .copied()
+                .unwrap_or(125_000_000.0);
+            let p = ((net_data.recv_bytes_per_sec + net_data.sent_bytes_per_sec) / bw * 100.0)
+                .clamp(0.0, 100.0);
             (net_data.recv_bytes_per_sec, net_data.sent_bytes_per_sec, p)
         } else {
             (0.0, 0.0, 0.0)
         };
-        
+
         let (rx_str, tx_str, pct_str) = if nic.is_up {
-            (format!("↓{:>8}", fmt_bps_short(rx)), format!("↑{:>8}", fmt_bps_short(tx)), format!("{:>5.1}%", pct))
+            (
+                format!("↓{:>8}", fmt_bps_short(rx)),
+                format!("↑{:>8}", fmt_bps_short(tx)),
+                format!("{:>5.1}%", pct),
+            )
         } else {
             ("—".to_string(), "".to_string(), "".to_string())
         };
@@ -169,17 +197,25 @@ pub fn render(f: &mut Frame, state: &AppState) {
         Cell::from(format!("{:>9}", state.t("Write"))),
         Cell::from(format!("{:>6}", "%")),
         Cell::from(state.t("Status")),
-    ]).style(Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD));
-
-    let table = Table::new(rows, [
-        Constraint::Length(2),
-        Constraint::Length(10),
-        Constraint::Min(15), // IP eats extra space
-        Constraint::Length(9),
-        Constraint::Length(9),
-        Constraint::Length(6),
-        Constraint::Length(12),
     ])
+    .style(
+        Style::default()
+            .fg(Color::Gray)
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(2),
+            Constraint::Length(10),
+            Constraint::Min(15), // IP eats extra space
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Length(6),
+            Constraint::Length(12),
+        ],
+    )
     .header(header)
     .column_spacing(1);
 

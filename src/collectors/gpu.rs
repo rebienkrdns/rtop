@@ -35,19 +35,14 @@ impl GpuCollector {
 
             let name = device.name().unwrap_or_else(|_| format!("GPU {i}"));
 
-            let utilization_pct = device
-                .utilization_rates()
-                .map(|u| u.gpu)
-                .unwrap_or(0);
+            let utilization_pct = device.utilization_rates().map(|u| u.gpu).unwrap_or(0);
 
             let (memory_used_bytes, memory_total_bytes) = device
                 .memory_info()
                 .map(|m| (m.used, m.total))
                 .unwrap_or((0, 0));
 
-            let temperature_c = device
-                .temperature(TemperatureSensor::Gpu)
-                .unwrap_or(0);
+            let temperature_c = device.temperature(TemperatureSensor::Gpu).unwrap_or(0);
 
             let processes = device
                 .running_compute_processes()

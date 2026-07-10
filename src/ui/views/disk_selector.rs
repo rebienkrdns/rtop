@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Table, Row, Cell},
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table},
     Frame,
 };
 
@@ -88,9 +88,16 @@ pub fn render(f: &mut Frame, state: &AppState) {
             String::new()
         };
 
-        let (rx, tx) = state.disks.iter()
+        let (rx, tx) = state
+            .disks
+            .iter()
             .find(|d| d.device == entry.device_short && d.mount_point == entry.mount_point)
-            .map(|d| (d.read_bytes_per_sec.unwrap_or(0.0), d.write_bytes_per_sec.unwrap_or(0.0)))
+            .map(|d| {
+                (
+                    d.read_bytes_per_sec.unwrap_or(0.0),
+                    d.write_bytes_per_sec.unwrap_or(0.0),
+                )
+            })
             .unwrap_or((0.0, 0.0));
 
         let theme = Theme::default_theme();
@@ -103,7 +110,9 @@ pub fn render(f: &mut Frame, state: &AppState) {
         };
 
         let mount_style = if is_cursor {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Cyan)
         };
@@ -113,8 +122,14 @@ pub fn render(f: &mut Frame, state: &AppState) {
             Cell::from(Span::styled(entry.device_short.clone(), base_style)),
             Cell::from(Span::styled(mount, mount_style)),
             Cell::from(Span::styled(size_str, base_style)),
-            Cell::from(Span::styled(format!("↓{:>8}", fmt_bps_short(rx)), Style::default().fg(theme.ok))),
-            Cell::from(Span::styled(format!("↑{:>8}", fmt_bps_short(tx)), Style::default().fg(theme.accent_dim))),
+            Cell::from(Span::styled(
+                format!("↓{:>8}", fmt_bps_short(rx)),
+                Style::default().fg(theme.ok),
+            )),
+            Cell::from(Span::styled(
+                format!("↑{:>8}", fmt_bps_short(tx)),
+                Style::default().fg(theme.accent_dim),
+            )),
             Cell::from(Span::styled(sel_mark, Style::default().fg(Color::Green))),
         ]));
     }
@@ -127,17 +142,25 @@ pub fn render(f: &mut Frame, state: &AppState) {
         Cell::from(format!("{:>9}", state.t("Read"))),
         Cell::from(format!("{:>9}", state.t("Write"))),
         Cell::from(state.t("Status")),
-    ]).style(Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD));
-
-    let table = Table::new(rows, [
-        Constraint::Length(2),
-        Constraint::Length(14),
-        Constraint::Min(15), // Se estira y empuja lo demás a la derecha
-        Constraint::Length(9),
-        Constraint::Length(9),
-        Constraint::Length(9),
-        Constraint::Length(12),
     ])
+    .style(
+        Style::default()
+            .fg(Color::Gray)
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(2),
+            Constraint::Length(14),
+            Constraint::Min(15), // Se estira y empuja lo demás a la derecha
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Length(12),
+        ],
+    )
     .header(header)
     .column_spacing(1);
 
