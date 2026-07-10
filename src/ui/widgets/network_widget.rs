@@ -54,6 +54,24 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                 data.interface.clone()
             };
 
+            let cap_bps = if let Some(ref name) = state.selected_nic {
+                state.network_max_bw_by_nic.get(name).copied().unwrap_or(125_000_000.0)
+            } else {
+                let loopback_names: Vec<&str> = state
+                    .available_nics
+                    .iter()
+                    .filter(|n| n.is_loopback)
+                    .map(|n| n.name.as_str())
+                    .collect();
+                state
+                    .network_max_bw_by_nic
+                    .iter()
+                    .filter(|(name, _)| !loopback_names.contains(&name.as_str()))
+                    .map(|(_, &v)| v)
+                    .fold(0.0_f64, f64::max)
+                    .max(125_000_000.0)
+            };
+
             let usage_pct = state
                 .network_usage_pct_history
                 .back()
@@ -109,10 +127,14 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
                         Style::default().fg(theme.muted),
                     ),
                     Span::styled(
-                        label,
+                        format!("{}  ", label),
                         Style::default()
                             .fg(theme.accent)
                             .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("[{}]", fmt_bitrate(cap_bps)),
+                        Style::default().fg(theme.muted),
                     ),
                 ])),
                 header_cols[0],
