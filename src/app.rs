@@ -118,6 +118,7 @@ pub struct AppState {
     pub data_loaded: bool,
     pub refresh_tick: bool,
     pub show_help: bool,
+    pub show_env_values: bool,
     pub psi: Option<PsiData>,
     pub gpus: Vec<GpuData>,
 
@@ -250,6 +251,7 @@ impl AppState {
             data_loaded: false,
             refresh_tick: false,
             show_help: false,
+            show_env_values: false,
             psi: None,
             gpus: vec![],
             tcp_stats: None,
@@ -2055,6 +2057,9 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()
                                     state.router_cursor = 0;
                                 }
                             }
+                        }
+                        (KeyCode::Char('e'), _) if state.current_view == View::ContainerDetail => {
+                            state.show_env_values = !state.show_env_values;
                         }
 
                         // ── ProcessDetail view ────────────────────────────────

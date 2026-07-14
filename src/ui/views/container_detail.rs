@@ -478,10 +478,18 @@ pub fn render(
             }
         }
 
-        lines.push(Line::from(Span::styled(
-            format!("── {} ", state.t("EnvVarsLabel")),
-            Style::default().fg(muted),
-        )));
+        let env_toggle_hint = if state.show_env_values {
+            format!(" [E {}]", state.t("EnvToggleHide"))
+        } else {
+            format!(" [E {}]", state.t("EnvToggleShow"))
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("── {} ", state.t("EnvVarsLabel")),
+                Style::default().fg(muted),
+            ),
+            Span::styled(env_toggle_hint, Style::default().fg(Color::DarkGray)),
+        ]));
         if container.env_vars.is_empty() {
             lines.push(Line::from(vec![
                 Span::raw("  "),
@@ -492,13 +500,25 @@ pub fn render(
             sorted_env.sort();
             for e in &sorted_env {
                 if let Some((key, val)) = e.split_once('=') {
+                    let display_val = if state.show_env_values {
+                        val.to_string()
+                    } else {
+                        "●●●●●●".to_string()
+                    };
                     lines.push(Line::from(vec![
                         Span::raw("  "),
                         Span::styled(
                             format!("{}=", key),
                             Style::default().fg(Color::Rgb(165, 213, 102)),
                         ),
-                        Span::styled(val.to_string(), Style::default().fg(Color::White)),
+                        Span::styled(
+                            display_val,
+                            Style::default().fg(if state.show_env_values {
+                                Color::White
+                            } else {
+                                Color::DarkGray
+                            }),
+                        ),
                     ]));
                 } else {
                     lines.push(Line::from(vec![
@@ -595,7 +615,24 @@ pub fn render(
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(state.t("Navigate"), Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("{}  ", state.t("Navigate")),
+            Style::default().fg(theme.muted),
+        ),
+        Span::styled(
+            "[E] ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            if state.show_env_values {
+                state.t("EnvToggleHide")
+            } else {
+                state.t("EnvToggleShow")
+            },
+            Style::default().fg(theme.muted),
+        ),
     ]);
     f.render_widget(Paragraph::new(hint), chunks[6]);
 

@@ -126,6 +126,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::styled(
+            format!("v{} ", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled("│ ", Style::default().fg(theme.muted)),
         Span::styled(state.hostname.as_str(), Style::default().fg(theme.text)),
         Span::styled(
