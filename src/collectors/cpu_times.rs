@@ -1,5 +1,5 @@
-/// Collector for CPU time breakdown and system-wide counters from /proc/stat.
-/// Linux only; returns default (all None) on other platforms.
+//! Collector for CPU time breakdown and system-wide counters from /proc/stat.
+//! Linux only; returns default (all None) on other platforms.
 
 #[cfg(target_os = "linux")]
 #[derive(Default, Clone)]

@@ -195,7 +195,7 @@ impl DiskIoCollector {
                     result.insert(name.clone(), rate);
                 }
             }
-            return result;
+            result
         }
         #[cfg(not(target_os = "linux"))]
         {

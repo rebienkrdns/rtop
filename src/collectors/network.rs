@@ -129,7 +129,7 @@ fn read_all_netdev_errors() -> std::collections::HashMap<String, (u64, u64, u64,
                 );
             }
         }
-        return map;
+        map
     }
     #[cfg(not(target_os = "linux"))]
     std::collections::HashMap::new()
