@@ -220,18 +220,21 @@ pub fn render_disk_net(
     samples: &[&MetricSample],
     range: HistoryRange,
     lang: Language,
+    disk_io_capacity_mb_s: u64,
 ) {
-    if area.height < 4 {
+    if area.height < 6 {
         return;
     }
     let theme = Theme::default_theme();
 
-    let spark_height = (area.height - 2) / 2;
+    let spark_height = ((area.height - 3) / 3).max(1);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),            // Disco label
             Constraint::Length(spark_height), // Disco canvas
+            Constraint::Length(1),            // Uso de E/S del disco label
+            Constraint::Length(spark_height), // Uso de E/S del disco canvas
             Constraint::Length(1),            // Red label
             Constraint::Length(spark_height), // Red canvas
             Constraint::Min(0),
@@ -240,6 +243,7 @@ pub fn render_disk_net(
 
     let disk_read_last = samples.last().map(|s| s.disk_read_bps).unwrap_or(0.0);
     let disk_write_last = samples.last().map(|s| s.disk_write_bps).unwrap_or(0.0);
+    let disk_throughput_last = samples.last().map(|s| s.disk_throughput_pct).unwrap_or(0.0);
     let net_recv_last = samples.last().map(|s| s.net_recv_bps).unwrap_or(0.0);
     let net_sent_last = samples.last().map(|s| s.net_sent_bps).unwrap_or(0.0);
 
@@ -274,6 +278,34 @@ pub fn render_disk_net(
         })),
     );
 
+    // Disk throughput utilization: based on the configured transfer capacity, not storage space.
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                translate("Disk I/O use", lang),
+                Style::default().fg(theme.accent),
+            ),
+            Span::styled(
+                format!(
+                    "  {:.1}% / {} MB/s",
+                    disk_throughput_last, disk_io_capacity_mb_s
+                ),
+                Style::default().fg(theme.muted),
+            ),
+        ])),
+        chunks[2],
+    );
+    render_history_canvas_dual(
+        f,
+        chunks[3],
+        samples,
+        range,
+        100.0,
+        Theme::color_for_pct(disk_throughput_last),
+        |s: &MetricSample| s.disk_throughput_pct,
+        None,
+    );
+
     // Red label
     f.render_widget(
         Paragraph::new(Line::from(vec![
@@ -290,14 +322,14 @@ pub fn render_disk_net(
                 Style::default().fg(theme.muted),
             ),
         ])),
-        chunks[2],
+        chunks[4],
     );
 
     // Red Canvas (recv as primary, sent as secondary)
     let net_max = max_bps(samples, |s| s.net_recv_bps.max(s.net_sent_bps)).max(1.0);
     render_history_canvas_dual(
         f,
-        chunks[3],
+        chunks[5],
         samples,
         range,
         net_max,
@@ -321,6 +353,7 @@ mod tests {
             net_sent_bps: 0.0,
             disk_read_bps: 0.0,
             disk_write_bps: 0.0,
+            disk_throughput_pct: 0.0,
         }
     }
 

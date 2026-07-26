@@ -33,20 +33,20 @@ pub fn render_cpu_cores(f: &mut Frame, area: Rect, cpu: &CpuData, data_loaded: b
     }
 
     // Dynamic layout strategy based on core count and available vertical space
-    let strat_2col_2row_req = (core_count + 1) / 2 * 2;
-    let strat_2col_1row_req = (core_count + 1) / 2;
-    let strat_4col_2row_req = (core_count + 3) / 4 * 2;
+    let strat_2col_2row_req = core_count.div_ceil(2) * 2;
+    let strat_2col_1row_req = core_count.div_ceil(2);
+    let strat_4col_2row_req = core_count.div_ceil(4) * 2;
 
     let (columns, row_height, core_rows) = if strat_2col_2row_req <= remaining {
-        (2, 2, (core_count + 1) / 2)
+        (2, 2, core_count.div_ceil(2))
     } else if strat_2col_1row_req <= remaining {
-        (2, 1, (core_count + 1) / 2)
+        (2, 1, core_count.div_ceil(2))
     } else if strat_4col_2row_req <= remaining && area.width > 80 {
-        (4, 2, (core_count + 3) / 4)
+        (4, 2, core_count.div_ceil(4))
     } else {
         // Fallback to most compact layout possible
         let cols = if area.width > 80 { 4 } else { 2 };
-        (cols, 1, (core_count + (cols - 1)) / cols)
+        (cols, 1, core_count.div_ceil(cols))
     };
 
     let visible_core_rows = core_rows.min(remaining / row_height);

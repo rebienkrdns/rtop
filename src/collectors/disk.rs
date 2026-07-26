@@ -71,19 +71,41 @@ impl DiskIoCollector {
         }
     }
 
+    // macOS no expone un contador de I/O agregado por dispositivo sin IOKit.
+    // Como aproximación, se suma el I/O de todos los procesos (ya medido vía
+    // libproc en `process_io_rates`) y se atribuye ese total a cada disco
+    // montado. Es exacto en el caso común de un solo disco físico; en Macs
+    // con discos externos adicionales puede sobreatribuir I/O entre discos.
     #[cfg(target_os = "macos")]
-    pub fn io_rates_from_disks(&mut self, disks: &[Disk]) -> HashMap<String, DiskIoRate> {
+    pub fn io_rates_from_disks(
+        &mut self,
+        disks: &[Disk],
+        process_rates: &HashMap<u32, crate::models::process::ProcessIoData>,
+    ) -> HashMap<String, DiskIoRate> {
+        let (total_read, total_write) = sum_process_io(process_rates);
+
         let mut result = HashMap::new();
         for disk in disks {
             let name = device_short_name(&disk.name().to_string_lossy());
-            result.insert(name, DiskIoRate::default());
+            result.insert(
+                name,
+                DiskIoRate {
+                    read_bytes_per_sec: total_read,
+                    write_bytes_per_sec: total_write,
+                    ..DiskIoRate::default()
+                },
+            );
         }
         result
     }
 
     #[cfg(not(target_os = "macos"))]
     #[allow(dead_code)]
-    pub fn io_rates_from_disks(&mut self, _disks: &[Disk]) -> HashMap<String, DiskIoRate> {
+    pub fn io_rates_from_disks(
+        &mut self,
+        _disks: &[Disk],
+        _process_rates: &HashMap<u32, crate::models::process::ProcessIoData>,
+    ) -> HashMap<String, DiskIoRate> {
         HashMap::new()
     }
 
@@ -392,4 +414,50 @@ impl DiskIoCollector {
 
 pub fn device_short_name(full: &str) -> String {
     full.strip_prefix("/dev/").unwrap_or(full).to_string()
+}
+
+#[cfg(target_os = "macos")]
+fn sum_process_io(
+    process_rates: &HashMap<u32, crate::models::process::ProcessIoData>,
+) -> (f64, f64) {
+    let total_read: f64 = process_rates.values().map(|r| r.read_bytes_per_sec).sum();
+    let total_write: f64 = process_rates.values().map(|r| r.write_bytes_per_sec).sum();
+    (total_read, total_write)
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::sum_process_io;
+    use crate::models::process::ProcessIoData;
+    use std::collections::HashMap;
+
+    #[test]
+    fn sum_process_io_aggregates_all_processes() {
+        let mut process_rates = HashMap::new();
+        process_rates.insert(
+            1,
+            ProcessIoData {
+                read_bytes_per_sec: 1_000.0,
+                write_bytes_per_sec: 2_000.0,
+            },
+        );
+        process_rates.insert(
+            2,
+            ProcessIoData {
+                read_bytes_per_sec: 500.0,
+                write_bytes_per_sec: 250.0,
+            },
+        );
+
+        let (total_read, total_write) = sum_process_io(&process_rates);
+
+        assert_eq!(total_read, 1_500.0);
+        assert_eq!(total_write, 2_250.0);
+    }
+
+    #[test]
+    fn sum_process_io_is_zero_when_no_processes_reported() {
+        let process_rates = HashMap::new();
+        assert_eq!(sum_process_io(&process_rates), (0.0, 0.0));
+    }
 }

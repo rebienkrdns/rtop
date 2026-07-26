@@ -8,6 +8,11 @@ use crate::ui::theme::ThemeMode;
 
 pub const INTERVALS: &[f64] = &[0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0];
 pub const DEFAULT_INTERVAL_IDX: usize = 2; // 2s
+pub const DEFAULT_DISK_IO_CAPACITY_MB_S: u64 = 100;
+
+fn default_disk_io_capacity_mb_s() -> u64 {
+    DEFAULT_DISK_IO_CAPACITY_MB_S
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -32,6 +37,9 @@ pub enum SortColumn {
 pub struct Config {
     pub refresh_interval_secs: f64,
     pub selected_disk: Option<String>,
+    /// Throughput ceiling used to calculate disk I/O utilization. This is not disk storage size.
+    #[serde(default = "default_disk_io_capacity_mb_s")]
+    pub disk_io_capacity_mb_s: u64,
     pub selected_nic: Option<String>,
     pub default_tab: Tab,
     pub process_sort_column: SortColumn,
@@ -46,6 +54,7 @@ impl Default for Config {
         Self {
             refresh_interval_secs: INTERVALS[DEFAULT_INTERVAL_IDX],
             selected_disk: None,
+            disk_io_capacity_mb_s: DEFAULT_DISK_IO_CAPACITY_MB_S,
             selected_nic: None,
             default_tab: Tab::Processes,
             process_sort_column: SortColumn::Cpu,
@@ -56,7 +65,7 @@ impl Default for Config {
     }
 }
 
-fn config_path() -> PathBuf {
+pub fn config_path() -> PathBuf {
     if let Ok(val) = std::env::var("RTOP_CONFIG_PATH") {
         return PathBuf::from(val);
     }
@@ -148,6 +157,7 @@ mod tests {
         let cfg = load();
         assert_eq!(cfg.refresh_interval_secs, 2.0);
         assert!(cfg.selected_disk.is_none());
+        assert_eq!(cfg.disk_io_capacity_mb_s, DEFAULT_DISK_IO_CAPACITY_MB_S);
         assert!(cfg.selected_nic.is_none());
         assert_eq!(cfg.default_tab, Tab::Processes);
         assert_eq!(cfg.process_sort_column, SortColumn::Cpu);
@@ -164,6 +174,7 @@ mod tests {
         let mut modified = cfg;
         modified.refresh_interval_secs = 5.0;
         modified.selected_disk = Some("sda1".to_string());
+        modified.disk_io_capacity_mb_s = 250;
         modified.selected_nic = Some("eth0".to_string());
         modified.default_tab = Tab::Network;
         modified.process_sort_column = SortColumn::Memory;
@@ -176,6 +187,7 @@ mod tests {
         let loaded = load();
         assert_eq!(loaded.refresh_interval_secs, 5.0);
         assert_eq!(loaded.selected_disk.as_deref(), Some("sda1"));
+        assert_eq!(loaded.disk_io_capacity_mb_s, 250);
         assert_eq!(loaded.selected_nic.as_deref(), Some("eth0"));
         assert_eq!(loaded.default_tab, Tab::Network);
         assert_eq!(loaded.process_sort_column, SortColumn::Memory);

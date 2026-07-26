@@ -2,6 +2,16 @@ use std::collections::VecDeque;
 
 const MAX_SAMPLES: usize = 3600; // 1 hora a 1 muestra/seg
 
+/// Calculates throughput utilization using the configured I/O capacity in decimal MB/s.
+/// Storage capacity is intentionally not part of this calculation.
+pub fn disk_throughput_pct(read_bps: f64, write_bps: f64, capacity_mb_s: u64) -> f64 {
+    let capacity_bps = capacity_mb_s as f64 * 1_000_000.0;
+    if capacity_bps <= 0.0 {
+        return 0.0;
+    }
+    ((read_bps.max(0.0) + write_bps.max(0.0)) / capacity_bps * 100.0).clamp(0.0, 100.0)
+}
+
 #[derive(Clone)]
 pub struct MetricSample {
     pub cpu_pct: f64,
@@ -10,6 +20,8 @@ pub struct MetricSample {
     pub net_sent_bps: f64,
     pub disk_read_bps: f64,
     pub disk_write_bps: f64,
+    /// Read + write throughput expressed as a percentage of the configured I/O capacity.
+    pub disk_throughput_pct: f64,
 }
 
 #[derive(Clone)]
@@ -92,5 +104,17 @@ impl HistoryRange {
             Self::FifteenMin => Self::OneHour,
             Self::OneHour => Self::OneMin,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::disk_throughput_pct;
+
+    #[test]
+    fn disk_throughput_percentage_uses_transfer_capacity() {
+        assert_eq!(disk_throughput_pct(0.0, 10_000_000.0, 100), 10.0);
+        assert_eq!(disk_throughput_pct(20_000_000.0, 90_000_000.0, 100), 100.0);
+        assert_eq!(disk_throughput_pct(10_000_000.0, 0.0, 0), 0.0);
     }
 }

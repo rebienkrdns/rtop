@@ -21,7 +21,8 @@ use crate::models::{
 };
 use crate::ui;
 use crate::ui::history::{
-    ContainerHistorySample, HistoryRange, MetricSample, MetricsHistory, ProcessHistorySample,
+    disk_throughput_pct, ContainerHistorySample, HistoryRange, MetricSample, MetricsHistory,
+    ProcessHistorySample,
 };
 use crate::ui::views::container_detail::ConfirmAction;
 use crate::ui::views::container_logs::LogsViewState;
@@ -365,6 +366,8 @@ impl AppState {
                     )
                 })
                 .unwrap_or((0.0, 0.0));
+            let disk_throughput_pct =
+                disk_throughput_pct(disk_read, disk_write, self.cfg.disk_io_capacity_mb_s);
             let mem_pct = if self.memory.total_bytes > 0 {
                 self.memory.used_bytes as f64 / self.memory.total_bytes as f64 * 100.0
             } else {
@@ -377,6 +380,7 @@ impl AppState {
                 net_sent_bps: net_sent,
                 disk_read_bps: disk_read,
                 disk_write_bps: disk_write,
+                disk_throughput_pct,
             });
 
             // Update process history

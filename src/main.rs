@@ -1,6 +1,7 @@
 mod app;
 mod collectors;
 mod config;
+mod init;
 mod localization;
 mod models;
 mod ui;
@@ -39,23 +40,33 @@ async fn main() -> Result<()> {
                 println!("rtop v{}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
+            "init" => {
+                if args.len() > 2 {
+                    eprintln!("Error: 'rtop init' no acepta argumentos adicionales.");
+                    std::process::exit(1);
+                }
+                init::run()?;
+                return Ok(());
+            }
             "-h" | "--help" => {
                 if lang == localization::Language::Spanish {
                     println!("rtop - Un monitor de recursos del sistema moderno en Rust");
                     println!();
-                    println!("Uso: rtop [OPCIONES]");
+                    println!("Uso: rtop [COMANDO | OPCIONES]");
                     println!();
                     println!("Opciones:");
                     println!("  -h, --help     Muestra este mensaje de ayuda");
                     println!("  -v, --version  Muestra la versión");
+                    println!("  init           Configuración interactiva y prueba opcional de E/S");
                 } else {
                     println!("rtop - A modern TUI system resource monitor in Rust");
                     println!();
-                    println!("Usage: rtop [OPTIONS]");
+                    println!("Usage: rtop [COMMAND | OPTIONS]");
                     println!();
                     println!("Options:");
                     println!("  -h, --help     Show this help message");
                     println!("  -v, --version  Show the version");
+                    println!("  init           Interactive setup and optional disk I/O test");
                 }
                 return Ok(());
             }

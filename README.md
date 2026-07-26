@@ -110,6 +110,8 @@ The optimized binary will be located in `target/release/rtop`.
 
 `rtop` stores its configuration file at `~/.config/rtop/config.toml` (or the path specified by the `RTOP_CONFIG_PATH` environment variable). The file is generated automatically with default values on first launch.
 
+Run `rtop init` to configure the monitor interactively. It can select the monitored disk, run an optional write benchmark with a temporary file, save the detected throughput as `disk_io_capacity_mb_s`, and configure the refresh interval, network interface, startup tab, Swap visibility, Docker socket, and theme. The benchmark asks for confirmation, uses 256 MB by default (adjustable from 64 MB to 4 GB), synchronizes its data to disk, and removes its temporary file when it finishes.
+
 ### `config.toml` Example
 
 ```toml
@@ -119,6 +121,10 @@ refresh_interval_secs = 2.0
 # Default disk device to monitor for I/O (e.g., "nvme0n1", "sda")
 # If set to None, rtop tries to autodetect the primary disk
 selected_disk = "nvme0n1"
+
+# Transfer capacity used for the disk I/O utilization chart, in MB/s.
+# This is independent of the disk's total storage capacity.
+disk_io_capacity_mb_s = 100
 
 # Default network interface to monitor (e.g., "eth0", "wlan0")
 # If set to None, it aggregates traffic of all active interfaces

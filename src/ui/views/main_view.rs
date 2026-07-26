@@ -56,7 +56,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
     // Height calculation:
     // Ideal height is 2 (gauge) + extra + 2 lines per core pair + 2 borders
-    let ideal_core_rows = ((num_cores + 1) / 2) as u16;
+    let ideal_core_rows = num_cores.div_ceil(2) as u16;
     let ideal_cpu_height = 2 + extra_cpu_rows + (ideal_core_rows * 2) + 2;
 
     // Calculate maximum safe height without pushing bottom elements off-screen
@@ -244,7 +244,14 @@ pub fn draw(f: &mut Frame, state: &AppState) {
 
     if state.history_mode {
         let samples = state.metrics_history.tail_n(state.history_range.samples());
-        history_chart::render_disk_net(f, col2_inner, &samples, state.history_range, state.lang);
+        history_chart::render_disk_net(
+            f,
+            col2_inner,
+            &samples,
+            state.history_range,
+            state.lang,
+            state.cfg.disk_io_capacity_mb_s,
+        );
     } else {
         draw_system_metrics(f, col2_inner, state);
     }
@@ -616,7 +623,7 @@ fn draw_system_metrics(f: &mut Frame, area: Rect, state: &AppState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // RAM + Swap
-            Constraint::Length(4), // Disco + latencia
+            Constraint::Length(5), // Disco: almacenamiento, tasas y uso de E/S
             Constraint::Min(0),    // Red
         ])
         .split(area);
@@ -626,7 +633,13 @@ fn draw_system_metrics(f: &mut Frame, area: Rect, state: &AppState) {
     let disk_to_render = best_disk_for_display(&state.disks, state.selected_disk.as_deref());
 
     if let Some(disk) = disk_to_render {
-        disk_bar::render(f, chunks[1], disk, state.lang);
+        disk_bar::render(
+            f,
+            chunks[1],
+            disk,
+            state.lang,
+            state.cfg.disk_io_capacity_mb_s,
+        );
     }
 
     network_widget::render(f, chunks[2], state);

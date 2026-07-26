@@ -9,6 +9,7 @@ use ratatui::{
 
 use crate::localization::{translate, Language};
 use crate::models::DiskData;
+use crate::ui::history::disk_throughput_pct;
 use crate::ui::theme::Theme;
 
 fn fmt_rate(bps: Option<f64>) -> String {
@@ -26,20 +27,30 @@ fn fmt_latency(ms: Option<f64>) -> String {
     }
 }
 
-pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
+pub fn render(
+    f: &mut Frame,
+    area: Rect,
+    disk: &DiskData,
+    lang: Language,
+    disk_io_capacity_mb_s: u64,
+) {
     if area.height < 2 {
         return;
     }
 
     let theme = Theme::default_theme();
     let has_io_row = area.height >= 3;
-    let has_latency_row = area.height >= 4 && disk.read_latency_ms.is_some();
+    let has_throughput_row = area.height >= 4;
+    let has_latency_row = area.height >= 5 && disk.read_latency_ms.is_some();
 
     let mut constraints = vec![
         Constraint::Length(1), // encabezado
         Constraint::Length(1), // barra de uso
     ];
     if has_io_row {
+        constraints.push(Constraint::Length(1));
+    }
+    if has_throughput_row {
         constraints.push(Constraint::Length(1));
     }
     if has_latency_row {
@@ -144,7 +155,31 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
         f.render_widget(hint, io_cols[1]);
     }
 
-    // Línea 3: latencia R/W + util%
+    // Línea 3: porcentaje de transferencia frente a la capacidad configurada.
+    if has_throughput_row {
+        let throughput_pct = disk_throughput_pct(
+            disk.read_bytes_per_sec.unwrap_or(0.0),
+            disk.write_bytes_per_sec.unwrap_or(0.0),
+            disk_io_capacity_mb_s,
+        );
+        let label = format!(
+            "{} {:.0}% / {} MB/s",
+            translate("Disk I/O use", lang),
+            throughput_pct,
+            disk_io_capacity_mb_s
+        );
+        let gauge = Gauge::default()
+            .gauge_style(
+                Style::default()
+                    .fg(Theme::color_for_pct(throughput_pct))
+                    .bg(ratatui::style::Color::Rgb(51, 52, 61)),
+            )
+            .ratio(throughput_pct / 100.0)
+            .label(label);
+        f.render_widget(gauge, chunks[3]);
+    }
+
+    // Línea 4: latencia R/W + util% del dispositivo
     if has_latency_row {
         let r_lat = fmt_latency(disk.read_latency_ms);
         let w_lat = fmt_latency(disk.write_latency_ms);
@@ -166,6 +201,6 @@ pub fn render(f: &mut Frame, area: Rect, disk: &DiskData, lang: Language) {
                 Style::default().fg(util_color).add_modifier(Modifier::BOLD),
             ),
         ]);
-        f.render_widget(Paragraph::new(lat_line), chunks[3]);
+        f.render_widget(Paragraph::new(lat_line), chunks[4]);
     }
 }

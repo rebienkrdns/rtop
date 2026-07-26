@@ -579,6 +579,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_database_container_env_parsing() {
         let container = ContainerData {
+            message_broker_type: None,
             id: "123456789012".to_string(),
             name: "mariadb-test".to_string(),
             image: "mariadb:latest".to_string(),
@@ -644,6 +645,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_database_container_real_conn() {
         let container = ContainerData {
+            message_broker_type: None,
             id: "7882987fb6b5".to_string(),
             name: "backend-mariadb-1".to_string(),
             image: "mariadb:12.2.2".to_string(),
@@ -696,6 +698,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_database_container_postgres_real_conn() {
         let container = ContainerData {
+            message_broker_type: None,
             id: "a2b2bba19c56".to_string(),
             name: "vocellia-postgres-1".to_string(),
             image: "postgres:16-alpine".to_string(),

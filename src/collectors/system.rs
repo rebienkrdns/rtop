@@ -88,10 +88,13 @@ impl SystemCollector {
                         core_temps.insert(id, temp);
                     }
                 }
-            } else if label.contains("cpu") || label.contains("tdie") || label.contains("tctl") || label.contains("package id 0") {
-                if global_temp.is_none() {
-                    global_temp = Some(temp);
-                }
+            } else if (label.contains("cpu")
+                || label.contains("tdie")
+                || label.contains("tctl")
+                || label.contains("package id 0"))
+                && global_temp.is_none()
+            {
+                global_temp = Some(temp);
             }
         }
 
@@ -108,7 +111,11 @@ impl SystemCollector {
                 let brand = c.brand().to_string();
 
                 let core_type = detect_core_type(i, core_count, &vendor, &brand);
-                let temp = core_temps.get(&i).copied().or(global_temp).or_else(|| read_core_temperature(i));
+                let temp = core_temps
+                    .get(&i)
+                    .copied()
+                    .or(global_temp)
+                    .or_else(|| read_core_temperature(i));
 
                 CpuCoreData {
                     core_id: i,
@@ -157,10 +164,17 @@ impl SystemCollector {
         }
     }
 
-    pub fn disk_data(&mut self) -> Vec<DiskData> {
+    pub fn disk_data(
+        &mut self,
+        process_rates: &HashMap<u32, crate::models::process::ProcessIoData>,
+    ) -> Vec<DiskData> {
         #[cfg(not(target_os = "linux"))]
-        let rates = self.disk_io.io_rates_from_disks(self.disks.list());
+        let rates = self
+            .disk_io
+            .io_rates_from_disks(self.disks.list(), process_rates);
 
+        #[cfg(target_os = "linux")]
+        let _ = process_rates;
         #[cfg(target_os = "linux")]
         let rates = {
             let mut disk_shorts: Vec<String> = self
@@ -407,7 +421,7 @@ impl SystemCollector {
             .collect();
         let cpu = self.cpu_data();
         let memory = self.memory_data();
-        let disks = self.disk_data();
+        let disks = self.disk_data(&rates);
         let network_by_nic = self.network.all_data();
         let available_nics = self.network.interfaces();
         let suggested_nic = self.network.autodetect();
